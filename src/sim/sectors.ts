@@ -82,7 +82,7 @@ function nextTarget(world: World, f: Faction, s: Sector): { pos: V2; obj: Object
   // Score open objectives: near our current front, weakly held, not already another group's target,
   // and penalise ones behind a river (crossings are costly).
   const mine = strengthOf(sectorUnits(world, f.id, s.id)) + 1;
-  const taken = new Set(f.sectors.filter((x) => x.id !== s.id).map((x) => x.targetObjective));
+  const taken = new Set(f.sectors.filter((x) => x.id !== s.id).map((x) => x.targetObjective ?? (x.targetCity !== null ? `hq:${x.targetCity}` : null)));
   let best: Objective | null = null;
   let bestScore = -Infinity;
   for (const o of world.objectives) {
@@ -98,6 +98,21 @@ function nextTarget(world: World, f: Faction, s: Sector): { pos: V2; obj: Object
       best = o;
     }
   }
+  // Capitals are the only way to win (no resolve): a reachable, weakly held enemy capital
+  // competes with towns, and wins when the group clearly outweighs its defenders.
+  let bestCity: number | null = null;
+  for (const e of world.factions) {
+    if (!e.alive || !world.isHostile(f.id, e.id)) continue;
+    const hq = world.hqPos(e.id);
+    const d = dist(hq, from);
+    const enemy = knownEnemyStrength(world, f.id, hq, 320);
+    const score = 1.2 - d / 1400 - (enemy / mine) * 0.8 - (taken.has(`hq:${e.id}`) ? 0.6 : 0);
+    if (score > bestScore) {
+      bestScore = score;
+      bestCity = e.id;
+    }
+  }
+  if (bestCity !== null && bestScore > -0.6) return { pos: world.hqPos(bestCity), obj: null, city: bestCity };
   if (best && bestScore > -0.6) return { pos: best.pos, obj: best, city: null };
   const enemies = world.factions.filter((e) => e.alive && world.isHostile(f.id, e.id));
   if (enemies.length === 0) return { pos: from, obj: own ?? null, city: null };

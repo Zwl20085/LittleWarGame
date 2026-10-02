@@ -96,6 +96,8 @@
     "initial_radius_m": 520
   },
   "victory": {
+    "resolve_enabled": false,
+    "resolve_comment": "User decision 2026-10-02: no campaign-resolve system; a faction is defeated only when its capital (HQ) is captured. Resolve fields below are kept for a possible optional mode.",
     "initial_resolve": 900,
     "destroyed_population_resolve_multiplier": 3,
     "majority_control_enemy_bleed_per_second": 0.35,

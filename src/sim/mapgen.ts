@@ -160,7 +160,8 @@ export function generateMap(opt: GenOptions): MapDef {
   const ridgeNoise = new ValueNoise(opt.seed + 101);
   const names = new NameGen(new Rng(opt.seed + 77));
   const n = clamp(opt.factions, 2, 4);
-  const scale = opt.size === 'large' ? 1.3 : 1;
+  // User decision 2026-10-02: bigger maps (1.4× per side) with about 3× the villages.
+  const scale = (opt.size === 'large' ? 1.3 : 1) * 1.4;
   const W = Math.round((n === 2 ? 2400 : 2600) * scale / 8) * 8;
   const D = Math.round((n === 2 ? 1600 : 2600) * scale / 8) * 8;
   const cx = W / 2;
@@ -216,12 +217,20 @@ export function generateMap(opt: GenOptions): MapDef {
   const nx = Math.floor(W / CELL) + 1;
   const nz = Math.floor(D / CELL) + 1;
   const H = new Float32Array(nx * nz);
+  // Each range only shapes cells within 2.2 widths of its spine: skip the rest by bounding box.
+  const rangeBox = ranges.map((r) => {
+    const m = r.w * 2.2;
+    return { x0: Math.min(...r.spine.map((p) => p.x)) - m, x1: Math.max(...r.spine.map((p) => p.x)) + m, z0: Math.min(...r.spine.map((p) => p.z)) - m, z1: Math.max(...r.spine.map((p) => p.z)) + m };
+  });
   for (let j = 0; j < nz; j++) {
     for (let i = 0; i < nx; i++) {
       const x = i * CELL;
       const z = j * CELL;
       let h = 14 + 22 * (noise.fbm(x / 800, z / 800, 3) - 0.5) * 2 + 7 * (noise.fbm(x / 160 + 9, z / 160 + 3, 2) - 0.5);
-      for (const r of ranges) {
+      for (let ri = 0; ri < ranges.length; ri++) {
+        const r = ranges[ri];
+        const bx = rangeBox[ri];
+        if (x < bx.x0 || x > bx.x1 || z < bx.z0 || z > bx.z1) continue;
         const q = distToPolyline({ x, z }, r.spine);
         if (q.d > r.w * 2.2) continue;
         const tAlong = (q.i + q.t) / (r.spine.length - 1);
@@ -362,7 +371,11 @@ export function generateMap(opt: GenOptions): MapDef {
   // Settlement tiers (user: "far more villages; some cities with high towers; towns with far more houses").
   type Kind = 'village' | 'town' | 'city';
   const towns: { x: number; z: number; r: number; buildings: number; big: boolean; kind: Kind; name: { zh: string; en: string } }[] = [];
-  const wantTowns = Math.round((W * D) / 110000);
+  const base = (W * D) / 110000;
+  const wantBig = Math.round(base * 0.35);
+  const wantVillages = Math.round(base);
+  let big = 0;
+  let villages = 0;
   const cands: { p: V2; s: number }[] = [];
   for (let z = 120; z < D - 120; z += 40) {
     for (let x = 120; x < W - 120; x += 40) {
@@ -378,11 +391,17 @@ export function generateMap(opt: GenOptions): MapDef {
   }
   cands.sort((a, b) => b.s - a.s);
   for (const c of cands) {
-    if (towns.length >= wantTowns) break;
+    if (big >= wantBig && villages >= wantVillages) break;
     const roll = rng.next();
-    const kind: Kind = roll < 0.1 ? 'city' : roll < 0.35 ? 'town' : 'village';
+    let kind: Kind = roll < 0.1 ? 'city' : roll < 0.35 ? 'town' : 'village';
+    if (kind !== 'village' && big >= wantBig) kind = 'village';
+    if (kind === 'village' && villages >= wantVillages) kind = 'town';
     const r = kind === 'city' ? 150 : kind === 'town' ? 95 : 48;
-    if (towns.some((t) => dist(t, c.p) < t.r + r + 70)) continue;
+    // Villages may sit closer together (hamlets along roads and rivers); towns keep room.
+    const gap = kind === 'village' ? 45 : 70;
+    if (towns.some((t) => dist(t, c.p) < t.r + r + (t.kind === 'village' ? gap : 70))) continue;
+    if (kind === 'village') villages++;
+    else big++;
     const buildings = kind === 'city' ? 220 : kind === 'town' ? 90 : 18 + Math.floor(rng.next() * 18);
     towns.push({ x: c.p.x, z: c.p.z, r, buildings, big: kind !== 'village', kind, name: kind === 'city' ? names.city() : names.town(kind === 'town') });
   }

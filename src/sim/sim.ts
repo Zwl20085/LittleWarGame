@@ -233,7 +233,7 @@ function economySecond(match: Match): void {
   majorityBleed(world, 1);
   // Territorial collapse: a faction holding no settlements at all bleeds resolve (can't turtle forever).
   const collapse = rules.territory?.collapse_bleed_per_second;
-  if (collapse && world.map.objectives.some((o) => o.kind)) {
+  if (collapse && rules.victory.resolve_enabled && world.map.objectives.some((o) => o.kind)) {
     const k = rules.proposed_defaults.army_scale ?? 1;
     for (const f of world.factions) {
       if (f.alive && !world.objectives.some((o) => o.owner === f.id)) f.resolve = Math.max(0, f.resolve - collapse * k);
@@ -261,7 +261,9 @@ function convoyNodes(world: World, f: number): SupplyNode[] {
 function checkElimination(match: Match): void {
   const world = match.world;
   const out: Faction[] = [];
-  for (const f of world.factions) if (f.alive && (f.resolve <= 0 || hqCaptured(world, f))) out.push(f);
+  // Defeat = the capital falls (resolve only counts in the optional resolve mode).
+  const resolveOn = !!world.data.rules.victory.resolve_enabled;
+  for (const f of world.factions) if (f.alive && ((resolveOn && f.resolve <= 0) || hqCaptured(world, f))) out.push(f);
   // Collect all first, then apply (order-independent, F02).
   for (const f of out) {
     f.alive = false;
@@ -276,7 +278,7 @@ function checkElimination(match: Match): void {
     }
     for (const o of world.objectives) if (o.owner === f.id) o.owner = -1;
     for (const other of world.factions) delete other.hqProgress[f.id];
-    for (const g of world.factions) world.note(g.id, 'log.eliminated', { f: f.id, reason: f.resolve <= 0 ? 'resolve' : 'hq' }, 'alert');
+    for (const g of world.factions) world.note(g.id, 'log.eliminated', { f: f.id, reason: resolveOn && f.resolve <= 0 ? 'resolve' : 'hq' }, 'alert');
   }
   const alive = world.factions.filter((f) => f.alive);
   if (!world.result && alive.length <= 1 && out.length > 0) {

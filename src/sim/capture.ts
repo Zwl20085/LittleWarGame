@@ -43,7 +43,7 @@ export function updateObjective(world: World, o: Objective, seconds: number): vo
       o.activeAt = world.time + world.data.rules.economy.node_activation_seconds;
       world.note(a, 'log.pointTaken', { point: o.id }, 'info');
       const loss = world.data.rules.territory?.resolve_loss_on_capture?.[o.kind];
-      if (prev >= 0 && loss) {
+      if (prev >= 0 && loss && world.data.rules.victory.resolve_enabled) {
         const k = world.data.rules.proposed_defaults.army_scale ?? 1;
         world.factions[prev].resolve = Math.max(0, world.factions[prev].resolve - loss * k);
       }
@@ -83,6 +83,7 @@ export function uncontestedHeld(world: World, f: number): number {
 
 /** Majority bleed: a sole strict-majority holder drains all other living factions (§5.3). */
 export function majorityBleed(world: World, seconds: number): number | null {
+  if (!world.data.rules.victory.resolve_enabled) return null;
   const counts = new Map<number, number>();
   const strategic = world.objectives.filter((o) => o.strategic);
   for (const o of strategic) if (o.owner >= 0 && !o.contested) counts.set(o.owner, (counts.get(o.owner) ?? 0) + 1);
