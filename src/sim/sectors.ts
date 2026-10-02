@@ -2,7 +2,7 @@ import { AI, FRONTLINE } from './config';
 import { hostileMask } from './spatial';
 import { crossings, defensivePosition, firstCrossing, lineSlot, nearestFeature, threatCentre, unitDepthRank } from './terrainai';
 import { frontAnchor } from './frontai';
-import { planPincer, runOperation, siegeRing } from './doctrine';
+import { maneuvering, planPincer, resetOperation, runOperation, siegeRing } from './doctrine';
 import { bridgeSiteFor } from './engineering';
 import { frontSegments, OPS, spreadAlong, planOperations } from './operations';
 import type { Faction, Objective, Sector, Unit } from './types';
@@ -143,11 +143,12 @@ export function thinkSectors(world: World, f: Faction): void {
       s.advancing = true;
       s.rally = lerpV(hq, world.cityOf(f.id).exit, 1.5);
       for (const u of units) if (u.behavior === 'rally') u.behavior = 'advance';
+      if (s.opPhase !== '' || units.some((u) => u.opRole === 'maneuver' || u.opRole === 'siege' || u.opRole === 'infiltrate')) resetOperation(s, units);
       planFront(world, f, s, units, true);
       continue;
     }
     // Strategy changes slowly: a sector keeps its objective at least 60 s (user: AI was too fast).
-    if (!s.manualTarget && world.time - s.lastRetarget > 60) {
+    if (!s.manualTarget && !maneuvering(s) && world.time - s.lastRetarget > 60) {
       const t = nextTarget(world, f, s);
       if (dist(t.pos, s.targetPos) > 1 || s.reason === 'reason.defendCity') {
         s.targetPos = { ...t.pos };

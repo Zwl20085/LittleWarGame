@@ -1,6 +1,7 @@
 import { cancelAir, requestAir } from './air';
 import { cancelOrder } from './production';
 import type { Match } from './sim';
+import { resetOperation } from './doctrine';
 import type { OperationKind, Posture, Unit } from './types';
 import type { V2 } from './vec';
 
@@ -129,10 +130,12 @@ function apply(match: Match, env: CommandEnvelope): CommandOutcome {
       f.sectors[c.sectorId].posture = c.posture;
       return OK;
     case 'setOperation': {
-      const s = f.sectors[c.sectorId];
+      const s = Number.isInteger(c.sectorId) && c.sectorId >= 0 ? f.sectors[c.sectorId] : undefined;
       if (!s || (c.op !== null && !OPERATIONS.includes(c.op))) return fail('BAD_VALUE');
       s.opLocked = c.op !== null;
       if (c.op !== null) s.op = c.op;
+      // Start the new plan from scratch on the group's next think.
+      resetOperation(s, [...w.units.values()].filter((u) => u.owner === f.id && u.sectorId === s.id && u.hp > 0));
       return OK;
     }
     case 'setSectorTarget': {
@@ -181,6 +184,9 @@ function apply(match: Match, env: CommandEnvelope): CommandOutcome {
           }
         }
         u.behavior = 'rally';
+        u.opRole = 'line';
+        u.opTarget = null;
+        u.opObjective = null;
       }
       return OK;
     }

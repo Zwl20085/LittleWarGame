@@ -94,7 +94,7 @@ export function chooseOperation(world: World, f: Faction, s: Sector, units: Unit
 export function planPincer(world: World, f: Faction, groups: Unit[][]): void {
   const left = f.sectors.find((s) => s.key === 'left');
   const right = f.sectors.find((s) => s.key === 'right');
-  if (!left || !right || left.opLocked || right.opLocked) return;
+  if (!left || !right || left.opLocked || right.opLocked || left.manualTarget || right.manualTarget) return;
   if (left.op === 'siege' || right.op === 'siege') return;
   const mob = (s: Sector): number => (groups[s.id] ?? []).filter((u) => MOBILE.has(u.def.id)).length;
   if (mob(left) < 3 || mob(right) < 3) return;
@@ -119,7 +119,7 @@ export function runOperation(world: World, f: Faction, s: Sector, units: Unit[])
   const key = `${Math.round(s.targetPos.x)},${Math.round(s.targetPos.z)}`;
   let st = ops.get(s);
   // Re-plan when the objective changes, or (unlocked) once the current operation has run its course.
-  if (!st || st.key !== key || (!s.opLocked && s.opPhase === '' && world.time - st.startedAt > DOCTRINE.rethinkS)) {
+  if (!st || st.key !== key || (s.opPhase === '' && world.time - st.startedAt > DOCTRINE.rethinkS)) {
     releaseAll(units);
     if (!s.opLocked && s.op !== 'pincer') s.op = chooseOperation(world, f, s, units);
     st = { key, startedAt: world.time, phaseAt: world.time, side: 1, initial: 0 };
@@ -184,7 +184,7 @@ function launch(world: World, f: Faction, s: Sector, units: Unit[], st: OpState)
     const group = pool.filter((u) => MOBILE.has(u.def.id) || u.def.id === 'infantry')
       .sort((a, b) => Number(MOBILE.has(b.def.id)) - Number(MOBILE.has(a.def.id)) || a.id - b.id).slice(0, want);
     if (group.length < DOCTRINE.minManeuver) {
-      s.op = 'frontal';
+      endOp(world, s, st, units);
       return;
     }
     for (const u of group) u.opRole = 'maneuver';
@@ -194,7 +194,7 @@ function launch(world: World, f: Faction, s: Sector, units: Unit[], st: OpState)
     const n = Math.min(DOCTRINE.maxInfiltrators, Math.max(3, Math.round(units.length * DOCTRINE.infiltrateShare)));
     const team = pool.filter((u) => INFIL.has(u.def.id) && u.hp > u.def.maxHp * 0.7).sort((a, b) => a.id - b.id).slice(0, n);
     if (team.length < 3) {
-      s.op = 'frontal';
+      endOp(world, s, st, units);
       return;
     }
     for (const u of team) u.opRole = 'infiltrate';
@@ -225,7 +225,7 @@ function stepManeuver(world: World, f: Faction, s: Sector, units: Unit[], st: Op
   const wp = flankWaypoint(world, s, from, st.side);
   s.opRoute = [from, wp, s.targetPos];
   if (group.length === 0) {
-    s.op = 'frontal';
+    endOp(world, s, st, units);
     return;
   }
   if (s.opPhase === 'form') {
@@ -244,11 +244,7 @@ function stepManeuver(world: World, f: Faction, s: Sector, units: Unit[], st: Op
   const left = group.reduce((a, u) => a + valueOf(u), 0);
   const won = world.objectives.some((o) => o.id === s.targetObjective && o.owner === f.id);
   if (won) recordOp(world.stats, `won:${s.op}`);
-  if (won || left < st.initial * 0.3 || (s.opPhase === 'assault' && world.time - st.phaseAt > DOCTRINE.assaultTimeoutS)) {
-    releaseAll(units);
-    s.op = s.opLocked ? s.op : 'frontal';
-    setPhase(world, s, st, '');
-  }
+  if (won || left < st.initial * 0.3 || (s.opPhase === 'assault' && world.time - st.phaseAt > DOCTRINE.assaultTimeoutS)) endOp(world, s, st, units);
 }
 
 function stepInfiltrate(world: World, f: Faction, s: Sector, units: Unit[], st: OpState, from: V2): void {
@@ -257,17 +253,14 @@ function stepInfiltrate(world: World, f: Faction, s: Sector, units: Unit[], st: 
   const gap = (cells.length ? weakestPoint(world, f.id, cells.filter((c) => dist(c, from) < 700)) : null) ?? from;
   s.opRoute = [from, gap, s.targetPos];
   if (team.length === 0) {
-    s.op = 'frontal';
+    endOp(world, s, st, units);
     return;
   }
   setPhase(world, s, st, 'move');
   for (const u of team) u.opTarget = dist(u.pos, gap) > 60 && dist(u.pos, s.targetPos) > dist(gap, s.targetPos) ? gap : s.targetPos;
   const won = world.objectives.some((o) => o.id === s.targetObjective && o.owner === f.id);
   if (won) recordOp(world.stats, 'won:infiltrate');
-  if (won || world.time - st.startedAt > DOCTRINE.assaultTimeoutS + 120) {
-    releaseAll(units);
-    s.op = s.opLocked ? s.op : 'frontal';
-  }
+  if (won || world.time - st.startedAt > DOCTRINE.assaultTimeoutS + 120) endOp(world, s, st, units);
 }
 
 /** Ring of positions (arc facing our side) around the besieged place. */
@@ -290,7 +283,20 @@ function stepSiege(world: World, f: Faction, s: Sector, units: Unit[], st: OpSta
   const mine = units.reduce((a, u) => a + valueOf(u), 0) + 1;
   const theirs = enemyValueNear(world, f.id, s.targetPos, 260);
   const elapsed = world.time - st.startedAt;
-  if (s.opPhase === 'form' && units.some((u) => dist(u.pos, ring[4]) < 260)) setPhase(world, s, st, 'dig');
+  const taken = world.objectives.some((o) => o.id === s.targetObjective && o.owner === f.id);
+  if (taken) {
+    recordOp(world.stats, 'won:siege');
+    endOp(world, s, st, units);
+    return;
+  }
+  if (s.opPhase === 'form') {
+    if (units.some((u) => dist(u.pos, ring[4]) < 260)) setPhase(world, s, st, 'dig');
+    else if (world.time - st.phaseAt > DOCTRINE.formTimeoutS) {
+      // Nobody can reach the ring (river, cut off, group spent): give the siege up.
+      endOp(world, s, st, units);
+      return;
+    }
+  }
   if (s.opPhase === 'dig') {
     // Lay trench lines along the ring facing the place; diggers come from the line itself.
     // One trench at a time so the diggers concentrate; centre of the arc first, then outward.
@@ -307,10 +313,25 @@ function stepSiege(world: World, f: Faction, s: Sector, units: Unit[], st: OpSta
       recordOp(world.stats, 'siegeAssault');
     }
   }
-  const taken = world.objectives.some((o) => o.id === s.targetObjective && o.owner === f.id);
-  if (taken && s.opPhase !== '') recordOp(world.stats, 'won:siege');
-  if (s.opPhase === 'assault' && (taken || world.time - st.phaseAt > DOCTRINE.assaultTimeoutS)) {
-    s.op = s.opLocked ? s.op : 'frontal';
-    setPhase(world, s, st, '');
-  }
+  if (s.opPhase === 'assault' && world.time - st.phaseAt > DOCTRINE.assaultTimeoutS) endOp(world, s, st, units);
+}
+
+/** Finish this attempt: release the roles; an unlocked group falls back to frontal. */
+function endOp(world: World, s: Sector, st: OpState, units: Unit[]): void {
+  releaseAll(units);
+  if (!s.opLocked) s.op = 'frontal';
+  setPhase(world, s, st, '');
+}
+
+/** Drop any running operation of a group (player re-plan, home defence, regroup). */
+export function resetOperation(s: Sector, units: Unit[]): void {
+  ops.delete(s);
+  releaseAll(units);
+  s.opPhase = '';
+  s.opRoute = [];
+}
+
+/** Is this group in the middle of a flank / pincer (its target must not change under it)? */
+export function maneuvering(s: Sector): boolean {
+  return (s.op === 'pincer' || s.op === 'flank') && s.opPhase !== '';
 }

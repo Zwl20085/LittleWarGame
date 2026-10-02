@@ -21,6 +21,9 @@ export const WORKS = {
 
 type LineKind = Extract<FortKind, 'trench' | 'sandbag'>;
 
+/** Line-work pacing per faction (separate from the field-cover builder's budget). */
+const lineWorksAt = new WeakMap<Faction, number>();
+
 /** Distance from p to segment ab. */
 export function segDist(p: V2, a: V2, b: V2): number {
   const vx = b.x - a.x;
@@ -47,7 +50,7 @@ function newLine(world: World, owner: number, kind: LineKind, c: V2, facing: num
 
 /** Pay for and register a line work if the faction's works budget allows. */
 export function startLine(world: World, f: Faction, kind: LineKind, c: V2, facing: number): Fort | null {
-  if (world.time - f.lastWorksAt < WORKS.startEverySeconds) return null;
+  if (world.time - (lineWorksAt.get(f) ?? -1e9) < WORKS.startEverySeconds) return null;
   const fort = newLine(world, f.id, kind, c, facing);
   if (!fort) return null;
   // Digging is labour: paid in manpower (P), not munitions.
@@ -55,7 +58,7 @@ export function startLine(world: World, f: Faction, kind: LineKind, c: V2, facin
   const cost = WORKS[kind].costP * k;
   if (f.p < cost || !trySpend(f, cost, 0).ok) return null;
   world.forts.push(fort);
-  f.lastWorksAt = world.time;
+  lineWorksAt.set(f, world.time);
   return fort;
 }
 
