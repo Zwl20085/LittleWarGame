@@ -106,7 +106,7 @@ function nextTarget(world: World, f: Faction, s: Sector): { pos: V2; obj: Object
     const hq = world.hqPos(e.id);
     const d = dist(hq, from);
     const enemy = knownEnemyStrength(world, f.id, hq, 320);
-    const score = 1.2 - d / 1400 - (enemy / mine) * 0.8 - (taken.has(`hq:${e.id}`) ? 0.6 : 0);
+    const score = 1.0 - d / 1400 - (enemy / mine) * 0.8 - (taken.has(`hq:${e.id}`) ? 0.6 : 0);
     if (score > bestScore) {
       bestScore = score;
       bestCity = e.id;

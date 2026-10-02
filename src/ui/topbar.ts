@@ -115,6 +115,7 @@ export class TopBar {
     for (const fac of w.factions) {
       const row = this.resolveWrap.querySelector(`[data-f="${fac.id}"]`) as HTMLElement;
       const value = resolveOn ? fac.resolve : held[fac.id];
+      // Territory bar: full at half of all settlements (a dominant side), so small shares stay visible.
       const frac = Math.max(0, resolveOn ? fac.resolve / initial : Math.min(1, (held[fac.id] / total) * 2));
       (row.querySelector('.fill') as HTMLElement).style.transform = `scaleX(${frac})`;
       setText(row.querySelector('.num') as HTMLElement, fac.alive ? String(Math.round(value)) : '✕');

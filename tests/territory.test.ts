@@ -15,6 +15,14 @@ describe('territory', () => {
     expect(w.objectives.some((o) => o.strategic)).toBe(true);
     for (const f of w.factions) expect(w.objectives.some((o) => o.owner === f.id)).toBe(true);
   });
+  it('no resolve: a side with zero resolve stays in the war (only losing the capital eliminates)', () => {
+    const f = w.factions[1];
+    const before = f.resolve;
+    f.resolve = 0;
+    for (let i = 0; i < 40; i++) step(m);
+    expect(f.alive).toBe(true);
+    f.resolve = before;
+  });
   it('capturing a town adds production slots', () => {
     const f = w.factions[0];
     const before = slotsFor(w, f, 'barracks');
