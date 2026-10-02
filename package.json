@@ -1,0 +1,54 @@
+{
+  "name": "little-war-game",
+  "private": true,
+  "version": "0.4.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "app": "npm run build && electron .",
+    "dist:win": "npm run build && electron-builder --win portable nsis"
+  },
+  "dependencies": {
+    "three": "^0.169.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.43",
+    "@types/three": "^0.169.0",
+    "electron": "^33.4.11",
+    "electron-builder": "^25.1.8",
+    "playwright-core": "1.48",
+    "typescript": "5.6",
+    "vite": "5.4",
+    "vitest": "2.1"
+  },
+  "description": "LITTLE WAR - a WWII real-time battle diorama with procedurally generated fronts",
+  "author": "WentaoZhang",
+  "main": "electron/main.cjs",
+  "build": {
+    "appId": "io.github.zwl20085.littlewar",
+    "productName": "Little War",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**",
+      "electron/**",
+      "package.json"
+    ],
+    "win": {
+      "icon": "build/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "LittleWar-${version}-setup.${ext}"
+    },
+    "portable": {
+      "artifactName": "LittleWar-${version}-portable.exe"
+    }
+  }
+}

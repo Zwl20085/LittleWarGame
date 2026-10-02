@@ -1,0 +1,19 @@
+node_modules/
+dist/
+coverage/
+
+# Promo/trailer media (generated)
+media/
+trailer/node_modules/
+trailer/out/
+.prof/
+
+# Desktop builds (electron-builder)
+release/
+
+# Local Claude Code settings and project-local third-party skills
+.claude/
+
+# Trailer footage (recorded from the game; generated)
+trailer/public/clips/
+trailer/public/sfx/

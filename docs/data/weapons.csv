@@ -1,0 +1,13 @@
+id,label_zh,fire_mode,range_m,min_range_m,interval_seconds,damage,penetration,accuracy,blast_radius_m,suppression,can_fire_moving,ammo_cost,muzzle_speed_mps,min_elevation_deg,max_elevation_deg,air_range_m,air_damage
+rifle,步枪班火力,hitscan,110,0,2,36,8,0.65,0,5,true,0.010,0,0,0,0,0
+recon_rifle,侦察班火力,hitscan,100,0,2,28,8,0.65,0,4,true,0.010,0,0,0,0,0
+engineer_rifle,工兵班火力,hitscan,90,0,2,28,8,0.60,0,4,true,0.010,0,0,0,0,0
+mg,架设机枪,hitscan,170,0,1.2,72,10,0.75,0,18,false,0.014,0,0,0,0,0
+coax_mg,同轴机枪,hitscan,100,0,1.8,28,8,0.65,0,6,true,0.010,0,0,0,0,0
+at_cannon,反坦克炮,direct_projectile,240,15,4.5,900,140,0.72,3,10,false,0.030,180,-8,20,0,0
+light_cannon,轻坦主炮,direct_projectile,190,0,3.5,75,60,0.70,4,8,true,0.030,160,-8,20,0,0
+medium_cannon,中坦主炮,direct_projectile,220,0,5,115,100,0.72,6,12,true,0.035,180,-8,20,0,0
+heavy_cannon,重坦主炮,direct_projectile,250,0,6,150,145,0.74,7,16,true,0.040,200,-8,20,0,0
+mortar_shell,迫击炮弹,ballistic,280,60,6,70,20,0,8,28,false,0.045,62,45,85,0,0
+howitzer_shell,榴弹炮弹,ballistic,460,120,14,125,35,0,12,38,false,0.080,100,4,75,0,0
+aa_shell,防空炮弹,hitscan,210,0,0.8,20,25,0.65,2,3,false,0.009,0,0,85,320,26
