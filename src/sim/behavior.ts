@@ -1,5 +1,6 @@
 import { selectTarget, hasIndirectSolution } from './combat';
 import { thinkGarrison, thinkOccupy } from './command';
+import { dig, openWork } from './works';
 import { FORT } from './config';
 import { moveTo, stop } from './movement';
 import { lerpV } from './sectors';
@@ -131,6 +132,9 @@ export function thinkUnit(world: World, u: Unit): void {
   if (u.spearhead && thinkSpearhead(world, u)) return;
   if (u.opRole === 'garrison' && thinkGarrison(world, u)) return;
   if (u.opRole === 'occupy' && thinkOccupy(world, u)) return;
+  if (u.opRole === 'maneuver' && thinkManeuver(world, u)) return;
+  if (u.opRole === 'infiltrate' && thinkInfiltrator(world, u)) return;
+  if (u.opRole === 'siege' && thinkSiegeParty(world, u, s)) return;
   if (u.opRole === 'raid' && thinkOpRaid(world, u)) return;
   if (u.opRole === 'rearguard' && thinkRearGuard(world, u)) return;
   if ((u.def.id === 'recon' || u.def.id === 'light_tank') && thinkRaid(world, u)) return;
@@ -164,6 +168,7 @@ function thinkAssault(world: World, u: Unit, s: Sector): void {
   const hq = world.hqPos(u.owner);
   selectTarget(world, u, s.targetPos);
   const t = world.unitAlive(u.targetId);
+  if (siegeDig(world, u, s, t)) return;
   const atObjective = dist(u.pos, s.targetPos) < 30;
   const holdish = s.posture === 'hold' || s.posture === 'fortify';
   const tanks = u.def.kind === 'vehicle';
@@ -284,9 +289,18 @@ function thinkRecon(world: World, u: Unit, s: Sector): void {
   u.status = 'status.observing';
 }
 
+/** Siege: riflemen and engineers dig the trench line at their ring position unless the enemy is close. */
+function siegeDig(world: World, u: Unit, s: Sector, t: Unit | null): boolean {
+  if (s.op !== 'siege' || s.opPhase !== 'dig' || u.def.kind !== 'infantry' || u.moraleState !== 'normal') return false;
+  if (t && dist(t.pos, u.pos) < 150) return false;
+  const work = openWork(world, u.owner, objectivePoint(u, s), 90);
+  return !!work && dig(u, work, (p) => moveTo(world, u, p), () => stop(u));
+}
+
 /** Engineers build field cover near held objectives when posture is fortify/hold. Returns true if busy. */
 function thinkEngineer(world: World, u: Unit, s: Sector): boolean {
   if (s.bridgeSite && thinkBridgeBuilder(world, u, s, s.bridgeSite)) return true;
+  if (siegeDig(world, u, s, world.unitAlive(u.targetId))) return true;
   if (s.posture !== 'fortify' && s.posture !== 'hold') return false;
   const obj = world.objectives.find((o) => o.id === s.targetObjective);
   if (!obj || obj.owner !== u.owner) return false;
@@ -476,6 +490,50 @@ function thinkSpearhead(world: World, u: Unit): boolean {
   if (u.moraleState === 'pinned') stop(u);
   else moveTo(world, u, { x: pos.x + off.x, z: pos.z + off.z });
   u.status = 'status.spearhead';
+  return true;
+}
+
+/** Flank / pincer manoeuvre group: march to the waypoint, then storm the objective (attack-move). */
+function thinkManeuver(world: World, u: Unit): boolean {
+  if (u.routing || u.manual || !u.opTarget || u.behavior === 'retreat' || u.behavior === 'recover') {
+    u.opRole = 'line';
+    return false;
+  }
+  selectTarget(world, u, u.opTarget);
+  const off = spread(u, 30);
+  if (u.moraleState === 'pinned') stop(u);
+  else moveTo(world, u, { x: u.opTarget.x + off.x, z: u.opTarget.z + off.z });
+  u.status = 'status.maneuver';
+  return true;
+}
+
+/** Siege work party: dig the open trench nearest its ring post, otherwise man the post. */
+function thinkSiegeParty(world: World, u: Unit, s: Sector): boolean {
+  if (u.routing || u.manual || !u.opTarget || s.op !== 'siege') {
+    u.opRole = 'line';
+    return false;
+  }
+  selectTarget(world, u, s.targetPos);
+  const t = world.unitAlive(u.targetId);
+  const close = !!t && dist(t.pos, u.pos) < 150;
+  const work = close || u.moraleState !== 'normal' ? null : openWork(world, u.owner, u.opTarget, 720);
+  if (work && dig(u, work, (p) => moveTo(world, u, p), () => stop(u))) return true;
+  if (dist(u.pos, u.opTarget) > 10) moveTo(world, u, u.opTarget);
+  else stop(u);
+  u.status = 'status.siegeLine';
+  return true;
+}
+
+/** Infiltration team: slip through the gap and seize the objective; shoot back but keep moving. */
+function thinkInfiltrator(world: World, u: Unit): boolean {
+  if (u.routing || u.manual || !u.opTarget || u.hp < u.def.maxHp * 0.35) {
+    u.opRole = 'line';
+    return false;
+  }
+  selectTarget(world, u, u.opTarget);
+  const off = spread(u, 18);
+  moveTo(world, u, { x: u.opTarget.x + off.x, z: u.opTarget.z + off.z });
+  u.status = 'status.infiltrating';
   return true;
 }
 

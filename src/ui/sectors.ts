@@ -1,11 +1,12 @@
 import { sectorUnits } from '../sim/sectors';
-import type { Posture } from '../sim/types';
+import type { OperationKind, Posture } from '../sim/types';
 import type { GameContext } from './context';
 import { fmtTime, h } from './dom';
 import { t } from './i18n';
 import { localizeParams } from './labels';
 
 const POSTURES: Posture[] = ['cautious', 'assault', 'hold', 'fortify', 'withdraw'];
+const OPS: OperationKind[] = ['frontal', 'flank', 'pincer', 'infiltrate', 'siege'];
 
 /** Left column: sector tags (always on) + expandable sector detail + short event strip. */
 export class SectorsPanel {
@@ -46,7 +47,7 @@ export class SectorsPanel {
     } else {
       const counts = f.sectors.map((s) => sectorUnits(w, f.id, s.id).length);
       const dirs = f.command?.directives ?? [];
-      const sig = JSON.stringify([f.sectors.map((s) => [s.posture, s.reason, s.reasonParams, s.share, s.manualTarget]), f.mainSector, counts, this.expanded, dirs.map((d) => [d.kind, d.obj, d.assigned])]);
+      const sig = JSON.stringify([f.sectors.map((s) => [s.posture, s.reason, s.reasonParams, s.share, s.manualTarget, s.op, s.opPhase, s.opLocked]), f.mainSector, counts, this.expanded, dirs.map((d) => [d.kind, d.obj, d.assigned])]);
       if (sig !== this.sig) {
         this.sig = sig;
         this.renderCommand();
@@ -90,6 +91,7 @@ export class SectorsPanel {
       h('div', { class: 'row' }, h('b', {}, t(`sector.${s.key}`)), main ? h('span', { class: 'stamp' }, t('sector.main')) : null, h('span', { class: 'share' }, `${Math.round(s.share * 100)}%`)),
       h('div', { class: 'row small' }, h('span', { class: `posture p-${s.posture}` }, t(`posture.${s.posture}`)), h('span', {}, t('sector.units', { n: counts[s.id] }))),
       h('div', { class: 'reason' }, t(s.reason, localizeParams(w, s.reasonParams))),
+      h('div', { class: 'op-line small' }, `${t(`op.${s.op}`)}${s.opPhase ? ` · ${t(`phase.${s.opPhase}`)}` : ''}${s.opLocked ? ' 🔒' : ''}`),
       ));
     }
   }
@@ -108,9 +110,16 @@ export class SectorsPanel {
       next[id] = Math.max(0, next[id] + d);
       this.ctx.issue({ type: 'setShares', shares: next });
     };
+    // Battle doctrine: AUTO (AI picks) or a locked operation.
+    const obtns = [
+      h('button', { class: `btn ${!s.opLocked ? 'on' : ''}`, title: t('op.autoTip'), onclick: () => this.ctx.issue({ type: 'setOperation', sectorId: id, op: null }) }, t('op.auto')),
+      ...OPS.map((o) => h('button', { class: `btn ${s.opLocked && s.op === o ? 'on' : ''}`, title: t(`op.${o}Tip`), onclick: () => this.ctx.issue({ type: 'setOperation', sectorId: id, op: o }) }, t(`op.${o}`))),
+    ];
     this.detail.append(
       h('div', { class: 'title' }, t(`sector.${s.key}`)),
       h('div', { class: 'btn-grid' }, ...pbtns),
+      h('div', { class: 'lbl' }, t('op.title')),
+      h('div', { class: 'btn-grid' }, ...obtns),
       h('div', { class: 'row' },
         h('button', { class: 'btn', onclick: () => { this.ctx.mode = { kind: 'sectorTarget', sectorId: id }; } }, t('sector.setTarget')),
         h('button', { class: 'btn', disabled: !s.manualTarget, onclick: () => this.ctx.issue({ type: 'setSectorTarget', sectorId: id, pos: null }) }, t('sector.clearTarget'))),

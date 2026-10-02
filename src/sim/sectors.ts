@@ -1,7 +1,8 @@
-import { AI } from './config';
+import { AI, FRONTLINE } from './config';
 import { hostileMask } from './spatial';
 import { crossings, defensivePosition, firstCrossing, lineSlot, nearestFeature, threatCentre, unitDepthRank } from './terrainai';
 import { frontAnchor } from './frontai';
+import { planPincer, runOperation, siegeRing } from './doctrine';
 import { bridgeSiteFor } from './engineering';
 import { frontSegments, OPS, spreadAlong, planOperations } from './operations';
 import type { Faction, Objective, Sector, Unit } from './types';
@@ -35,6 +36,7 @@ export function initSectors(world: World, f: Faction): void {
       targetCity: null, rally, reason: 'reason.capturePoint', reasonParams: { point: target.id }, lastRetarget: -999, postureSince: 0,
       manualTarget: false, gatheredSince: -1, advancing: false,
       front: { ...target.pos }, facing: headingTo(city.hq, target.pos), slots: {}, crossing: null, stagedSince: -1, lastSpearhead: -999, mode: 'advance', shelledAt: -999, segment: [], bridgeSite: null, bridgeCheckAt: 0,
+      op: 'frontal', opLocked: false, opRoute: [], opPhase: '',
     };
   });
   f.mainSector = centreIdx;
@@ -128,8 +130,10 @@ export function thinkSectors(world: World, f: Faction): void {
   const segs = frontSegments(world, f, world.frontInfo[f.id]?.cells ?? []);
   f.sectors.forEach((s, i) => (s.segment = segs[i] ?? []));
   planOperations(world, f);
+  const groups = f.sectors.map((s) => sectorUnits(world, f.id, s.id));
+  planPincer(world, f, groups);
   for (const s of f.sectors) {
-    const units = sectorUnits(world, f.id, s.id);
+    const units = groups[s.id] ?? sectorUnits(world, f.id, s.id);
     if (threat > 300 && !s.manualTarget) {
       s.targetPos = { ...hq };
       s.targetObjective = null;
@@ -154,6 +158,8 @@ export function thinkSectors(world: World, f: Faction): void {
         s.rally = lerpV(world.cityOf(f.id).exit, s.targetPos, t.city !== null ? 0.5 : 0.35);
       }
     }
+    // Battle doctrine for this group's attack (flank, pincer, infiltration, siege …).
+    runOperation(world, f, s, units);
     // Losing badly near target → pause the push (avoid suicidal trickle). Count the whole sector,
     // including units waiting at the rally point, so the gate cannot deadlock.
     const mine = strengthOf(units);
@@ -292,13 +298,21 @@ function planFront(world: World, f: Faction, s: Sector, units: Unit[], defensive
   const home = world.hqPos(f.id);
   // Spacing doctrine: spread wider once enemy shells land among the group.
   const spacing = world.time - s.shelledAt < OPS.shelledMemorySeconds ? OPS.shelledSpacing : OPS.minSpacing;
-  const segLen = seg.length * 10;
+  const segLen = seg.length * FRONTLINE.cell;
+  const sieging = s.op === 'siege' && (s.opPhase === 'form' || s.opPhase === 'dig') && s.reason !== 'reason.defendCity';
+  const siegeSlots = sieging ? siegeRing(world, f.id, s, Math.max(5, Math.min(24, Math.ceil(liners.length / 2)))) : null;
   for (const [rank, arr] of byRank) {
     // Along the whole front segment when in contact; otherwise a compact line at the objective.
     const perRow = seg.length > 0 ? Math.max(1, Math.floor(segLen / spacing)) : arr.length;
     arr.forEach((u, i) => {
       let p: V2;
-      if (seg.length > 0 && s.reason !== 'reason.defendCity') {
+      if (siegeSlots) {
+        // Siege: dig in along the ring outside the defenders' direct-fire range.
+        const row = Math.floor(i / siegeSlots.length);
+        const base = siegeSlots[i % siegeSlots.length];
+        const hd = headingTo(s.targetPos, base);
+        p = { x: base.x + Math.cos(hd) * (row + rank) * 28, z: base.z + Math.sin(hd) * (row + rank) * 28 };
+      } else if (seg.length > 0 && s.reason !== 'reason.defendCity') {
         const row = Math.floor(i / perRow);
         const inRow = Math.min(perRow, arr.length - row * perRow);
         const base = spreadAlong(seg, inRow)[i % perRow] ?? seg[0];
@@ -345,7 +359,7 @@ function launchSpearhead(world: World, f: Faction, s: Sector, units: Unit[], anc
   if (!target || !tpos) return;
   const pool = units
     .filter((u) => !u.spearhead && !u.manual && !u.routing && u.behavior === 'advance' && u.hp > u.def.maxHp * 0.6
-      && (u.def.kind === 'vehicle' ? u.def.id !== 'supply_truck' : u.def.id === 'infantry' || u.def.id === 'engineer'))
+      && (u.def.kind === 'vehicle' ? u.def.id !== 'supply_truck' : u.def.id === 'infantry' || u.def.id === 'engineer' || u.def.id === 'motor_inf'))
     .sort((a, b) => dist(a.pos, anchor) - dist(b.pos, anchor));
   const size = Math.max(4, Math.round(units.length * 0.3));
   const group = pool.slice(0, size);

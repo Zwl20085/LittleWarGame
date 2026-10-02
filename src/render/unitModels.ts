@@ -163,6 +163,45 @@ function truckGeo(): THREE.BufferGeometry {
   return k.b.build();
 }
 
+/**
+ * Troop-carrying truck (motorized infantry): same chassis as the supply truck, but the tarp
+ * is rolled up behind the cab, bare hoops over the bed and a section seated on the benches —
+ * reads as "loaded with men" from the RTS camera.
+ */
+function troopTruckGeo(): THREE.BufferGeometry {
+  const k = new Kit();
+  const [pc, pt] = paint();
+  const roll = new THREE.Color('#5f6448');
+  k.box(5.6, 0.35, 2.1, 0, 0.9, 0, PAL.steel);
+  k.box(1.6, 1.3, 2.0, 1.8, 1.7, 0, pc, pt);
+  k.box(0.8, 0.8, 1.9, 2.8, 1.4, 0, pc, pt);
+  // Open cargo bed: floor, low side boards and tailboard.
+  k.box(3.4, 0.25, 2.2, -1.0, 1.15, 0, new THREE.Color('#8a7a5e'));
+  for (const side of [-1, 1]) k.box(3.4, 0.45, 0.1, -1.0, 1.45, side * 1.05, pc, pt);
+  k.box(0.1, 0.45, 2.2, -2.68, 1.45, 0, pc, pt);
+  // Tarp rolled up against the cab, bare bows over the bed.
+  k.cyl(0.32, 0.32, 2.25, 8, 0.55, 2.05, 0, roll, 0, Math.PI / 2);
+  const bow = new THREE.TorusGeometry(1.05, 0.045, 3, 8, Math.PI);
+  for (const x of [-0.1, -1.6]) k.geo(bow, trs(x, 1.6, 0, 0, Math.PI / 2, 0), PAL.steel);
+  // Eight riflemen on the benches, facing inward, two rows.
+  const [bc, bt] = uniform();
+  const [hc, ht] = uniform(0.75);
+  for (let i = 0; i < 4; i++) {
+    for (const side of [-1, 1]) {
+      const x = -0.15 - i * 0.78;
+      const z = side * 0.62;
+      k.box(0.34, 0.55, 0.3, x, 1.6, z, bc, bt);
+      k.geo(HEAD, trs(x, 2.0, z * 0.97), PAL.skin);
+      k.geo(HELMET, trs(x, 2.03, z * 0.97), hc, ht);
+    }
+  }
+  // One rifle muzzle sticking up per side.
+  for (const side of [-1, 1]) k.box(0.05, 0.9, 0.05, -1.1, 2.0, side * 0.75, PAL.steel, 0, 0.15 * side);
+  k.box(0.1, 0.5, 2.02, 1.0, 1.9, 0, ZERO, 1);
+  for (const x of [2.2, -0.6, -1.9]) for (const side of [-1, 1]) k.cyl(0.5, 0.5, 0.35, 10, x, 0.5, side * 1.05, PAL.track, 0, Math.PI / 2);
+  return k.b.build();
+}
+
 /** Crew-served weapon, in turret-local space (it traverses as a whole). */
 function crewGunGeo(id: string): THREE.BufferGeometry {
   const k = new Kit();
@@ -212,7 +251,7 @@ function bunkerGeo(): THREE.BufferGeometry {
 
 const cache = new Map<string, THREE.BufferGeometry>();
 
-/** Geometry by key: soldier | soldierKneel | soldierRecon | hull:<tank> | turret:<tank> | truck | gun:<id> | bunker. */
+/** Geometry by key: soldier | soldierKneel | soldierRecon | hull:<tank> | turret:<tank> | truck | troopTruck | gun:<id> | bunker. */
 export function unitGeometry(key: string): THREE.BufferGeometry {
   let g = cache.get(key);
   if (g) return g;
@@ -224,6 +263,7 @@ export function unitGeometry(key: string): THREE.BufferGeometry {
     case 'hull': g = tankHull(b); break;
     case 'turret': g = tankTurret(b); break;
     case 'truck': g = truckGeo(); break;
+    case 'troopTruck': g = troopTruckGeo(); break;
     case 'gun': g = crewGunGeo(b); break;
     case 'bunker': g = bunkerGeo(); break;
     default: throw new Error(`unknown unit geometry ${key}`);

@@ -8,6 +8,8 @@ const SVG_NS = 'http://www.w3.org/2000/svg';
 /** NATO-flavoured frame symbol (matches the 3D counters in render/icons.ts). viewBox 0 0 36 24. */
 const NATO: Record<string, string> = {
   infantry: '<path d="M3 3L33 21M3 21L33 3"/>',
+  // NATO motorized infantry: the infantry cross over two wheels.
+  motor_inf: '<path d="M3 3L33 15M3 15L33 3"/><circle cx="12" cy="19" r="2.5" class="f"/><circle cx="24" cy="19" r="2.5" class="f"/>',
   recon: '<path d="M3 21L33 3"/>',
   mg: '<path d="M3 3L33 21M3 21L33 3"/><circle cx="18" cy="5" r="2" class="f"/>',
   engineer: '<path d="M8 18V8H28V18M18 8V18"/>',
@@ -65,7 +67,8 @@ export function natoSymbol(unitId: string): SVGSVGElement {
 }
 
 export function silhouette(unitId: string): SVGSVGElement {
-  return svg('0 0 64 26', 'sil', SIL[unitId] ?? '');
+  // Motorized rifles travel by truck: reuse the truck silhouette.
+  return svg('0 0 64 26', 'sil', SIL[unitId] ?? (unitId === 'motor_inf' ? SIL.supply_truck : ''));
 }
 
 function svg(viewBox: string, cls: string, inner: string): SVGSVGElement {

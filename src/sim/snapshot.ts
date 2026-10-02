@@ -74,7 +74,7 @@ export function makeSnapshot(match: Match, cur: SnapshotCursor, observer: number
     buf[o + F.heading] = u.heading; buf[o + F.turret] = u.turret; buf[o + F.hp] = u.hp; buf[o + F.morale] = u.morale;
     buf[o + F.supp] = u.suppression; buf[o + F.ammo] = u.ammo; buf[o + F.supplyRatio] = u.supplyRatio;
     buf[o + F.setup] = SETUP.indexOf(u.setup);
-    buf[o + F.flags] = (u.moving ? 1 : 0) | (u.routing ? 2 : 0) | (u.wavering ? 4 : 0) | (u.supplied ? 8 : 0) | (u.fixed ? 16 : 0) | (u.pathFailed ? 32 : 0);
+    buf[o + F.flags] = (u.moving ? 1 : 0) | (u.routing ? 2 : 0) | (u.wavering ? 4 : 0) | (u.supplied ? 8 : 0) | (u.fixed ? 16 : 0) | (u.pathFailed ? 32 : 0) | (u.mounted ? 64 : 0);
     buf[o + F.moraleState] = MORALE.indexOf(u.moraleState); buf[o + F.behavior] = BEHAVIOR.indexOf(u.behavior);
     buf[o + F.target] = u.targetId ?? -1; buf[o + F.sector] = u.sectorId; buf[o + F.cargo] = u.cargo;
     buf[o + F.truck] = TRUCK.indexOf(u.truckState); buf[o + F.fort] = u.fortId ?? -1; buf[o + F.cover] = u.cover;
@@ -141,7 +141,7 @@ export function applySnapshot(match: Match, snap: Snapshot, observer: number): v
     u.suppression = buf[o + F.supp]; u.ammo = buf[o + F.ammo]; u.supplyRatio = buf[o + F.supplyRatio];
     u.setup = SETUP[buf[o + F.setup]] ?? 'packed';
     const fl = buf[o + F.flags];
-    u.moving = (fl & 1) !== 0; u.routing = (fl & 2) !== 0; u.wavering = (fl & 4) !== 0; u.supplied = (fl & 8) !== 0; u.pathFailed = (fl & 32) !== 0;
+    u.moving = (fl & 1) !== 0; u.routing = (fl & 2) !== 0; u.wavering = (fl & 4) !== 0; u.supplied = (fl & 8) !== 0; u.pathFailed = (fl & 32) !== 0; u.mounted = (fl & 64) !== 0;
     u.moraleState = MORALE[buf[o + F.moraleState]] ?? 'normal'; u.behavior = BEHAVIOR[buf[o + F.behavior]] ?? 'advance';
     u.targetId = buf[o + F.target] < 0 ? null : buf[o + F.target]; u.sectorId = buf[o + F.sector]; u.cargo = buf[o + F.cargo];
     u.truckState = TRUCK[buf[o + F.truck]] ?? 'load'; u.fortId = buf[o + F.fort] < 0 ? null : buf[o + F.fort];

@@ -32,8 +32,8 @@
     "map_4ffa_dimensions_m": [1600, 1600],
     "map_height_range_m": [0, 80],
     "sector_reinforcement_shares": [0.45, 0.35, 0.2],
-    "production_unit_weights": {"infantry": 35, "mg": 8, "recon": 6, "engineer": 4, "at_gun": 10, "mortar": 8, "light_tank": 8, "medium_tank": 10, "heavy_tank": 3, "howitzer": 5, "aa": 2, "supply_truck": 1},
-    "production_unit_caps": {"infantry": 20, "mg": 4, "recon": 3, "engineer": 3, "at_gun": 6, "mortar": 4, "light_tank": 4, "medium_tank": 5, "heavy_tank": 3, "howitzer": 3, "aa": 4, "supply_truck": 3}
+    "production_unit_weights": {"infantry": 35, "mg": 8, "recon": 6, "engineer": 4, "motor_inf": 6, "at_gun": 10, "mortar": 6, "light_tank": 8, "medium_tank": 10, "heavy_tank": 3, "howitzer": 2.5, "aa": 2, "supply_truck": 1},
+    "production_unit_caps": {"infantry": 20, "mg": 4, "recon": 3, "engineer": 3, "motor_inf": 6, "at_gun": 6, "mortar": 4, "light_tank": 4, "medium_tank": 5, "heavy_tank": 3, "howitzer": 2, "aa": 4, "supply_truck": 3}
   },
   "simulation": {
     "tick_hz": 20,
@@ -82,13 +82,13 @@
   "territory": {
     "comment": "User decision 2026-10-02: income and production grow with held settlements; values are per army_scale=1 and get multiplied by army_scale.",
     "capital_income_share": 0.3,
-    "income_p_per_min": {"village": 14, "town": 45, "city": 80, "point": 15},
-    "income_m_per_min": {"village": 8, "town": 32, "city": 70, "point": 12},
+    "income_p_per_min": {"village": 10, "town": 30, "city": 50, "point": 15},
+    "income_m_per_min": {"village": 4, "town": 40, "city": 95, "point": 12},
     "capture_seconds": {"village": 15, "town": 30, "city": 45, "point": 15},
     "capital_slots": {"barracks": 0.4, "vehicle": 0.2, "support": 0.2},
     "place_slots": {"village": {}, "point": {}, "town": {"barracks": 0.2}, "city": {"barracks": 0.3, "vehicle": 0.15, "support": 0.15}},
     "capital_pop_share": 0.35,
-    "pop_per_place": {"village": 0.8, "town": 2, "city": 4, "point": 1},
+    "pop_per_place": {"village": 0.4, "town": 2, "city": 4, "point": 1},
     "resolve_loss_on_capture": {"village": 1.5, "town": 4, "city": 10, "point": 2},
     "depot_efficiency_falloff_m": 2600,
     "depot_min_efficiency": 0.35,

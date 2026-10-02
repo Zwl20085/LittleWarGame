@@ -89,6 +89,12 @@ export function unitIconCanvas(unitType: string, color: string, roman: string, g
   switch (unitType) {
     case 'infantry':
       line(g, L, T, R, B); line(g, L, B, R, T); break;
+    case 'motor_inf':
+      // Motorized (wheeled) infantry: the infantry cross over a pair of road wheels.
+      line(g, L, T, R, B - 12); line(g, L, B - 12, R, T);
+      g.beginPath(); g.arc(cx - 14, B - 4, 6, 0, Math.PI * 2); g.fill();
+      g.beginPath(); g.arc(cx + 14, B - 4, 6, 0, Math.PI * 2); g.fill();
+      break;
     case 'recon':
       line(g, L, B, R, T); break;
     case 'engineer':

@@ -64,13 +64,13 @@ export const TERRAIN_MOVE = {
 } as const;
 
 export const FRONTLINE = {
-  cell: 10,
+  cell: 16, // 10 → 16 m (bigger maps): 2.5× fewer cells, still finer than a squad footprint
   radiusGround: 90,
   radiusCity: 180,
   radiusPoint: 60,
   weights: {
     infantry: 1, recon: 0.6, mg: 0.8, at_gun: 0.5, light_tank: 1.2, medium_tank: 1.6,
-    heavy_tank: 2.0, engineer: 0.7, supply_truck: 0.2, mortar: 0, howitzer: 0, aa: 0,
+    heavy_tank: 2.0, engineer: 0.7, motor_inf: 1, supply_truck: 0.2, mortar: 0, howitzer: 0, aa: 0,
   } as Record<string, number>,
   cityWeight: 2.5,
   pointWeight: 0.5,

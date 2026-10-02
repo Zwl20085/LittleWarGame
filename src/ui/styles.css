@@ -157,6 +157,7 @@ svg.brass-gauge .needle { transform-origin: 30px 31px; transition: transform 400
 .left { position: absolute; top: calc(80px * var(--ui)); left: 10px; width: calc(232px * var(--ui)); display: flex; flex-direction: column; gap: 8px; pointer-events: none; perspective: 900px; }
 .left > * { pointer-events: auto; }
 .sector-tags { display: flex; flex-direction: column; gap: 8px; }
+.op-line { color: var(--olive); font-weight: 600; margin-top: 2px; }
 .hq-card { padding: 6px 10px 8px; margin-bottom: 8px; display: flex; flex-direction: column; gap: 2px; }
 .hq-title { font-family: var(--font-stencil); font-weight: 800; letter-spacing: 0.08em; font-size: var(--fs-s); color: var(--ink-muted); margin-bottom: 2px; }
 .hq-row { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: baseline; text-align: left; background: none; border: 0; padding: 2px 0; color: var(--ink); cursor: pointer; font-size: var(--fs-s); }

@@ -32,12 +32,14 @@ export interface MatchStats {
   /** attacker type → victim type → { dmg, kills } (all factions pooled). */
   readonly matrix: Record<string, Record<string, { dmg: number; kills: number }>>;
   readonly timeline: TimelinePoint[];
+  /** Operations launched per doctrine and outcome counters (e.g. 'flank', 'siege', 'siegeAssault', 'won:flank'). */
+  readonly ops: Record<string, number>;
 }
 
 export const STATS_SAMPLE_SECONDS = 30;
 
 export function createStats(factions: number): MatchStats {
-  return { byType: Array.from({ length: factions }, () => ({})), matrix: {}, timeline: [] };
+  return { byType: Array.from({ length: factions }, () => ({})), matrix: {}, timeline: [], ops: {} };
 }
 
 function row(s: MatchStats, f: number, type: string): TypeStats {
@@ -48,6 +50,10 @@ function row(s: MatchStats, f: number, type: string): TypeStats {
 
 function blank(): TypeStats {
   return { built: 0, lost: 0, spent: 0, shots: 0, dmgDealt: 0, dmgTaken: 0, kills: 0, killValue: 0, aliveSeconds: 0 };
+}
+
+export function recordOp(s: MatchStats, key: string): void {
+  s.ops[key] = (s.ops[key] ?? 0) + 1;
 }
 
 export function recordBuilt(s: MatchStats, u: Unit): void {

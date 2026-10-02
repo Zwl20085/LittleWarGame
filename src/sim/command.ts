@@ -1,5 +1,6 @@
 import { selectTarget } from './combat';
 import { enemyDistance } from './frontai';
+import { dig, openWork, startLine } from './works';
 import { moveTo, stop } from './movement';
 import { hostileMask } from './spatial';
 import type { Faction, Objective, Unit } from './types';
@@ -17,7 +18,7 @@ export const HQ = {
   everySeconds: 5,
   threatRadius: 340,
   /** Max share of the army's value tied down in garrisons. */
-  garrisonShare: 0.3,
+  garrisonShare: 0.2,
   /** Garrison wants this many × the known threat's value (and at least `minGarrison`). */
   overmatch: 1.3,
   minGarrison: 2,
@@ -55,8 +56,8 @@ export function createHighCommand(): HighCommand {
   return { directives: [], attackBias: {}, threatAt: {}, nextAt: 0 };
 }
 
-const GARRISON_TYPES = new Set(['infantry', 'mg', 'at_gun', 'engineer', 'light_tank', 'medium_tank', 'heavy_tank', 'aa']);
-const OCCUPY_TYPES = new Set(['infantry', 'engineer', 'recon']);
+const GARRISON_TYPES = new Set(['infantry', 'motor_inf', 'mg', 'at_gun', 'engineer', 'light_tank', 'medium_tank', 'heavy_tank', 'aa']);
+const OCCUPY_TYPES = new Set(['infantry', 'motor_inf', 'engineer', 'recon']);
 
 const valueOf = (u: Unit): number => (u.def.costP + u.def.costM) * (u.hp / u.def.maxHp);
 
@@ -90,7 +91,8 @@ export function thinkHighCommand(world: World, f: Faction): void {
     const v = placeValue(world, o);
     const s = strengthNear(world, f.id, o.pos, HQ.threatRadius);
     if (o.owner === f.id) {
-      if (s.theirs > 0) {
+      // Garrisons for towns and cities; the many villages are held by the front line itself.
+      if (s.theirs > 0 && (o.kind === 'town' || o.kind === 'city' || o.kind === 'point')) {
         hc.threatAt[o.id] = world.time;
         dirs.push({ kind: 'defend', obj: o.id, pos: o.pos, priority: v * (1 + s.theirs / (s.mine + 50)), assigned: 0 });
       }
@@ -164,7 +166,9 @@ function assignGarrisons(world: World, f: Faction, defend: Directive[]): void {
       d.assigned = count;
       continue;
     }
-    const pool = mine.filter((u) => freeLine(u) && GARRISON_TYPES.has(u.def.id) && dist(u.pos, d.pos) < HQ.assignRadius)
+    // Groups in the middle of an operation (forming up, digging in, storming) keep their troops.
+    const busy = new Set(f.sectors.filter((s) => s.op !== 'frontal' && s.opPhase !== '').map((s) => s.id));
+    const pool = mine.filter((u) => freeLine(u) && !busy.has(u.sectorId) && GARRISON_TYPES.has(u.def.id) && dist(u.pos, d.pos) < HQ.assignRadius)
       .sort((a, b) => dist(a.pos, d.pos) - dist(b.pos, d.pos));
     for (const u of pool) {
       if ((have >= want && count >= HQ.minGarrison) || tied >= budget) break;
@@ -238,10 +242,27 @@ export function thinkGarrison(world: World, u: Unit): boolean {
   }
   if (foeUnit && bd < o.radius + 40) moveTo(world, u, foeUnit.pos);
   else if (dist(u.pos, u.opTarget) > 12) moveTo(world, u, u.opTarget);
+  else if (u.def.kind === 'infantry' && fortifyPost(world, u, o.pos)) return true;
   else stop(u);
   selectTarget(world, u, foeUnit ? foeUnit.pos : null);
   u.status = 'status.garrison';
   return true;
+}
+
+/** 筑垒防守: a garrison squad at its post stacks a sandbag barricade facing outward. */
+function fortifyPost(world: World, u: Unit, centre: V2): boolean {
+  const post = u.opTarget;
+  if (!post) return false;
+  let work = openWork(world, u.owner, post, 14);
+  if (!work) {
+    const near = world.forts.some((x) => x.owner === u.owner && x.hp > 0 && (x.kind === 'sandbag' || x.kind === 'trench') && dist(x.pos, post) < 14);
+    if (near) return false;
+    work = startLine(world, world.factions[u.owner], 'sandbag', post, headingTo(centre, post));
+    if (!work) return false;
+  }
+  selectTarget(world, u, null);
+  u.status = 'status.fortifying';
+  return dig(u, work, (p) => moveTo(world, u, p), () => stop(u));
 }
 
 /** Occupation detachment: march in, take the place, then rejoin the army group. */
