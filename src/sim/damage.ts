@@ -47,7 +47,7 @@ export function applyDamage(world: World, u: Unit, dmg: number, attackerOwner: n
   u.hp = 0;
   const f = world.factions[u.owner];
   if (!u.fixed && f.alive) {
-    f.resolve = Math.max(0, f.resolve - u.def.population * world.data.rules.victory.destroyed_population_resolve_multiplier);
+    if (world.data.rules.victory.resolve_enabled) f.resolve = Math.max(0, f.resolve - u.def.population * world.data.rules.victory.destroyed_population_resolve_multiplier);
     f.lostUnits++;
   }
   world.emit({ t: 'death', pos: { x: u.pos.x, y: u.y, z: u.pos.z }, vehicle: u.def.kind === 'vehicle', unitType: u.def.id });

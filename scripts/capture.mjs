@@ -15,22 +15,22 @@ mkdirSync(OUT, { recursive: true });
  */
 const SHOTS = {
   overview: { url: '?quick&map=gen&spectate&seed=4242', warm: 300, secs: 9, speed: 2,
-    setup: 'cam.setElevation(58); cam.setZoom(0.42); cam.lookAt(W.terrain.width/2, W.terrain.depth/2);',
+    setup: 'cam.setElevation(58); cam.setZoom(0.32); cam.lookAt(W.terrain.width/2, W.terrain.depth/2);',
     move: 'cam.rotate(-0.0016);' },
-  front: { url: '?quick&map=gen&spectate&seed=4242', warm: 330, secs: 9, speed: 1,
-    setup: 'const h = hotspot(1); cam.lookAt(h.x, h.z); cam.setElevation(36); cam.setZoom(2.4);',
+  front: { url: '?quick&map=gen&spectate&seed=7', warm: 720, secs: 9, speed: 1,
+    setup: 'const h = fights() ?? hotspot(1); cam.lookAt(h.x, h.z); cam.setElevation(30); cam.setZoom(3.2);',
     move: 'cam.rotate(0.0012); cam.zoomBy(1.0006);' },
-  river: { url: '?quick&map=gen&spectate&seed=4242', warm: 300, secs: 9, speed: 1,
-    setup: 'const b = busyBridge(); cam.lookAt(b.x, b.z); cam.setElevation(40); cam.setZoom(2.0);',
+  river: { url: '?quick&map=gen&spectate&seed=4242', warm: 560, secs: 9, speed: 1,
+    setup: 'const b = busyBridge(); cam.lookAt(b.x, b.z); cam.setElevation(36); cam.setZoom(2.8);',
     move: 'cam.rotate(-0.001);' },
-  city: { url: '?quick&map=gen&spectate&seed=4242', warm: 420, secs: 9, speed: 1,
-    setup: 'const h = cityFight(); cam.lookAt(h.x, h.z); cam.setElevation(42); cam.setZoom(1.9);',
+  city: { url: '?quick&map=gen&spectate&seed=4242', warm: 960, secs: 9, speed: 1,
+    setup: 'const h = fights(inTown) ?? cityFight(); cam.lookAt(h.x, h.z); cam.setElevation(38); cam.setZoom(2.8);',
     move: 'cam.rotate(0.0011);' },
-  artillery: { url: '?quick&map=gen&spectate&seed=4242', warm: 480, secs: 9, speed: 1,
-    setup: 'const h = shellHotspot(); cam.lookAt(h.x, h.z); cam.setElevation(34); cam.setZoom(1.5);',
+  artillery: { url: '?quick&map=gen&spectate&seed=4242', warm: 780, secs: 9, speed: 1,
+    setup: 'for (let k = 0; k < 120 && W.projectiles.filter((p) => p.kind === "shell").length < 4; k++) await new Promise((r) => setTimeout(r, 250)); const h = shellHotspot(); cam.lookAt(h.x, h.z); cam.setElevation(28); cam.setZoom(1.7);',
     move: 'cam.rotate(-0.0009);' },
   convoy: { url: '?quick&map=gen&spectate&seed=4242', warm: 260, secs: 9, speed: 1,
-    setup: 'followTruck(); cam.setElevation(48); cam.setZoom(2.2);',
+    setup: 'for (let k = 0; k < 160 && ![...W.units.values()].some((u) => u.def.id === "supply_truck" && u.truckState === "out" && u.speedNow > 1); k++) await new Promise((r) => setTimeout(r, 250)); followTruck(); cam.setElevation(44); cam.setZoom(2.8);',
     move: '' },
   duel1v1: { url: '?quick&map=1v1&spectate&seed=11', warm: 200, secs: 9, speed: 1,
     setup: 'const h = hotspot(1); cam.lookAt(h.x, h.z); cam.setElevation(38); cam.setZoom(2.6);',
@@ -40,11 +40,14 @@ const SHOTS = {
 const PRELUDE = `
   const g = window.__game; const W = g.match.world; const cam = g.ctx.renderer.rig;
   const hostiles = (u, r) => W.spatial.query(u.pos.x, u.pos.z, r).filter((o) => o.hp > 0 && W.isHostile(u.owner, o.owner)).length;
+  // Where the shooting is: units that fired in the last 4 s, scored by nearby shooters of 2+ sides.
+  const fights = (filter) => { const firing = [...W.units.values()].filter((u) => u.hp > 0 && !u.fixed && W.time - u.lastFiredAt < 4 && (!filter || filter(u))); let best = null, bs = 0; for (const u of firing) { const near = firing.filter((o) => Math.hypot(o.pos.x - u.pos.x, o.pos.z - u.pos.z) < 150); const sides = new Set(near.map((o) => o.owner)).size; const s = sides > 1 ? near.length : 0; if (s > bs) { bs = s; best = u; } } return best ? best.pos : null; };
+  const inTown = (u) => W.terrain.groundAt(u.pos.x, u.pos.z) === 3;
   const hotspot = (k) => { let best = null, bs = -1; for (const u of W.units.values()) { if (u.fixed) continue; const s = hostiles(u, 160) * k + W.spatial.query(u.pos.x, u.pos.z, 120).length * 0.2; if (s > bs) { bs = s; best = u; } } return best ? best.pos : { x: W.terrain.width / 2, z: W.terrain.depth / 2 }; };
-  const busyBridge = () => { let best = W.terrain.bridges[0], bs = -1; for (const b of W.terrain.bridges) { const n = W.spatial.query(b.x, b.z, 140).length; if (n > bs) { bs = n; best = b; } } return best; };
+  const busyBridge = () => { let best = W.terrain.bridges[0], bs = -1; for (const b of W.terrain.bridges) { const n = W.spatial.query(b.x, b.z, 120).filter((u) => u.hp > 0 && !u.fixed).length; if (n > bs) { bs = n; best = b; } } return best; };
   const cityFight = () => { let best = null, bs = -1; for (const t of W.map.towns) { if (t.buildings < 60) continue; const n = W.spatial.query(t.x, t.z, t.r + 60).filter((u) => u.hp > 0).length; const owners = new Set(W.spatial.query(t.x, t.z, t.r + 60).map((u) => u.owner)).size; const s = n * owners; if (s > bs) { bs = s; best = t; } } return best ?? hotspot(1); };
   const shellHotspot = () => { const ps = W.projectiles.filter((p) => p.kind === 'shell'); if (!ps.length) return hotspot(1); let sx = 0, sz = 0; for (const p of ps) { sx += p.pos.x; sz += p.pos.z; } return { x: sx / ps.length, z: sz / ps.length }; };
-  const followTruck = () => { const t = [...W.units.values()].find((u) => u.def.id === 'supply_truck' && u.truckState === 'out') ?? [...W.units.values()].find((u) => u.def.id === 'supply_truck'); if (!t) return; cam.follow = () => { const u = W.units.get(t.id); return u ? { x: u.pos.x, y: u.y, z: u.pos.z } : null; }; };
+  const followTruck = () => { const all = [...W.units.values()].filter((u) => u.def.id === 'supply_truck'); const t = all.find((u) => u.truckState === 'out' && u.speedNow > 1) ?? all.find((u) => u.truckState === 'out') ?? all[0]; if (!t) return; cam.follow = () => { const u = W.units.get(t.id); return u ? { x: u.pos.x, y: u.y, z: u.pos.z } : null; }; };
 `;
 
 async function record(page, name, shot) {
@@ -52,7 +55,7 @@ async function record(page, name, shot) {
   await page.waitForFunction(() => window.__game && window.__game.match, null, { timeout: 120000 });
   await page.waitForTimeout(1500);
   await page.evaluate(async (s) => { const g = window.__game; g.ctx.hudHidden = true; await g.fastForward(s.warm, 300000); g.ctx.speed = s.speed; }, shot);
-  await page.evaluate(`(() => { ${PRELUDE} ${shot.setup} })()`);
+  await page.evaluate(`(async () => { ${PRELUDE} ${shot.setup} })()`);
   await page.waitForTimeout(1800); // let the camera settle and effects populate
   const b64 = await page.evaluate(async ({ secs, move, prelude }) => {
     eval(prelude.replace(/const /g, 'var '));

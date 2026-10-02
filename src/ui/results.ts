@@ -15,19 +15,20 @@ export function showResults(root: HTMLElement, world: World, playerId: number, s
   } else {
     headline = t('res.eliminatedSpectate');
   }
+  const resolveOn = !!world.data.rules.victory.resolve_enabled;
   const rows = world.factions.map((f) =>
     h('tr', { class: f.alive ? '' : 'dead' },
       h('td', {}, h('span', { class: 'roman', style: `background:${f.color}` }, f.roman), ' ', factionLabel(world, f.id)),
       h('td', { class: 'num' }, String(f.producedUnits)),
       h('td', { class: 'num' }, String(f.lostUnits)),
       h('td', { class: 'num' }, `${Math.round(f.spentTotalP)}P / ${Math.round(f.spentTotalM)}M`),
-      h('td', { class: 'num' }, f.alive ? String(Math.round(f.resolve)) : '✕')));
+      h('td', { class: 'num' }, f.alive ? String(resolveOn ? Math.round(f.resolve) : world.objectives.filter((o) => o.owner === f.id).length) : '✕')));
   const el = h('div', { class: 'results' },
     h('div', { class: 'results-card panel' },
       h('div', { class: 'stamp big' }, headline),
       h('div', { class: 'sub' }, `${t('res.duration')} ${fmtTime(world.time)}`),
       h('table', {},
-        h('thead', {}, h('tr', {}, h('th', {}, ''), h('th', {}, t('res.produced')), h('th', {}, t('res.lost')), h('th', {}, t('res.spent')), h('th', {}, t('res.resolve')))),
+        h('thead', {}, h('tr', {}, h('th', {}, ''), h('th', {}, t('res.produced')), h('th', {}, t('res.lost')), h('th', {}, t('res.spent')), h('th', {}, t(resolveOn ? 'res.resolve' : 'res.held')))),
         h('tbody', {}, ...rows)),
       h('div', { class: 'row' },
         h('button', { class: 'btn primary', onclick: actions.again }, t('res.again')),

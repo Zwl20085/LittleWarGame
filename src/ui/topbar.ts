@@ -49,6 +49,8 @@ export class TopBar {
     this.logiPlate = h('div', { class: 'np gauge-np' }, this.logiGauge.el, h('div', { class: 'np-col' }, lbl('hud.log'), h('div', { class: 'window' }, this.logi)));
     this.resolvePlate = h('div', { class: 'np gauge-np' }, this.resolveGauge.el, h('div', { class: 'np-col' }, lbl('hud.resolve'), h('div', { class: 'window' }, this.resolveNum)));
     const spectator = ctx.spectator;
+    // Without the resolve system (default) the side bars show territory: settlements held.
+    const resolveOn = !!ctx.match.world.data.rules.victory.resolve_enabled;
     this.el = h('header', { class: `topbar plate ${spectator ? 'spectator' : ''}` },
       h('i', { class: 'rivet tl' }), h('i', { class: 'rivet tr' }), h('i', { class: 'rivet bl' }), h('i', { class: 'rivet br' }),
       spectator ? null : h('div', { class: 'np' }, lbl('hud.p'), h('div', { class: 'window' }, this.p, this.pRate)),
@@ -56,8 +58,8 @@ export class TopBar {
       spectator ? null : h('div', { class: 'np' }, lbl('hud.pop'), h('div', { class: 'window' }, this.pop)),
       spectator ? null : this.logiPlate,
       spectator ? null : this.autoBtn,
-      spectator ? null : this.resolvePlate,
-      h('div', { class: 'np grow' }, lbl(ctx.spectator ? 'hud.resolve' : 'hud.sides'), this.resolveWrap),
+      spectator || !resolveOn ? null : this.resolvePlate,
+      h('div', { class: 'np grow' }, lbl(!resolveOn ? 'hud.territory' : ctx.spectator ? 'hud.resolve' : 'hud.sides'), this.resolveWrap),
       h('div', { class: 'np' }, lbl('hud.time'), h('div', { class: 'window' }, this.time)),
       h('div', { class: 'keys' }, this.pauseBtn, ...this.speedBtns),
       h('div', { class: 'keys' }, h('button', { class: 'key', onclick: onHelp, 'aria-label': t('hud.help') }, '?'), this.langBtn),
@@ -106,11 +108,17 @@ export class TopBar {
           h('span', { class: 'num small' })));
       }
     }
+    const resolveOn = !!w.data.rules.victory.resolve_enabled;
+    const held = w.factions.map(() => 0);
+    if (!resolveOn) for (const o of w.objectives) if (o.owner >= 0) held[o.owner]++;
+    const total = Math.max(1, w.objectives.length);
     for (const fac of w.factions) {
       const row = this.resolveWrap.querySelector(`[data-f="${fac.id}"]`) as HTMLElement;
-      const frac = Math.max(0, fac.resolve / initial);
+      const value = resolveOn ? fac.resolve : held[fac.id];
+      // Territory bar: full at half of all settlements (a dominant side), so small shares stay visible.
+      const frac = Math.max(0, resolveOn ? fac.resolve / initial : Math.min(1, (held[fac.id] / total) * 2));
       (row.querySelector('.fill') as HTMLElement).style.transform = `scaleX(${frac})`;
-      setText(row.querySelector('.num') as HTMLElement, fac.alive ? String(Math.round(fac.resolve)) : '✕');
+      setText(row.querySelector('.num') as HTMLElement, fac.alive ? String(Math.round(value)) : '✕');
       row.classList.toggle('dead', !fac.alive);
       row.classList.toggle('me', fac.id === this.ctx.playerId && !this.ctx.spectator);
     }

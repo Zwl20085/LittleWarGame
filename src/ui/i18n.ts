@@ -16,7 +16,7 @@ const zh: Dict = {
   'setup.spectate': '仅观战（全 AI）',
   'setup.start': '开始作战',
   'setup.advanced': '进阶选项',
-  'setup.timeLimit': '不设时间上限：攻占敌方首都或其战役意志崩溃才会结束战争。',
+  'setup.timeLimit': '不设时间上限：只有首都被攻占的一方才会被淘汰。',
   'setup.loading': '正在铺设沙盘……',
   'diff.easy': '简单', 'diff.normal': '普通', 'diff.hard': '困难',
   'info.open': '公开沙盘', 'info.fog': '战争迷雾',
@@ -116,7 +116,7 @@ const zh: Dict = {
   'feat.city': '城市', 'feat.pass': '山口', 'feat.bridge': '桥', 'feat.ford': '渡口',
   'reason.crossAt': '在{feature}渡河（{kind}）', 'reason.holdRiver': '依托{feature}河线固守', 'reason.holdHigh': '占据{feature}高地', 'reason.holdLine': '在{feature}一线固守', 'reason.holdFront': '在{feature}前线固守', 'reason.pushFront': '向{point}推进战线', 'reason.bridging': '工兵架设浮桥中', 'feat.here': '前沿',
   'air.short.air_recon': '侦察', 'air.short.air_strafe': '扫射', 'air.short.air_bomb': '轰炸', 'prod.unlockShort': '{s}秒解锁',
-  'hud.sides': '各方意志', 'hud.speedTip': '模拟速度', 'hud.pauseTip': '暂停 / 继续（Space）', 'hud.logiTip': '后勤满足度：供给能力 / 需求', 'hud.resolveTip': '战役意志：归零即淘汰',
+  'hud.sides': '各方意志', 'hud.territory': '各方据点', 'res.held': '持有据点', 'hud.speedTip': '模拟速度', 'hud.pauseTip': '暂停 / 继续（Space）', 'hud.logiTip': '后勤满足度：供给能力 / 需求', 'hud.resolveTip': '战役意志：归零即淘汰',
 };
 
 const en: Dict = {
@@ -132,7 +132,7 @@ const en: Dict = {
   'setup.spectate': 'Spectate only (all AI)',
   'setup.start': 'Begin Operation',
   'setup.advanced': 'Advanced',
-  'setup.timeLimit': 'No time limit: the war ends only when capitals fall or resolve collapses.',
+  'setup.timeLimit': 'No time limit: a side is defeated only when its capital is captured.',
   'setup.loading': 'Laying out the diorama…',
   'diff.easy': 'Easy', 'diff.normal': 'Normal', 'diff.hard': 'Hard',
   'info.open': 'Open table', 'info.fog': 'Fog of war',
@@ -220,7 +220,7 @@ const en: Dict = {
   'feat.city': 'City', 'feat.pass': 'Pass', 'feat.bridge': 'Bridge', 'feat.ford': 'Ford',
   'reason.crossAt': 'Crossing at {feature} ({kind})', 'reason.holdRiver': 'Holding the river line at {feature}', 'reason.holdHigh': 'Holding high ground at {feature}', 'reason.holdLine': 'Holding the line near {feature}', 'reason.holdFront': 'Holding the front near {feature}', 'reason.pushFront': 'Pushing the front toward {point}', 'reason.bridging': 'Engineers bridging the river', 'feat.here': 'the front',
   'air.short.air_recon': 'Recon', 'air.short.air_strafe': 'Strafe', 'air.short.air_bomb': 'Bomb', 'prod.unlockShort': 'Unlock {s}s',
-  'hud.sides': 'All sides', 'hud.speedTip': 'Simulation speed', 'hud.pauseTip': 'Pause / resume (Space)', 'hud.logiTip': 'Logistics: supply capacity / demand', 'hud.resolveTip': 'Resolve: a side at zero is eliminated',
+  'hud.sides': 'All sides', 'hud.territory': 'Territory', 'res.held': 'Settlements', 'hud.speedTip': 'Simulation speed', 'hud.pauseTip': 'Pause / resume (Space)', 'hud.logiTip': 'Logistics: supply capacity / demand', 'hud.resolveTip': 'Resolve: a side at zero is eliminated',
 };
 
 /** Historical-flavour equipment names (fictional factions; user-approved naming). */

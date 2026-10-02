@@ -420,18 +420,22 @@ export class Terrain {
     }
   }
 
-  /** Distance from (x,z) to the nearest road centreline. */
-  private distToRoad(x: number, z: number): number {
-    let best = Infinity;
-    for (const road of this.def.roads) {
-      for (let s = 0; s < road.length - 1; s++) {
-        const a = road[s];
-        const b = road[s + 1];
-        const t = segT(x, z, a, b);
-        best = Math.min(best, Math.hypot(x - (a.x + (b.x - a.x) * t), z - (a.z + (b.z - a.z) * t)));
+  /** 1 where a cell lies within 9 m of a road centreline (built once, for river carving). */
+  private nearRoadMask: Uint8Array | null = null;
+
+  private nearRoad(idx: number): boolean {
+    if (!this.nearRoadMask) {
+      const mask = (this.nearRoadMask = new Uint8Array(this.nx * this.nz));
+      for (const road of this.def.roads) {
+        for (let s = 0; s < road.length - 1; s++) {
+          const a = road[s];
+          const b = road[s + 1];
+          const steps = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.z - a.z) / 2));
+          for (let k = 0; k <= steps; k++) this.forCells(a.x + ((b.x - a.x) * k) / steps, a.z + ((b.z - a.z) * k) / steps, 9, (i, d) => { if (d < 9) mask[i] = 1; });
+        }
       }
     }
-    return best;
+    return this.nearRoadMask[idx] === 1;
   }
 
   /**
@@ -484,9 +488,7 @@ export class Terrain {
       }
       for (const [idx, info] of touched) {
         if (this.ground[idx] === Ground.Road) continue; // bridge causeway
-        const x = (idx % this.nx) * this.cell;
-        const z = Math.floor(idx / this.nx) * this.cell;
-        if (this.distToRoad(x, z) < 9) continue;
+        if (this.nearRoad(idx)) continue;
         const inChannel = info.d <= half;
         const depth = info.ford ? 1.2 : 4.5;
         const bed = info.surf - depth;

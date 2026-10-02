@@ -133,6 +133,8 @@ export interface Rules {
     readonly collapse_bleed_per_second?: number;
   };
   readonly victory: {
+    /** false (default since 2026-10-02): no resolve; defeat only by losing the capital. */
+    readonly resolve_enabled?: boolean;
     readonly initial_resolve: number;
     readonly destroyed_population_resolve_multiplier: number;
     readonly majority_control_enemy_bleed_per_second: number;

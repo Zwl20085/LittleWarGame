@@ -3,7 +3,7 @@ dist/
 coverage/
 
 # Promo/trailer media (generated)
-media/
+/media/
 trailer/node_modules/
 trailer/out/
 .prof/
@@ -17,3 +17,6 @@ release/
 # Trailer footage (recorded from the game; generated)
 trailer/public/clips/
 trailer/public/sfx/
+
+# Vite dependency cache
+.vite/
