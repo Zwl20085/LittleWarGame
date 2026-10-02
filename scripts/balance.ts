@@ -90,5 +90,8 @@ for (const seed of seeds) {
   ledgers.push(w.stats);
   writeFileSync(`media/stats/${mapId}-${seed}.json`, JSON.stringify(w.stats));
 }
+const opsAll: Record<string, number> = {};
+for (const l of ledgers) for (const [k, v] of Object.entries(l.ops ?? {})) opsAll[k] = (opsAll[k] ?? 0) + v;
+console.log(`\n== Operations launched / won ==\n${''}` + Object.entries(opsAll).sort().map(([k, v]) => `${k} ${v}`).join('  '));
 printLedger(pooled({ byType: ledgers.flatMap((l) => l.byType), matrix: {}, timeline: [] }));
 printMatrix(ledgers.map((l) => l.matrix));

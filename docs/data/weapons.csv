@@ -9,5 +9,5 @@ light_cannon,轻坦主炮,direct_projectile,190,0,3.5,75,60,0.70,4,8,true,0.030,
 medium_cannon,中坦主炮,direct_projectile,220,0,5,115,100,0.72,6,12,true,0.035,180,-8,20,0,0
 heavy_cannon,重坦主炮,direct_projectile,250,0,6,150,145,0.74,7,16,true,0.040,200,-8,20,0,0
 mortar_shell,迫击炮弹,ballistic,280,60,6,70,20,0,8,28,false,0.045,62,45,85,0,0
-howitzer_shell,榴弹炮弹,ballistic,460,120,14,125,35,0,12,38,false,0.080,100,4,75,0,0
+howitzer_shell,榴弹炮弹,ballistic,560,120,11,125,35,0,12,38,false,0.080,100,4,75,0,0
 aa_shell,防空炮弹,hitscan,210,0,0.8,20,25,0.65,2,3,false,0.009,0,0,85,320,26

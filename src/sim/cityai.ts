@@ -8,7 +8,8 @@ const PERSONALITY_MUL: Record<Personality, Record<string, number>> = {
   balanced: {},
   armor: { light_tank: 1.5, medium_tank: 1.7, heavy_tank: 1.7, infantry: 0.8, supply_truck: 1.5 },
   infantry: { infantry: 1.25, mg: 1.6, engineer: 1.8, mortar: 1.3, light_tank: 0.7, medium_tank: 0.7 },
-  artillery: { mortar: 1.6, howitzer: 2, recon: 1.5, aa: 1.3, heavy_tank: 0.7 },
+  artillery: { mortar: 1.6, howitzer: 1.6, recon: 1.5, aa: 1.3, heavy_tank: 0.7 },
+  mechanized: { motor_inf: 3.5, light_tank: 1.5, medium_tank: 1.2, recon: 1.3, supply_truck: 1.4, infantry: 0.55, howitzer: 0.6, mortar: 0.8 },
 };
 
 export function personalityWeights(world: World, p: Personality): Record<string, number> {

@@ -1,8 +1,11 @@
 import { cancelAir, requestAir } from './air';
 import { cancelOrder } from './production';
 import type { Match } from './sim';
-import type { Posture, Unit } from './types';
+import { resetOperation } from './doctrine';
+import type { OperationKind, Posture, Unit } from './types';
 import type { V2 } from './vec';
+
+const OPERATIONS: OperationKind[] = ['frontal', 'flank', 'pincer', 'infiltrate', 'siege'];
 
 export type Command =
   | { type: 'setWeight'; unitId: string; weight: number }
@@ -16,6 +19,8 @@ export type Command =
   | { type: 'setLock'; index: number; locked: boolean }
   | { type: 'resetAlloc' }
   | { type: 'setPosture'; sectorId: number; posture: Posture }
+  /** Lock a battle doctrine for an army group (null = let the AI choose). */
+  | { type: 'setOperation'; sectorId: number; op: OperationKind | null }
   | { type: 'setSectorTarget'; sectorId: number; pos: V2 | null }
   | { type: 'setMainSector'; sectorId: number }
   | { type: 'setShares'; shares: [number, number, number] }
@@ -124,6 +129,15 @@ function apply(match: Match, env: CommandEnvelope): CommandOutcome {
       if (!f.sectors[c.sectorId]) return fail('BAD_VALUE');
       f.sectors[c.sectorId].posture = c.posture;
       return OK;
+    case 'setOperation': {
+      const s = Number.isInteger(c.sectorId) && c.sectorId >= 0 ? f.sectors[c.sectorId] : undefined;
+      if (!s || (c.op !== null && !OPERATIONS.includes(c.op))) return fail('BAD_VALUE');
+      s.opLocked = c.op !== null;
+      if (c.op !== null) s.op = c.op;
+      // Start the new plan from scratch on the group's next think.
+      resetOperation(s, [...w.units.values()].filter((u) => u.owner === f.id && u.sectorId === s.id && u.hp > 0));
+      return OK;
+    }
     case 'setSectorTarget': {
       const s = f.sectors[c.sectorId];
       if (!s) return fail('BAD_VALUE');
@@ -170,6 +184,9 @@ function apply(match: Match, env: CommandEnvelope): CommandOutcome {
           }
         }
         u.behavior = 'rally';
+        u.opRole = 'line';
+        u.opTarget = null;
+        u.opObjective = null;
       }
       return OK;
     }

@@ -116,8 +116,8 @@ export function crowding(world: World, u: Unit): number {
   return n;
 }
 
-const isRaider = (u: Unit): boolean => u.def.id === 'light_tank' || u.def.id === 'recon' || u.def.id === 'infantry';
-const isGuard = (u: Unit): boolean => u.def.id === 'infantry' || u.def.id === 'mg' || u.def.id === 'light_tank' || u.def.id === 'aa';
+const isRaider = (u: Unit): boolean => u.def.id === 'light_tank' || u.def.id === 'recon' || u.def.id === 'infantry' || u.def.id === 'motor_inf';
+const isGuard = (u: Unit): boolean => u.def.id === 'infantry' || u.def.id === 'motor_inf' || u.def.id === 'mg' || u.def.id === 'light_tank' || u.def.id === 'aa';
 
 /**
  * Faction-level operations (every sector think, cheap): keep a rear guard on our convoy routes

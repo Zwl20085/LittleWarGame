@@ -53,13 +53,40 @@
   </tr>
 </table>
 
+### Battle plans, sieges and doctrines
+
+<img src="docs/media/plans.jpg" width="100%" alt="War-map arrows: a pincer converging on a town, and a hatched siege line ringing a city" />
+
+Every army group attacks with a **battle plan**, drawn on the map as a war-room arrow. The AI picks one from its force mix, the target and its doctrine, or you can lock one per group:
+
+| Plan | What the troops do |
+|---|---|
+| **Frontal push** | The whole line advances steadily. |
+| **Flank** | A mobile group (tanks, motorized rifles, recon) swings round to a waypoint on the weaker side, forms up, then strikes from the side while the line pins the enemy. |
+| **Pincer** | Both wings swing round and close on the same objective together. |
+| **Infiltrate** | Small rifle teams slip through the weakest stretch of the enemy line to seize the objective. |
+| **Siege** | Against a defended town: ring it outside direct-fire range and dig trench lines. Storm it once the garrison is worn down. |
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/media/works.jpg" width="100%" alt="A zig-zag trench line with sandbagged parapet" /></td>
+    <td width="50%"><img src="docs/media/motorized.jpg" width="100%" alt="Motorized rifles riding two troop trucks" /></td>
+  </tr>
+  <tr>
+    <td><b>Field works.</b> Besiegers dig zig-zag trenches, and garrisons stack sandbag barricades. Troops behind finished works get the best cover against shells and fire from the front, so neither side can simply shell the other off the map. Digging costs manpower.</td>
+    <td><b>Motorized rifles.</b> They ride trucks on long, safe trips and dismount near the enemy, when fired on or at the end of the trip. They are fast for flanks and quick captures, but vulnerable while mounted.</td>
+  </tr>
+</table>
+
+**Doctrine.** Before a battle, choose *balanced*, *infantry first*, *armour first*, *mechanized* or *artillery first*. Your doctrine sets your production mix and the plans your groups prefer. Each AI faction has its own doctrine.
+
 <div align="center">
 <img src="docs/media/hud.gif" width="100%" alt="War-room HUD: high-command directives, army-group cards, event log, production bar and minimap" />
 <br/><sub>The war-room HUD. Top left: high-command directives (defend / attack / occupy). Below them: army groups and the event log. Bottom: production. Bottom right: minimap. Chinese by default, English with one click.</sub>
 </div>
 
 Also inside:
-- **Territory is the economy.** Your capital alone feeds about a third of a full army. Towns and cities add income, production slots and population. Losing ground shrinks your war effort, and losses take real time and money to replace.
+- **Territory is the economy.** Your capital alone feeds about a third of a full army. Villages supply recruits (manpower), and towns and cities supply industry (munitions), production slots and population. The mobilisation and industry sliders scale the output of all your territory. Losing ground shrinks your war effort, and losses take real time and money to replace.
 - **Thousands of soldiers.** Several hundred tactical units (squads, guns, tanks, trucks) with instanced rendering. Squads use varied formations, and zoom-level unit counters keep the picture readable.
 - **Procedural music and sound.** An adaptive orchestral score swells with the fighting, alongside rifle volleys, MG bursts, cannon, shell whistles and aircraft. It is all synthesized live, with no audio files.
 - **Rules first.** Armour facing and penetration, HE blast, cover, suppression, morale, line of sight over terrain and buildings, and air strikes with flak all follow a written balance spec.

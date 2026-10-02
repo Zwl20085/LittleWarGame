@@ -34,8 +34,9 @@ export interface Match {
 function makeFaction(world: World, id: number, isPlayer: boolean): Faction {
   const e = world.data.rules.economy;
   const personalities = world.config.personalities;
-  const personality = personalities?.[id] ?? (['balanced', 'armor', 'infantry', 'artillery'] as const)[id % 4];
-  const weights = isPlayer ? { ...world.data.rules.proposed_defaults.production_unit_weights } : personalityWeights(world, personality);
+  const personality = personalities?.[id] ?? (['balanced', 'armor', 'infantry', 'mechanized', 'artillery'] as const)[id % 5];
+  // The player's chosen doctrine sets the starting production mix too (balanced = spec defaults).
+  const weights = isPlayer && !personalities?.[id] ? { ...world.data.rules.proposed_defaults.production_unit_weights } : personalityWeights(world, personality);
   return {
     id, color: FACTION_COLORS[id], roman: ROMAN[id], isPlayer, cityIdx: id, personality, difficulty: world.config.difficulty,
     alive: true, eliminatedAt: null, p: e.starting_p, m: e.starting_m,
@@ -194,6 +195,11 @@ function economySecond(match: Match): void {
         p += (terr.income_p_per_min[o.kind] ?? 0) * k;
         m += (terr.income_m_per_min[o.kind] ?? 0) * k;
       }
+      // The economy sliders steer all territory, not just the capital: mobilisation scales
+      // recruits (P), industry scales munitions (M); the default split is neutral (×1).
+      const def = rules.economy.allocation_default;
+      p *= Math.max(0.4, 0.55 + 0.45 * (f.alloc[0] / (def[0] || 1)));
+      m *= Math.max(0.4, 0.55 + 0.45 * (f.alloc[1] / (def[1] || 1)));
       bonus = { p, m };
       cityShare = terr.capital_income_share;
     }
@@ -356,6 +362,10 @@ export function step(match: Match): void {
   }
   if (world.tick % (STATS_SAMPLE_SECONDS * hz) === 0) {
     sampleStats(world.stats, world.time, world.units.values(), world.factions, (f) => ({ popCap: populationCap(world, f), held: world.objectives.filter((o) => o.owner === f.id).length }));
+  }
+  // Destroyed works (hp 0) are dropped every 10 s so per-unit scans stay short in long wars.
+  if (world.tick % (10 * hz) === 0 && world.forts.some((x) => x.hp <= 0)) {
+    for (let i = world.forts.length - 1; i >= 0; i--) if (world.forts[i].hp <= 0 && world.forts[i].kind !== 'pontoon') world.forts.splice(i, 1);
   }
   checkElimination(match);
   world.tick++;

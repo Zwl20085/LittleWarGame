@@ -44,6 +44,10 @@ export interface UnitView {
   cacheX: number;
   cacheZ: number;
   cacheFace: number;
+  /** Motorized infantry riding its trucks (drawn as a two-truck column). */
+  mounted: boolean;
+  /** Trailing truck of the column: x, z, heading (allocated on first mount). */
+  convoy: Float32Array | null;
 }
 
 interface Corpse {
@@ -75,6 +79,10 @@ const CORPSE_LIFT = 0.15 * SOLDIER_SCALE;
 const RING_VEHICLE = 8.5;
 const RING_SQUAD = 14;
 const RING_COLOR = new THREE.Color('#f4ecd9');
+/** Motorized column: lead truck ahead of the unit centre, second truck trailing at GAP. */
+const CONVOY_LEAD = 6;
+const CONVOY_GAP = 12.5;
+const TRUCK_HALF = 2.4 * VEHICLE_SCALE;
 
 /** Write T(x,y,z)·Ry(a)·Rz(b)·S(s) straight into a matrix. */
 function setYZ(m: THREE.Matrix4, x: number, y: number, z: number, a: number, b: number, s: number): THREE.Matrix4 {
@@ -151,7 +159,7 @@ export class UnitViews {
       offs: new Float32Array(Math.max(1, u.def.memberCount) * 2), laidOut: false,
       goal: new Float32Array(Math.max(1, u.def.memberCount) * 2), pattern: '', patternN: -1, patternFace: 0, settled: false,
       cache: new Float32Array(Math.max(1, u.def.memberCount) * 16), cacheKneel: new Uint8Array(Math.max(1, u.def.memberCount)),
-      cacheN: -1, cacheSit: '', cacheX: 0, cacheZ: 0, cacheFace: 0,
+      cacheN: -1, cacheSit: '', cacheX: 0, cacheZ: 0, cacheFace: 0, mounted: false, convoy: null,
     };
     this.views.set(u.id, v);
     return v;
@@ -256,6 +264,70 @@ export class UnitViews {
     v.cacheFace = face;
   }
 
+  /** A truck on the ground at (x, z), pitched to the slope along its heading. */
+  private truckMatrix(x: number, z: number, heading: number, out: THREE.Matrix4): THREE.Matrix4 {
+    const t = this.world.terrain;
+    const ch = Math.cos(heading);
+    const sh = Math.sin(heading);
+    const ahead = t.heightAt(x + ch * TRUCK_HALF, z + sh * TRUCK_HALF);
+    const behind = t.heightAt(x - ch * TRUCK_HALF, z - sh * TRUCK_HALF);
+    return setYZ(out, x, t.heightAt(x, z), z, -heading, Math.atan2(ahead - behind, TRUCK_HALF * 2), VEHICLE_SCALE);
+  }
+
+  /**
+   * Mounted motorized infantry: two troop trucks in column. The lead truck rides just ahead of
+   * the unit centre; the second follows it on a distance constraint, so it trails through turns.
+   */
+  private drawConvoy(v: UnitView, u: Unit, dt: number, draw: boolean): void {
+    v.members = Math.min(v.members, aliveMembers(u.def, u.hp, u.def.maxHp));
+    const ch = Math.cos(v.heading);
+    const sh = Math.sin(v.heading);
+    const lx = v.x + ch * CONVOY_LEAD;
+    const lz = v.z + sh * CONVOY_LEAD;
+    const c = v.convoy ?? (v.convoy = new Float32Array(3));
+    const dx = lx - c[0];
+    const dz = lz - c[1];
+    const d = Math.hypot(dx, dz);
+    if (!v.mounted || d > CONVOY_GAP * 2.5) {
+      c[0] = lx - ch * CONVOY_GAP;
+      c[1] = lz - sh * CONVOY_GAP;
+      c[2] = v.heading;
+      v.mounted = true;
+    } else if (d > CONVOY_GAP) {
+      c[0] = lx - (dx / d) * CONVOY_GAP;
+      c[1] = lz - (dz / d) * CONVOY_GAP;
+      c[2] = Math.atan2(dz, dx);
+    }
+    if (!draw) return;
+    const b = this.batch('troopTruck');
+    b.push(this.truckMatrix(lx, lz, v.heading, _m), v.color);
+    b.push(this.truckMatrix(c[0], c[1], c[2], _m), v.color);
+    if (u.moving && this.onTrackDust && Math.random() < dt * 3.5) {
+      const g = this.world.terrain.groundAt(lx, lz);
+      if (g !== Ground.Road && g !== Ground.Water && g !== Ground.Ford) this.onTrackDust(lx, v.y, lz, v.heading);
+    }
+  }
+
+  /** Troops jump down from the trucks: start every soldier at its truck, then ease out. */
+  private dismount(v: UnitView): void {
+    v.mounted = false;
+    const c = v.convoy;
+    if (!c) return;
+    const lx = Math.cos(v.heading) * CONVOY_LEAD;
+    const lz = Math.sin(v.heading) * CONVOY_LEAD;
+    const half = Math.ceil(v.members / 2);
+    for (let k = 0; k < v.members; k++) {
+      const jx = (vhash(v.id, k, 61) - 0.5) * 4;
+      const jz = (vhash(v.id, k, 62) - 0.5) * 4;
+      v.offs[k * 2] = (k < half ? lx : c[0] - v.x) + jx;
+      v.offs[k * 2 + 1] = (k < half ? lz : c[1] - v.z) + jz;
+    }
+    v.laidOut = true;
+    v.settled = false;
+    v.pattern = '';
+    v.cacheN = -1;
+  }
+
   /** Body / turret / crew matrices for a unit with a hull or a gun. */
   private bodyMatrix(v: UnitView, out: THREE.Matrix4): THREE.Matrix4 {
     return setYZ(out, v.x, v.y, v.z, -v.heading, v.pitch, v.spec.scale);
@@ -324,6 +396,18 @@ export class UnitViews {
 
   private toWreck(v: UnitView): void {
     const spec = v.spec;
+    if (v.mounted && v.convoy) {
+      // Shot up on the road: both trucks burn out.
+      const c = v.convoy;
+      const lx = v.x + Math.cos(v.heading) * CONVOY_LEAD;
+      const lz = v.z + Math.sin(v.heading) * CONVOY_LEAD;
+      for (const [x, z, h] of [[lx, lz, v.heading], [c[0], c[1], c[2]]]) {
+        const m = this.truckMatrix(x, z, h, new THREE.Matrix4());
+        m.elements[13] -= 0.2;
+        this.addCorpse({ key: 'troopTruck', m, color: v.color, wreck: true, maxLife: 60, smoke: true, pos: new THREE.Vector3(x, m.elements[13], z) });
+      }
+      return;
+    }
     if (!spec.wreck) {
       // Remaining squad members fall where they stood.
       for (let k = 0; k < v.members; k++) {
@@ -381,7 +465,11 @@ export class UnitViews {
         if (g !== Ground.Road && g !== Ground.Water && g !== Ground.Ford) this.onTrackDust(v.x, v.y, v.z, u.heading);
       }
       if (v.spec.body || v.spec.turret) this.drawHardware(v, u, draw);
-      else this.drawSquad(v, u, dt, draw && this.showSoldiers);
+      else if (u.mounted) this.drawConvoy(v, u, dt, draw);
+      else {
+        if (v.mounted) this.dismount(v);
+        this.drawSquad(v, u, dt, draw && this.showSoldiers);
+      }
       if (draw && this.selected.has(u.id)) {
         const r = v.spec.vehicle ? RING_VEHICLE : RING_SQUAD;
         _m.makeScale(r, 1, r).setPosition(v.x, v.y + 0.4, v.z);

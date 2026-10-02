@@ -79,7 +79,7 @@ export class ProductionBar {
     setText(this.titleEl, t('prod.title'));
     this.presetSel.innerHTML = '';
     this.presetSel.append(h('option', { value: '' }, `${t('prod.preset')}…`));
-    for (const p of ['balanced', 'armor', 'infantry', 'artillery']) this.presetSel.append(h('option', { value: p }, t(`preset.${p}`)));
+    for (const p of ['balanced', 'armor', 'infantry', 'mechanized', 'artillery']) this.presetSel.append(h('option', { value: p }, t(`preset.${p}`)));
     this.popSig = '';
     if (this.tipUnit) this.showTip(this.tipUnit);
   }

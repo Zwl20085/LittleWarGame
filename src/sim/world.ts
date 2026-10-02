@@ -17,7 +17,7 @@ import { DEG } from './vec';
 
 export const FACTION_COLORS = ['#3D78A8', '#BA7D34', '#856DA8', '#3F8B83', '#A8457A', '#5FA8B8'];
 export const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI'];
-const PERSONALITIES: Personality[] = ['balanced', 'armor', 'infantry', 'artillery'];
+const PERSONALITIES: Personality[] = ['balanced', 'armor', 'infantry', 'mechanized', 'artillery'];
 
 /**
  * Authoritative match state. Systems (economy, combat, ai …) mutate it only inside
@@ -226,6 +226,9 @@ export class World {
       opRole: 'line',
       opObjective: null,
       slideSide: 1,
+      mounted: false,
+      mountUntil: 0,
+      worksFacing: null,
       detourAt: 0,
       detours: 0,
       opTarget: null,

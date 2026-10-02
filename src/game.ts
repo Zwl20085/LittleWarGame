@@ -71,6 +71,7 @@ export class Game {
     const spectator = !!config.spectate || this.attract;
     this.audio = audio.session({ attract: this.attract, playerId: config.playerSlot, spectator });
     this.renderer.playerId = config.playerSlot;
+    this.renderer.spectator = spectator;
     this.renderer.fog = config.infoMode === 'fog' && !spectator;
     this.applySettings(settings());
     this.offSettings = onSettingsChange((s) => this.applySettings(s));

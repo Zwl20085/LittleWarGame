@@ -9,7 +9,9 @@ import { Haze, LIGHT, roomBackground } from './atmosphere';
 import { CameraRig } from './camera';
 import { Effects } from './effects';
 import { MapLabels } from './mapLabels';
+import { OpArrows } from './opArrows';
 import { clothFlag, FLAG_TIME } from './flags';
+import { FieldWorks, isLineWork } from './fieldWorks';
 import { FrontLines } from './frontLines';
 import { fortModel, planeModel } from './models';
 import { PontoonView } from './pontoon';
@@ -68,6 +70,8 @@ export class GameRenderer {
   private readonly planeViews = new Map<number, THREE.Group>();
   private readonly fortViews = new Map<number, THREE.Group>();
   private readonly pontoonViews = new Map<number, PontoonView>();
+  private readonly fieldWorks: FieldWorks;
+  private readonly opArrows: OpArrows;
   private readonly overlayGroup = new THREE.Group();
   private readonly orderMarkers: { mesh: THREE.Mesh; life: number }[] = [];
   private frontVersion = -1;
@@ -76,6 +80,8 @@ export class GameRenderer {
   private overlayTimer = 0;
   private overlayKey = '';
   playerId = 0;
+  /** Spectating: operation arrows are drawn for every faction (thinner). */
+  spectator = false;
   private lastFrameAt = performance.now();
   private shadowTick = 0;
   fog = false;
@@ -122,6 +128,10 @@ export class GameRenderer {
     this.units.onTrackDust = (x, y, z, h) => this.effects.trackDust(x, y, z, h);
     this.effects.onBigMuzzle = (x, z) => this.units.recoilAt(x, z);
     this.effects.setTowns(w.objectives.filter((o) => o.kind !== 'point').map((o) => ({ x: o.pos.x, z: o.pos.z, r: Math.max(30, o.radius), y: w.terrain.heightAt(o.pos.x, o.pos.z) })));
+    this.fieldWorks = new FieldWorks(w.terrain, (owner) => w.factions[owner]?.color ?? '#888888');
+    this.scene.add(this.fieldWorks.group);
+    this.opArrows = new OpArrows((x, z) => w.terrain.heightAt(x, z));
+    this.scene.add(this.opArrows.mesh);
     this.buildObjectives();
     this.buildCities();
   }
@@ -285,8 +295,11 @@ export class GameRenderer {
   private syncForts(dt: number): void {
     const w = this.match.world;
     const seen = new Set<number>();
+    // Trenches and barricades (including wrecked ones) are batched separately.
+    this.fieldWorks.sync(w.forts, w.time);
+    for (let i = 0; i < this.fieldWorks.siteCount; i++) this.effects.workSite(this.fieldWorks.sites[i], dt);
     for (const f of w.forts) {
-      if (f.hp <= 0) continue;
+      if (f.hp <= 0 || isLineWork(f.kind)) continue;
       seen.add(f.id);
       if (f.kind === 'pontoon') {
         let pv = this.pontoonViews.get(f.id);
@@ -465,6 +478,8 @@ export class GameRenderer {
     this.haze.update(ppm);
     this.terrainView.scatter.visible = ppm > 1;
     this.frontLines.update(realDt, ppm);
+    this.opArrows.sync(w, this.playerId, this.spectator, this.layers.sectors);
+    this.opArrows.update(ppm);
     FLAG_TIME.value += realDt;
     this.terrainView.uniforms.uOverlayK.value = ppm > 4 ? 0.5 : ppm > 1.5 ? 0.8 : 1;
     this.units.showSoldiers = ppm > 0.7;

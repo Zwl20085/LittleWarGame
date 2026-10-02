@@ -3,6 +3,7 @@ import { groundSpeedMul } from './nav';
 import type { Unit } from './types';
 import { clamp, DEG, dist, headingTo, turnToward, type V2, angleDiff } from './vec';
 import type { World } from './world';
+import { updateWorksCover } from './works';
 
 /** Set a movement destination; path is (re)computed lazily and rate-limited. */
 export function moveTo(world: World, u: Unit, dest: V2, force = false): void {
@@ -57,7 +58,46 @@ function handleSetupBeforeMove(world: World, u: Unit, wantsMove: boolean): boole
   return false;
 }
 
+/**
+ * Motorized infantry (user request): rides its trucks on long, safe trips — vehicle-like
+ * speed, cannot fight, extra damage while mounted — and dismounts (a few seconds) near the
+ * enemy, when fired upon or at the end of the trip.
+ */
+export const MOTOR = {
+  speed: 5.2,
+  mountSeconds: 5,
+  minTripM: 180,
+  safeRadiusM: 450,
+  mountedDamageMul: 1.3,
+} as const;
+
+/** Mount/dismount state machine; true while the squad is getting on or off its trucks. */
+function handleMount(world: World, u: Unit, wantsMove: boolean): boolean {
+  if (u.def.id !== 'motor_inf') return false;
+  if (world.time < u.mountUntil) return true;
+  // Re-evaluated every ~0.5 s per unit (spatial query), not every tick.
+  if ((world.tick + u.id) % 10 !== 0 && !(u.mounted && world.time - u.lastDamagedAt < 1)) return false;
+  const trip = u.dest ? dist(u.pos, u.dest) : 0;
+  let want = wantsMove && trip > MOTOR.minTripM && world.time - u.lastDamagedAt > 8 && !u.routing;
+  if (want) {
+    for (const o of world.spatial.query(u.pos.x, u.pos.z, MOTOR.safeRadiusM)) {
+      if (o.hp > 0 && world.isHostile(u.owner, o.owner) && world.knows(u.owner, o)) {
+        want = false;
+        break;
+      }
+    }
+  }
+  if (want === u.mounted) return false;
+  u.mounted = want;
+  u.mountUntil = world.time + MOTOR.mountSeconds;
+  return true;
+}
+
 export function speedOf(world: World, u: Unit, heading: number): number {
+  if (u.mounted) {
+    const g = world.terrain.groundAt(u.pos.x, u.pos.z);
+    return MOTOR.speed * groundSpeedMul(g, true) * (world.data.rules.proposed_defaults.tempo_move_multiplier ?? 1);
+  }
   const veh = u.def.kind === 'vehicle';
   const g = world.terrain.groundAt(u.pos.x, u.pos.z);
   let s = u.def.speed * groundSpeedMul(g, veh) * (world.data.rules.proposed_defaults.tempo_move_multiplier ?? 1);
@@ -84,6 +124,7 @@ export function updateMovement(world: World, u: Unit): void {
   if (u.fixed || u.hp <= 0) return;
   const wantsMove = u.path.length > 0 && u.pathIdx < u.path.length;
   if (handleSetupBeforeMove(world, u, wantsMove)) return;
+  if (handleMount(world, u, wantsMove)) return;
   if (!wantsMove) {
     if ((world.tick + u.id) % 3 === 0) separate(world, u, 1.8);
     return;
@@ -208,6 +249,7 @@ function separate(world: World, u: Unit, strength: number): void {
 
 export function updateHeight(world: World, u: Unit): void {
   u.y = world.terrain.heightAt(u.pos.x, u.pos.z);
+  if (world.forts.length > 0) updateWorksCover(world, u);
   updateGarrison(world, u);
   if (u.def.kind !== 'vehicle' && u.fortId === null && !u.fixed) u.cover = world.terrain.coverAt(u.pos.x, u.pos.z);
 }

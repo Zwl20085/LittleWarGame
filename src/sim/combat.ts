@@ -163,7 +163,7 @@ function aim(world: World, u: Unit, at: V2): boolean {
 
 /** Per-tick weapon handling for one unit. */
 export function updateWeapons(world: World, u: Unit): void {
-  if (u.hp <= 0 || u.behavior === 'evacuate') return;
+  if (u.hp <= 0 || u.behavior === 'evacuate' || u.mounted || world.time < u.mountUntil) return;
   u.cooldown1 = Math.max(0, u.cooldown1 - world.dt);
   u.cooldown2 = Math.max(0, u.cooldown2 - world.dt);
   if (u.routing) return;

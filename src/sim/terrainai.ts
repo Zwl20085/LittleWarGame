@@ -173,7 +173,7 @@ export function lineSlot(centre: V2, facing: number, index: number, count: numbe
 
 export function unitDepthRank(u: Unit): number {
   switch (u.def.id) {
-    case 'infantry': case 'engineer': case 'light_tank': case 'medium_tank': case 'heavy_tank': return 0;
+    case 'infantry': case 'motor_inf': case 'engineer': case 'light_tank': case 'medium_tank': case 'heavy_tank': return 0;
     case 'recon': return -1;
     case 'at_gun': case 'mg': return 1;
     default: return 3;

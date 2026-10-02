@@ -18,8 +18,8 @@ function faction(over: Partial<Faction> = {}): Faction {
 }
 
 describe('data loading (AGENT_HANDOFF §2)', () => {
-  it('loads all 12 units and 12 weapons with valid references', () => {
-    expect(data.units.size).toBe(12);
+  it('loads all 13 units (incl. motorized rifles) and 12 weapons with valid references', () => {
+    expect(data.units.size).toBe(13);
     expect(data.weapons.size).toBe(12);
   });
   it('reports the offending field when a value is missing', () => {

@@ -1,3 +1,5 @@
+import { worksProtect } from './works';
+import { MOTOR } from './movement';
 import { COMBAT, COVER, type CoverLevel } from './config';
 import { crowding, OPS } from './operations';
 import { armorFacing, armorSuppressionMul, armorValue, blastFalloff, heTargetMul, penetrationProbability } from './formulas';
@@ -9,6 +11,8 @@ import type { World } from './world';
 /** Effective cover of `u` against an attack coming from `from` (fort cover is directional, 120° front). */
 export function coverAgainst(world: World, u: Unit, from: V2 | null): CoverLevel {
   if (u.def.kind === 'vehicle') return 0;
+  // Trench / sandbag line between us and the attacker: best cover.
+  if (worksProtect(u, from)) return 3;
   if (u.fixed) {
     if (!from) return 3;
     return Math.abs(angleDiff(u.fixedFacing, headingTo(u.pos, from))) <= 60 * DEG ? 3 : 0;
@@ -37,6 +41,7 @@ export function addSuppression(world: World, u: Unit, amount: number): void {
 export function applyDamage(world: World, u: Unit, dmg: number, attackerOwner: number, weaponId: string, src = '?'): void {
   if (dmg <= 0 || u.hp <= 0) return;
   dmg *= world.data.rules.proposed_defaults.tempo_damage_multiplier ?? 1;
+  if (u.mounted) dmg *= MOTOR.mountedDamageMul; // packed in soft-skinned trucks
   const maxHp = u.fixed ? 1400 : u.def.maxHp;
   const lost = Math.min(u.hp, dmg);
   u.hp -= lost;

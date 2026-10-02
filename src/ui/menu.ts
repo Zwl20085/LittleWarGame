@@ -1,6 +1,6 @@
 import type { GameData } from '../data/types';
 import { Game } from '../game';
-import type { Difficulty, InfoMode, MatchConfig } from '../sim/types';
+import type { Difficulty, InfoMode, MatchConfig, Personality } from '../sim/types';
 import { CinematicDirector } from './cinematic';
 import { fmtTime, h, setText } from './dom';
 import { lang, onLangChange, setLang, t } from './i18n';
@@ -24,12 +24,16 @@ interface SetupState {
   readonly infoMode: InfoMode;
   readonly seed: number;
   readonly spectate: boolean;
+  /** The player's force doctrine (production mix + preferred battle plans). */
+  readonly doctrine: Personality;
 }
+
+const DOCTRINES: Personality[] = ['balanced', 'infantry', 'armor', 'mechanized', 'artillery'];
 
 const randomSeed = (): number => Math.floor(Math.random() * 1e6);
 
 function loadState(): SetupState {
-  const def: SetupState = { mapId: 'generated', mapSize: 'medium', factions: 4, difficulty: 'normal', infoMode: 'open', seed: randomSeed(), spectate: false };
+  const def: SetupState = { mapId: 'generated', mapSize: 'medium', factions: 4, difficulty: 'normal', infoMode: 'open', seed: randomSeed(), spectate: false, doctrine: 'balanced' };
   try {
     const raw = localStorage.getItem(STORE_KEY);
     if (!raw) return def;
@@ -43,6 +47,7 @@ function loadState(): SetupState {
       difficulty: v.difficulty === 'easy' || v.difficulty === 'hard' ? v.difficulty : 'normal',
       infoMode: v.infoMode === 'fog' ? 'fog' : 'open',
       spectate: !!v.spectate,
+      doctrine: DOCTRINES.includes(v.doctrine as Personality) ? (v.doctrine as Personality) : 'balanced',
     };
   } catch {
     return def;
@@ -63,7 +68,7 @@ function maxFactions(mapId: MapChoice): number {
 
 function toConfig(s: SetupState): MatchConfig {
   const factions = Math.min(maxFactions(s.mapId), s.factions);
-  return { mapId: s.mapId, mapSize: s.mapSize, factions, infoMode: s.infoMode, seed: s.seed, difficulty: s.difficulty, playerSlot: 0, spectate: s.spectate };
+  return { mapId: s.mapId, mapSize: s.mapSize, factions, infoMode: s.infoMode, seed: s.seed, difficulty: s.difficulty, playerSlot: 0, spectate: s.spectate, personalities: s.spectate ? undefined : [s.doctrine] };
 }
 
 /** Background battle for the title screen: a real all-AI match framed by a cinematic camera. */
@@ -248,6 +253,9 @@ export function showTitle(root: HTMLElement, data: GameData, onStart: (cfg: Matc
         h('div', { class: 'seg-group' }, ...[2, 3, 4].filter((n) => n <= maxF).map((n) => opt(String(n), n, factions, (v) => ({ ...state, factions: v }))))),
       h('div', { class: 'field' }, h('span', { class: 'lbl' }, t('setup.difficulty')),
         h('div', { class: 'seg-group' }, ...(['easy', 'normal', 'hard'] as Difficulty[]).map((d) => opt(t(`diff.${d}`), d, state.difficulty, (v) => ({ ...state, difficulty: v }))))),
+      h('div', { class: 'field' }, h('span', { class: 'lbl' }, t('setup.doctrine')),
+        h('div', { class: 'seg-group wrap' }, ...DOCTRINES.map((d) => opt(t(`preset.${d}`), d, state.doctrine, (v) => ({ ...state, doctrine: v }))))),
+      h('div', { class: 'small note' }, t(`doctrine.${state.doctrine}`)),
       h('div', { class: 'field' }, h('span', { class: 'lbl' }, t('setup.info')),
         h('div', { class: 'seg-group' }, ...(['open', 'fog'] as InfoMode[]).map((m) => opt(t(`info.${m}`), m, state.infoMode, (v) => ({ ...state, infoMode: v }))))),
       h('div', { class: 'field' }, h('span', { class: 'lbl' }, t('setup.seed')), seedIn,

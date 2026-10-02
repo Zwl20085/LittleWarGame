@@ -14,7 +14,8 @@ export type Behavior = 'rally' | 'advance' | 'hold' | 'retreat' | 'recover' | 'r
 export type SetupState = 'packed' | 'setting' | 'set' | 'packing';
 export type MoraleState = 'normal' | 'suppressed' | 'pinned';
 export type InfoMode = 'open' | 'fog';
-export type Personality = 'armor' | 'infantry' | 'artillery' | 'balanced';
+/** Force doctrine: production mix and preferred battle operations. */
+export type Personality = 'armor' | 'infantry' | 'artillery' | 'balanced' | 'mechanized';
 export type Difficulty = 'easy' | 'normal' | 'hard';
 
 export type ManualTask =
@@ -90,11 +91,17 @@ export interface Unit {
   /** Breakthrough target (objective id or `hq:<faction>`): spearhead units drive past the front. */
   spearhead: string | null;
   /** Operational role: holds the line, raids enemy supply, or guards our own convoy routes. */
-  opRole: 'line' | 'raid' | 'rearguard' | 'garrison' | 'occupy';
+  opRole: 'line' | 'raid' | 'rearguard' | 'garrison' | 'occupy' | 'maneuver' | 'infiltrate' | 'siege';
   /** Settlement this unit garrisons / occupies under a high-command directive. */
   opObjective: string | null;
   /** Preferred wall-slide side (+1 / −1) when a building blocks the way. */
   slideSide: number;
+  /** Motorized infantry riding its trucks (fast, but fights only after dismounting). */
+  mounted: boolean;
+  /** Mount/dismount in progress until this time. */
+  mountUntil: number;
+  /** Facing of the finished field work sheltering this unit (null = none). */
+  worksFacing: number | null;
   /** Earliest time for the next local building detour search. */
   detourAt: number;
   /** Local detours planned on the current waypoint leg (repath after a few). */
@@ -104,6 +111,9 @@ export interface Unit {
   /** Indirect-fire salvos since the battery last moved (shoot-and-scoot). */
   salvos: number;
 }
+
+/** 正面推进 / 侧面迂回 / 钳形攻势 / 武装渗透 / 筑垒围攻. */
+export type OperationKind = 'frontal' | 'flank' | 'pincer' | 'infiltrate' | 'siege';
 
 export interface Sector {
   readonly id: number;
@@ -139,6 +149,13 @@ export interface Sector {
   segment: V2[];
   /** Current operational mode, for the UI. */
   mode: 'advance' | 'hold' | 'push' | 'breakthrough';
+  /** Battle doctrine for this group's attack (AI-chosen unless the player locked one). */
+  op: OperationKind;
+  opLocked: boolean;
+  /** Manoeuvre arrow for the map: front → waypoint(s) → objective (empty = none). */
+  opRoute: V2[];
+  /** Phase of the operation, for the UI ('form' | 'move' | 'assault' | 'dig' | ''). */
+  opPhase: string;
 }
 
 export interface ProductionOrder {
@@ -282,10 +299,18 @@ export interface Plane {
   visionUntil: number;
 }
 
+export type FortKind = 'field_cover' | 'mg_bunker' | 'trench' | 'sandbag' | 'pontoon';
+
 export interface Fort {
   readonly id: number;
   owner: number;
-  readonly kind: 'field_cover' | 'mg_bunker' | 'pontoon';
+  /**
+   * field_cover: sandbagged foxhole (1 squad). mg_bunker: concrete MG nest.
+   * trench: dug line from start to end (siege works / field lines; many squads along it).
+   * sandbag: barricade wall across a street or town edge, start to end (town defence).
+   * pontoon: engineer bridge (start/end = banks).
+   */
+  readonly kind: FortKind;
   readonly pos: V2;
   readonly facing: number;
   /** Pontoon bridges: span endpoints (bank to bank) and deck length. */
