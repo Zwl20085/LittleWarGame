@@ -222,7 +222,7 @@ Design docs (Chinese): [docs/README.md](docs/README.md). Implementation-time dec
 
 ## Status
 
-Prototype, **v0.4**. It is tuned from headless AI-vs-AI wars and not yet from human play. Planned: save/load and replays, AT obstacles and trenches, alliances (the data model already supports them), bundled fonts for fully offline play.
+Prototype, **v0.5**. It is tuned from headless AI-vs-AI wars and not yet from human play. Planned: save/load and replays, AT obstacles and minefields, alliances (the data model already supports them), bundled fonts for fully offline play.
 
 ## License
 
