@@ -27,6 +27,8 @@ describe('procedural map', () => {
         const nav = new NavGrid(terrain, { vehicle: veh, maxSlopeDeg: veh ? 18 : 35 });
         for (const c of def.cities) for (const o of def.objectives) expect(nav.findPath(c.exit, o.pos, 200000).ok).toBe(true);
         for (const c of def.cities) for (const d of def.cities) expect(nav.findPath(c.exit, d.hq, 200000).ok).toBe(true);
+        // Buildings never seal an objective: open ground within 30 m of every centre.
+        for (const o of def.objectives) expect(terrain.buildingH(terrain.freeNear(o.pos, 30).x, terrain.freeNear(o.pos, 30).z)).toBe(0);
       }
       const s = 2;
       const w = Math.floor(def.width / s / 2);

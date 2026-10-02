@@ -148,6 +148,7 @@ function assignGarrisons(world: World, f: Faction, defend: Directive[]): void {
     if (!o || o.owner !== f.id || quiet) {
       u.opRole = 'line';
       u.opObjective = null;
+      u.opTarget = null;
       tied -= valueOf(u);
     }
   }
@@ -253,7 +254,7 @@ export function thinkOccupy(world: World, u: Unit): boolean {
     u.opTarget = null;
     return false;
   }
-  if (!u.opTarget) u.opTarget = world.terrain.freeNear(o.pos, 30);
+  if (!u.opTarget) u.opTarget = { ...world.terrain.freeNear(o.pos, 30) };
   if (dist(u.pos, u.opTarget) > 10) moveTo(world, u, u.opTarget);
   else stop(u);
   selectTarget(world, u, null);

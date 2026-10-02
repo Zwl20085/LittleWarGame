@@ -97,6 +97,8 @@ export interface Unit {
   slideSide: number;
   /** Earliest time for the next local building detour search. */
   detourAt: number;
+  /** Local detours planned on the current waypoint leg (repath after a few). */
+  detours: number;
   opTarget: V2 | null;
   opUntil: number;
   /** Indirect-fire salvos since the battery last moved (shoot-and-scoot). */

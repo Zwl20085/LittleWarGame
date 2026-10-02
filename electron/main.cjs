@@ -1,6 +1,6 @@
 // Standalone desktop shell: serves the built game (dist/) over a privileged app:// scheme so
 // module scripts and the simulation Web Worker load exactly as they do on a web server.
-const { app, BrowserWindow, Menu, net, protocol, shell } = require('electron');
+const { app, BrowserWindow, Menu, net, protocol, session, shell } = require('electron');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 
@@ -15,6 +15,9 @@ const CSP = [
   "img-src 'self' data: blob:",
   "media-src 'self' blob:",
   "connect-src 'self' blob: data:",
+  "object-src 'none'",
+  "base-uri 'none'",
+  "form-action 'none'",
 ].join('; ');
 
 protocol.registerSchemesAsPrivileged([
@@ -23,11 +26,16 @@ protocol.registerSchemesAsPrivileged([
 
 function serveDist() {
   protocol.handle('app', (req) => {
-    const { pathname } = new URL(req.url);
-    const file = path.normalize(path.join(ROOT, decodeURIComponent(pathname)));
+    let file;
+    try {
+      file = path.normalize(path.join(ROOT, decodeURIComponent(new URL(req.url).pathname)));
+    } catch {
+      return new Response('Bad request', { status: 400 });
+    }
     // Never serve anything outside the game bundle.
-    if (!file.startsWith(ROOT)) return new Response('Forbidden', { status: 403 });
-    return net.fetch(pathToFileURL(file).toString()).then((res) => {
+    const rel = path.relative(ROOT, file);
+    if (rel.startsWith('..') || path.isAbsolute(rel)) return new Response('Forbidden', { status: 403 });
+    return net.fetch(pathToFileURL(file).toString()).catch(() => new Response('Not found', { status: 404 })).then((res) => {
       if (!file.endsWith('.html')) return res;
       const headers = new Headers(res.headers);
       headers.set('Content-Security-Policy', CSP);
@@ -63,11 +71,19 @@ function createWindow() {
     if (url.startsWith('https://')) shell.openExternal(url);
     return { action: 'deny' };
   });
+  // The game never navigates away from its own bundle.
+  const stayHome = (e, url) => {
+    if (!url.startsWith('app://game/')) e.preventDefault();
+  };
+  win.webContents.on('will-navigate', stayHome);
+  win.webContents.on('will-redirect', stayHome);
   win.loadURL('app://game/index.html');
 }
 
 Menu.setApplicationMenu(null);
 app.whenReady().then(() => {
+  // No camera, microphone, geolocation, notifications etc. are ever needed.
+  session.defaultSession.setPermissionRequestHandler((_wc, _perm, cb) => cb(false));
   serveDist();
   createWindow();
 });

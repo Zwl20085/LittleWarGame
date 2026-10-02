@@ -117,7 +117,10 @@ export class Terrain {
     this.sealCourtyards();
   }
 
-  /** Flood open ground from the map border; open cells it cannot reach become 3 m walls. */
+  /**
+   * Flood open ground from the map border and from objective / city squares; open cells it
+   * cannot reach (closed courtyards) become 3 m walls.
+   */
   private sealCourtyards(): void {
     const H = this.bldH;
     const nx = this.bnx;
@@ -139,6 +142,20 @@ export class Terrain {
       push(j * nx);
       push(j * nx + nx - 1);
     }
+    // Squares around objectives and city points stay open even inside a closed ring of houses.
+    const seeds: V2[] = [...this.def.objectives.map((o) => o.pos), ...this.def.cities.flatMap((c) => [c.hq, c.exit, c.truck])];
+    const R = 6;
+    for (const p of seeds) {
+      const ci = Math.round(p.x / this.bcell);
+      const cj = Math.round(p.z / this.bcell);
+      for (let dj = -R; dj <= R; dj++) {
+        for (let di = -R; di <= R; di++) {
+          const i = ci + di;
+          const j = cj + dj;
+          if (i >= 0 && j >= 0 && i < nx && j < nz) push(j * nx + i);
+        }
+      }
+    }
     while (head < tail) {
       const k = queue[head++];
       const i = k % nx;
@@ -154,7 +171,7 @@ export class Terrain {
   buildingH(x: number, z: number): number {
     const i = Math.round(x / this.bcell);
     const j = Math.round(z / this.bcell);
-    if (i < 0 || j < 0 || i >= this.bnx || j >= this.bnz) return 0;
+    if (!(i >= 0 && j >= 0 && i < this.bnx && j < this.bnz)) return 0; // also rejects NaN
     return this.bldH[j * this.bnx + i];
   }
 

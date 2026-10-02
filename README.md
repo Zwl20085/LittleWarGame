@@ -67,7 +67,7 @@ URL shortcuts for testing: `?quick` (hand-made 4-way map), `?quick&map=gen&seed=
 | 1 / 2 / 3 | Army-group panels (posture, target, share) |
 | Space, U, Esc | Pause, hide HUD, menu |
 
-F11 toggles fullscreen in the desktop app.
+F11 toggles fullscreen in the desktop app; Ctrl+Shift+I opens the developer console (useful for bug reports).
 
 Speed: 1× / 2× / 4× / 8×. If the simulation can't keep up, the game slows down and shows a notice; it never skips ticks.
 

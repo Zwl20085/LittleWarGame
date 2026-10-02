@@ -95,6 +95,7 @@ export function updateMovement(world: World, u: Unit): void {
   const near = d < (last ? 2.5 : 5) && (last || d < 0.6 || world.terrain.wallFree(u.pos, u.path[u.pathIdx + 1]));
   if (near) {
     u.pathIdx++;
+    u.detours = 0;
     if (u.pathIdx >= u.path.length) {
       u.path = [];
       u.pathIdx = 0;
@@ -129,9 +130,14 @@ export function updateMovement(world: World, u: Unit): void {
     u.detourAt = world.time + 1.5;
     const pts = ter.detour(u.pos, wp, 40, nav.walkFn);
     const tail = pts?.[pts.length - 1];
-    const reaches = !!tail && dist(tail, wp) < 6;
-    if (pts && tail && dist(tail, u.pos) > 3 && (reaches || last)) u.path.splice(u.pathIdx, 0, ...pts);
-    else if (!last) u.pathIdx++; // this waypoint is cut off locally: aim for the next one
+    const progress = !!tail && dist(tail, u.pos) > 3 && dist(tail, wp) < d - 2;
+    u.detours++;
+    if (u.detours > 3) {
+      // Repeated detours on one leg: the coarse path is wrong here, so ask for a fresh one.
+      u.detours = 0;
+      if (u.dest) moveTo(world, u, u.dest, true);
+    } else if (pts && progress) u.path.splice(u.pathIdx, 0, ...pts);
+    else if (!last && ter.buildingH(wp.x, wp.z) > 0) u.pathIdx++; // waypoint lies in a house
     else u.slideSide = -u.slideSide;
   } else {
     // Wall-slide around the obstacle, measured from the direction we want to go (the hull

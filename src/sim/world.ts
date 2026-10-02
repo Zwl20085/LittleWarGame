@@ -227,6 +227,7 @@ export class World {
       opObjective: null,
       slideSide: 1,
       detourAt: 0,
+      detours: 0,
       opTarget: null,
       opUntil: 0,
       salvos: 0,
