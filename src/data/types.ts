@@ -106,6 +106,8 @@ export interface Rules {
     readonly place_slots: Record<string, Record<string, number>>;
     readonly initial_radius_m: number;
     readonly capital_pop_share?: number;
+    /** Ceiling of the territory-driven population cap, as a multiple of `economy.population_cap`. */
+    readonly pop_cap_max_multiplier?: number;
     readonly pop_per_place?: Record<string, number>;
     readonly resolve_loss_on_capture?: Record<string, number>;
     readonly depot_efficiency_falloff_m?: number;
@@ -115,6 +117,9 @@ export interface Rules {
   readonly victory: {
     /** false (default since 2026-10-02): no resolve; defeat only by losing the capital. */
     readonly resolve_enabled?: boolean;
+    /** Conquest victory: hold this share of all settlements for `dominion_hold_seconds` (0 = off). */
+    readonly dominion_share?: number;
+    readonly dominion_hold_seconds?: number;
     readonly initial_resolve: number;
     readonly destroyed_population_resolve_multiplier: number;
     readonly majority_control_enemy_bleed_per_second: number;

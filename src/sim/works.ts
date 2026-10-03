@@ -1,4 +1,5 @@
 import { trySpend } from './economy';
+import { stormOn } from './strategyai';
 import type { Faction, Fort, FortKind, Unit } from './types';
 import { angleDiff, DEG, dist, headingTo, type V2 } from './vec';
 import type { World } from './world';
@@ -20,6 +21,9 @@ export const WORKS = {
 } as const;
 
 type LineKind = Extract<FortKind, 'trench' | 'sandbag'>;
+
+/** Round 4: the last work each unit failed to reach. */
+const unreachableWork = new WeakMap<Unit, number>();
 
 /** Line-work pacing per faction (separate from the field-cover builder's budget). */
 const lineWorksAt = new WeakMap<Faction, number>();
@@ -80,7 +84,13 @@ export function openWork(world: World, owner: number, p: V2, r: number): Fort | 
 /** One digging step (called from the unit executor, ~every 0.4 s). Returns true while busy. */
 export function dig(u: Unit, fort: Fort, moveTo: (p: V2) => void, stop: () => void): boolean {
   if (fort.progress >= 1 || fort.hp <= 0) return false;
+  // Round 4: a work this unit could not path to is left to others (soak: diggers 'unreachable' for minutes).
+  if (stormOn() && unreachableWork.get(u) === fort.id) return false;
   if (segDist(u.pos, fort.start ?? fort.pos, fort.end ?? fort.pos) > 8) {
+    if (stormOn() && u.pathFailed && u.dest && dist(u.dest, fort.pos) < 45) {
+      unreachableWork.set(u, fort.id);
+      return false;
+    }
     moveTo(fort.pos);
   } else {
     stop();

@@ -4,8 +4,10 @@ import { dig, openWork, startLine } from './works';
 import { moveTo, stop } from './movement';
 import { hostileMask } from './spatial';
 import { noteDirective } from './events';
-import { ADAPT, adaptive, EAGER, eagerOn } from './strategyai';
+import { ADAPT, adaptive, EAGER, eagerOn, stormOn } from './strategyai';
+import { navPost } from './crewai';
 import { populationCap } from './production';
+import { createHomeThreat, fortifyPlace, homeOn, thinkHomeDefence, thinkHomeGuard, type HomeThreat } from './homeguard';
 import type { Faction, Objective, Unit } from './types';
 import { dist, headingTo, type V2 } from './vec';
 import type { World } from './world';
@@ -62,10 +64,12 @@ export interface HighCommand {
   /** Decisive offensive: enemy faction whose capital every group goes for (-1 = none), and since when. */
   finishTarget: number;
   finishSince: number;
+  /** Round 3: forecast risk to the capital, recalled groups and the fortify order (homeguard.ts). */
+  homeThreat: HomeThreat;
 }
 
 export function createHighCommand(): HighCommand {
-  return { directives: [], attackBias: {}, threatAt: {}, nextAt: 0, fullness: 0, need: 0, aggression: 0, finishTarget: -1, finishSince: 0 };
+  return { directives: [], attackBias: {}, threatAt: {}, nextAt: 0, fullness: 0, need: 0, aggression: 0, finishTarget: -1, finishSince: 0, homeThreat: createHomeThreat() };
 }
 
 const clamp01 = (x: number): number => Math.max(0, Math.min(1, x));
@@ -146,7 +150,9 @@ function chooseFinishTarget(world: World, f: Faction, army: number, known: Map<n
     const ownHeld = held.get(f.id) ?? 0;
     const broken = (theirHeld <= EAGER.brokenHeld && ownHeld >= EAGER.brokenLead * Math.max(1, theirHeld))
       || (theirArmy < army * EAGER.brokenArmy && ownHeld > theirHeld);
-    if (!dominant && !(broken && hc.fullness >= EAGER.fullLo)) continue;
+    // Round 4: a side that dwarfs this enemy (≥ dwarfPop × its population) goes for it now.
+    const dwarfed = stormOn() && f.popPresent >= EAGER.dwarfPop * Math.max(1, x.popPresent);
+    if (!dominant && !dwarfed && !(broken && hc.fullness >= EAGER.fullLo)) continue;
     // Nearest and weakest: distance stretched by the enemy's share of the land and its army.
     const score = dist(world.hqPos(x.id), hq) * (0.5 + (2 * theirHeld) / total + theirArmy / Math.max(1, army));
     if (score < bestScore) { bestScore = score; best = x.id; }
@@ -194,6 +200,7 @@ export function thinkHighCommand(world: World, f: Faction): void {
   f.command.nextAt = world.time + HQ.everySeconds;
   const hc = f.command;
   if (eagerOn()) assessMood(world, f);
+  thinkHomeDefence(world, f);
   const dirs: Directive[] = [];
   const bias: Record<string, number> = {};
   const hq = world.hqPos(f.id);
@@ -231,7 +238,15 @@ export function thinkHighCommand(world: World, f: Faction): void {
   hc.directives = dirs;
   const top = dirs.find((d) => d.kind === 'attack');
   if (top) noteDirective(world, f.id, 'attack', top.obj, attackersOf(world, f, top.obj));
-  assignGarrisons(world, f, dirs.filter((d) => d.kind === 'defend').slice(0, 8));
+  const defend = dirs.filter((d) => d.kind === 'defend').slice(0, 8);
+  assignGarrisons(world, f, defend);
+  // Round 3: the two most pressed garrisoned towns / cities dig a trench across the approach.
+  if (homeOn()) {
+    for (const d of defend.filter((x) => x.assigned > 0).slice(0, 2)) {
+      const o = world.objectives.find((x) => x.id === d.obj);
+      if (o && (o.kind === 'town' || o.kind === 'city')) fortifyPlace(world, f, o.pos, o.radius);
+    }
+  }
   assignOccupations(world, f, dirs.filter((d) => d.kind === 'occupy'));
   // The UI shows the top few (all three kinds represented when present).
   hc.directives = pickShown(dirs);
@@ -270,7 +285,7 @@ function assignGarrisons(world: World, f: Faction, defend: Directive[]): void {
   }
   // Release garrisons whose town has been quiet for a while (or was lost).
   for (const u of mine) {
-    if (u.opRole !== 'garrison' || !u.opObjective) continue;
+    if (u.opRole !== 'garrison' || !u.opObjective || u.opObjective.startsWith('hq:')) continue;
     const o = world.objectives.find((x) => x.id === u.opObjective);
     const quiet = world.time - (f.command.threatAt[u.opObjective] ?? -1e9) > HQ.releaseCalmSeconds;
     if (!o || o.owner !== f.id || quiet) {
@@ -373,6 +388,7 @@ function byReach(occupy: Directive[], pool: Unit[]): Directive[] {
 
 /** Garrison post: a ring around the settlement centre, facing the threat; fight anything close. */
 export function thinkGarrison(world: World, u: Unit): boolean {
+  if (u.opObjective?.startsWith('hq:')) return thinkHomeGuard(world, u);
   const o = world.objectives.find((x) => x.id === u.opObjective);
   if (!o) {
     u.opRole = 'line';
@@ -381,9 +397,13 @@ export function thinkGarrison(world: World, u: Unit): boolean {
   if (!u.opTarget) {
     const foe = threatBearing(world, u.owner, o.pos);
     const spreadA = ((u.id * 2654435761) % 1000) / 1000 - 0.5; // ±0.5 rad around the threat bearing
-    const r = Math.max(25, o.radius * 0.55);
-    const a = foe + spreadA * 2.2;
-    u.opTarget = world.terrain.freeNear({ x: o.pos.x + Math.cos(a) * r, z: o.pos.z + Math.sin(a) * r }, 30);
+    // Round 4: crews (MG / AT) man the edge facing the threat so the approach is inside their range,
+    // on their own nav grid (crewai.navPost).
+    const crew = stormOn() && u.def.kind === 'crew';
+    const r = crew ? o.radius + 10 : Math.max(25, o.radius * 0.55);
+    const a = foe + spreadA * (crew ? 1.2 : 2.2);
+    const p = { x: o.pos.x + Math.cos(a) * r, z: o.pos.z + Math.sin(a) * r };
+    u.opTarget = stormOn() ? navPost(world, u, p) : world.terrain.freeNear(p, 30);
   }
   // Counter-attack enemies inside the town; otherwise man the post.
   let foeUnit: Unit | null = null;
@@ -396,7 +416,9 @@ export function thinkGarrison(world: World, u: Unit): boolean {
       foeUnit = e;
     }
   }
-  if (foeUnit && bd < o.radius + 40) moveTo(world, u, foeUnit.pos);
+  // Round 4: crews do not charge into the town; they fight from their post (AT guns walked 20 % of garrison time).
+  if (foeUnit && bd < o.radius + 40 && !(stormOn() && u.def.kind === 'crew')) moveTo(world, u, foeUnit.pos);
+  else if (homeOn() && u.def.kind === 'infantry' && (!foeUnit || bd > 150) && digPlaceWork(world, u, o.pos, o.radius)) return true;
   else if (dist(u.pos, u.opTarget) > 12) moveTo(world, u, u.opTarget);
   else if (u.def.kind === 'infantry' && fortifyPost(world, u, o.pos)) return true;
   else stop(u);
@@ -406,6 +428,16 @@ export function thinkGarrison(world: World, u: Unit): boolean {
 }
 
 /** 筑垒防守: a garrison squad at its post stacks a sandbag barricade facing outward. */
+/** Round 3: the garrison digs the place's approach trench (homeguard.fortifyPlace) before manning its post. */
+function digPlaceWork(world: World, u: Unit, centre: V2, radius: number): boolean {
+  if (u.moraleState !== 'normal') return false;
+  const work = openWork(world, u.owner, centre, radius + 80);
+  if (!work || work.kind !== 'trench') return false;
+  selectTarget(world, u, null);
+  u.status = 'status.digging';
+  return dig(u, work, (p) => moveTo(world, u, p), () => stop(u));
+}
+
 function fortifyPost(world: World, u: Unit, centre: V2): boolean {
   const post = u.opTarget;
   if (!post) return false;

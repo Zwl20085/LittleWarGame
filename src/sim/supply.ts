@@ -3,6 +3,11 @@ import { hostileMask } from './spatial';
 import { dist, type V2 } from './vec';
 import type { World } from './world';
 
+/** Query scratch arrays (the engineer check nests inside the truck loop, so they differ). */
+const SC_TRUCKS: Unit[] = [];
+const SC_ENGINEERS: Unit[] = [];
+const SC_FOES: Unit[] = [];
+
 /**
  * Capped proportional allocation (BALANCE_SPEC §6.2): distribute L by need×priority,
  * saturated units drop out and the remainder is re-distributed. Never exceeds need or L.
@@ -119,15 +124,15 @@ export function supplyTick(world: World, u: Unit, seconds: number): void {
   const hq = world.hqPos(u.owner);
   let canRecover = dist(u.pos, hq) <= s.city_recovery_radius_m;
   if (!canRecover && u.supplied) {
-    for (const o of world.spatial.query(u.pos.x, u.pos.z, s.truck_recovery_radius_m)) {
+    for (const o of world.spatial.query(u.pos.x, u.pos.z, s.truck_recovery_radius_m, SC_TRUCKS)) {
       if (o.owner === u.owner && o.def.id === 'supply_truck' && o.hp > 0 && o.supplied) {
-        canRecover = world.spatial.query(u.pos.x, u.pos.z, 15).some((e) => e.owner === u.owner && e.def.id === 'engineer' && e.hp > 0);
+        canRecover = world.spatial.query(u.pos.x, u.pos.z, 15, SC_ENGINEERS).some((e) => e.owner === u.owner && e.def.id === 'engineer' && e.hp > 0);
         if (canRecover) break;
       }
     }
   }
   if (!canRecover) return;
-  for (const o of world.spatial.queryOwners(u.pos.x, u.pos.z, 100, hostileMask(world, u.owner))) if (o.hp > 0 && world.isHostile(u.owner, o.owner) && world.knows(u.owner, o)) return;
+  for (const o of world.spatial.queryOwners(u.pos.x, u.pos.z, 100, hostileMask(world, u.owner), SC_FOES)) if (o.hp > 0 && world.isHostile(u.owner, o.owner) && world.knows(u.owner, o)) return;
   const veh = u.def.kind === 'vehicle';
   const rate = veh ? s.vehicle_hp_recovery_ratio_per_second : s.infantry_hp_recovery_ratio_per_second;
   let h = Math.min(rate * seconds, (u.def.maxHp - u.hp) / u.def.maxHp);

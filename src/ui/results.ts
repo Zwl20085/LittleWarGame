@@ -12,6 +12,7 @@ export function showResults(root: HTMLElement, world: World, playerId: number, s
     else if (!spectator) headline = r.winners.includes(playerId) ? t('res.victory') : t('res.defeat');
     else headline = t('res.winner', { f: r.winners.map((f) => factionLabel(world, f)).join(' / ') });
     if (r.reason === 'timeout') headline = `${t('res.timeout')} · ${headline}`;
+    if (r.reason === 'dominion') headline = `${t('res.dominion')} · ${headline}`;
   } else {
     headline = t('res.eliminatedSpectate');
   }

@@ -35,12 +35,21 @@ const STYLES: Record<FeatureKind, Style> = {
 
 const P = { x: 0, y: 0 };
 
+interface LabelSprite {
+  readonly canvas: HTMLCanvasElement;
+  /** CSS-pixel size (the bitmap is dpr times larger). */
+  readonly w: number;
+  readonly h: number;
+}
+
 /** Map name labels drawn on the overlay, scaled with zoom and decluttered by priority. */
 export class MapLabels {
   private readonly features: MapFeature[];
   private readonly declutter = new Declutter();
   /** Measured text widths by font/spacing/text (perf: no measureText per label per frame). */
   private readonly widths = new Map<string, number>();
+  /** Pre-rendered label text (halo + fill) at device resolution, keyed by font/text/colour/dpr. */
+  private readonly sprites = new Map<string, LabelSprite>();
 
   constructor(map: MapDef, private readonly terrain: Terrain) {
     const list = [...(map.features ?? [])];
@@ -90,20 +99,49 @@ export class MapLabels {
       if (!this.declutter.place(x0, ly - px * 0.7, x1, ly + px * 0.7)) continue;
       avoid?.place(x0, ly - px * 0.7, x1, ly + px * 0.7, true);
       this.symbol(g, st, P.x, P.y, px);
-      g.strokeStyle = st.halo;
-      g.lineWidth = Math.max(3, px * 0.28);
-      g.strokeText(text, P.x, ly);
-      g.fillStyle = st.color;
-      g.fillText(text, P.x, ly);
+      // Text is drawn once into a cached sprite per (font, text, colour, dpr); stroke+fill of
+      // ~150 labels per frame was the overlay's main cost at the overview zoom.
+      const sprite = this.sprite(g.font, spacing, text, st.color, st.halo, Math.max(3, px * 0.28), o.dpr);
+      g.drawImage(sprite.canvas, P.x - sprite.w / 2, ly - sprite.h / 2, sprite.w, sprite.h);
       if (f.kind === 'mountain' || f.kind === 'hill') {
         const elev = `${Math.round(y)} m`;
-        g.font = `${Math.round(px * 0.68)}px ${SANS}`;
-        (g as CanvasRenderingContext2D & { letterSpacing?: string }).letterSpacing = '0px';
-        g.strokeText(elev, P.x, ly + px * 0.95);
-        g.fillText(elev, P.x, ly + px * 0.95);
+        const es = this.sprite(`${Math.round(px * 0.68)}px ${SANS}`, '0px', elev, st.color, st.halo, Math.max(3, px * 0.28), o.dpr);
+        g.drawImage(es.canvas, P.x - es.w / 2, ly + px * 0.95 - es.h / 2, es.w, es.h);
       }
     }
     (g as CanvasRenderingContext2D & { letterSpacing?: string }).letterSpacing = '0px';
+  }
+
+  private sprite(font: string, spacing: string, text: string, color: string, halo: string, lineWidth: number, dpr: number): LabelSprite {
+    const key = `${font}|${spacing}|${text}|${color}|${halo}|${dpr}`;
+    const hit = this.sprites.get(key);
+    if (hit) return hit;
+    if (this.sprites.size > 1500) this.sprites.clear();
+    const px = Number(/(\d+(?:\.\d+)?)px/.exec(font)?.[1] ?? 14);
+    const measure = document.createElement('canvas').getContext('2d')!;
+    measure.font = font;
+    (measure as CanvasRenderingContext2D & { letterSpacing?: string }).letterSpacing = spacing;
+    const tw = measure.measureText(text).width;
+    const w = Math.ceil(tw + lineWidth * 2 + 6);
+    const h = Math.ceil(px * 1.5 + lineWidth * 2);
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.ceil(w * dpr));
+    canvas.height = Math.max(1, Math.ceil(h * dpr));
+    const c = canvas.getContext('2d')!;
+    c.setTransform(dpr, 0, 0, dpr, 0, 0);
+    c.font = font;
+    (c as CanvasRenderingContext2D & { letterSpacing?: string }).letterSpacing = spacing;
+    c.textAlign = 'center';
+    c.textBaseline = 'middle';
+    c.lineJoin = 'round';
+    c.strokeStyle = halo;
+    c.lineWidth = lineWidth;
+    c.strokeText(text, w / 2, h / 2);
+    c.fillStyle = color;
+    c.fillText(text, w / 2, h / 2);
+    const sprite = { canvas, w, h };
+    this.sprites.set(key, sprite);
+    return sprite;
   }
 
   private symbol(g: CanvasRenderingContext2D, st: Style, x: number, y: number, px: number): void {

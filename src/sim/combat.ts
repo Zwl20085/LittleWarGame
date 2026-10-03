@@ -12,6 +12,18 @@ import { hostileMask } from './spatial';
 import { angleDiff, DEG, dist, headingTo, turnToward, type V2 } from './vec';
 import type { World } from './world';
 
+/**
+ * Reusable result arrays for the spatial queries below (no per-call allocation). Each call site
+ * has its own: a loop over one of them may call a helper that queries with another, never the same.
+ */
+const SC_CANDS: Unit[] = [];
+const SC_CLUSTER: Unit[] = [];
+const SC_RISK: Unit[] = [];
+const SC_SECONDARY: Unit[] = [];
+const SC_OBSERVER: Unit[] = [];
+const SC_RECON: Unit[] = [];
+const SC_AP: Unit[] = [];
+
 export const muzzleHeight = (u: Unit): number => (u.def.kind === 'vehicle' ? 2.4 : u.def.kind === 'crew' ? 1.3 : 1.6);
 export const centerHeight = (u: Unit): number => (u.def.kind === 'vehicle' ? 1.5 : 0.9);
 const hitRadius = (u: Unit): number => (u.def.kind === 'vehicle' ? 3.2 : 4.5);
@@ -84,7 +96,7 @@ export function selectTarget(world: World, u: Unit, objective: V2 | null): void 
   const cur = world.unitAlive(u.targetId);
   const radius = w.range;
   // Only hostiles can score: owner-filtered query skips friendly-only cells (same order).
-  const cands = world.spatial.queryOwners(u.pos.x, u.pos.z, radius, hostileMask(world, u.owner));
+  const cands = world.spatial.queryOwners(u.pos.x, u.pos.z, radius, hostileMask(world, u.owner), SC_CANDS);
   let best: Unit | null = null;
   let bestScore = -1;
   let curScore = -1;
@@ -120,7 +132,7 @@ export function selectTarget(world: World, u: Unit, objective: V2 | null): void 
 
 function clusterBonus(world: World, t: Unit): number {
   let n = 0;
-  for (const o of world.spatial.query(t.pos.x, t.pos.z, 25)) if (o.owner === t.owner && o.hp > 0) n++;
+  for (const o of world.spatial.query(t.pos.x, t.pos.z, 25, SC_CLUSTER)) if (o.owner === t.owner && o.hp > 0) n++;
   return Math.min(1, (n - 1) / 3);
 }
 
@@ -130,7 +142,7 @@ function friendlyRisk(world: World, u: Unit, aim: V2, w: WeaponDef): number {
   const r = DISPERSION.ninetyFiveFactor * (sigma.base + sigma.perRange * dist(u.pos, aim)) + w.blastRadius;
   let friend = 0;
   let enemy = 0;
-  for (const o of world.spatial.query(aim.x, aim.z, r)) {
+  for (const o of world.spatial.query(aim.x, aim.z, r, SC_RISK)) {
     if (o.hp <= 0) continue;
     const v = o.def.costP + o.def.costM;
     if (o.owner === u.owner) friend += v;
@@ -196,7 +208,7 @@ function pickSecondaryTarget(world: World, u: Unit, w: WeaponDef): Unit | null {
   if (primaryT && primaryT.def.kind !== 'vehicle' && dist(u.pos, primaryT.pos) <= w.range && canEngage(world, u, w, primaryT) === null) return primaryT;
   let best: Unit | null = null;
   let bd = Infinity;
-  for (const t of world.spatial.queryOwners(u.pos.x, u.pos.z, w.range, hostileMask(world, u.owner))) {
+  for (const t of world.spatial.queryOwners(u.pos.x, u.pos.z, w.range, hostileMask(world, u.owner), SC_SECONDARY)) {
     if (t.hp <= 0 || t.def.kind === 'vehicle' || !world.isHostile(u.owner, t.owner)) continue;
     const d = dist(u.pos, t.pos);
     if (d < bd && canEngage(world, u, w, t) === null) {
@@ -297,7 +309,7 @@ export function indirectSigma(world: World, u: Unit, w: WeaponDef, t: Unit, rang
 }
 
 function observedByAny(world: World, f: number, t: Unit): boolean {
-  for (const o of world.spatial.query(t.pos.x, t.pos.z, 220)) {
+  for (const o of world.spatial.query(t.pos.x, t.pos.z, 220, SC_OBSERVER)) {
     if (o.owner !== f || o.hp <= 0) continue;
     if (dist(o.pos, t.pos) <= o.def.vision && world.terrain.los(o.pos.x, o.y + 1.7, o.pos.z, t.pos.x, t.y + 1, t.pos.z)) return true;
   }
@@ -305,20 +317,33 @@ function observedByAny(world: World, f: number, t: Unit): boolean {
 }
 
 function hasReconSpotter(world: World, f: number, t: Unit): boolean {
-  for (const o of world.spatial.query(t.pos.x, t.pos.z, DISPERSION.reconRange)) {
+  for (const o of world.spatial.query(t.pos.x, t.pos.z, DISPERSION.reconRange, SC_RECON)) {
     if (o.owner !== f || o.def.id !== 'recon' || o.hp <= 0 || o.routing || o.moraleState !== 'normal') continue;
     if (world.terrain.los(o.pos.x, o.y + 1.7, o.pos.z, t.pos.x, t.y + 1, t.pos.z)) return true;
   }
   return false;
 }
 
+/**
+ * Where to lay the guns on a moving target: its position after the shell's flight time, extrapolated
+ * along its heading (observers call the correction; BALANCE_SPEC §8.2). Stationary targets: as is.
+ */
+function leadPoint(world: World, w: WeaponDef, t: Unit, m: V3, g: number, preferHigh: boolean): V2 {
+  if (!t.moving || t.speedNow <= 0.05) return t.pos;
+  const res = solveArc(m, { x: t.pos.x, y: world.terrain.heightAt(t.pos.x, t.pos.z), z: t.pos.z }, w.muzzleSpeed, g, w.minElevationDeg, w.maxElevationDeg, preferHigh);
+  if (!res.ok) return t.pos;
+  const lead = Math.min(DISPERSION.leadMaxM, t.speedNow * res.sol.tFlight * DISPERSION.leadFactor);
+  return { x: t.pos.x + Math.cos(t.heading) * lead, z: t.pos.z + Math.sin(t.heading) * lead };
+}
+
 function fireIndirect(world: World, u: Unit, w: WeaponDef, t: Unit, m: V3): boolean {
   const range = dist(u.pos, t.pos);
   const sigma = indirectSigma(world, u, w, t, range);
-  const land = { x: t.pos.x + world.rngScatter.normal() * sigma, z: t.pos.z + world.rngScatter.normal() * sigma };
   const g = world.data.rules.simulation.gravity_mps2;
-  const p1: V3 = { x: land.x, y: world.terrain.heightAt(land.x, land.z), z: land.z };
   const preferHigh = w.id === 'mortar_shell';
+  const aimAt = leadPoint(world, w, t, m, g, preferHigh);
+  const land = { x: aimAt.x + world.rngScatter.normal() * sigma, z: aimAt.z + world.rngScatter.normal() * sigma };
+  const p1: V3 = { x: land.x, y: world.terrain.heightAt(land.x, land.z), z: land.z };
   const res = solveArc(m, p1, w.muzzleSpeed, g, w.minElevationDeg, w.maxElevationDeg, preferHigh);
   if (!res.ok) {
     u.status = 'status.noArc';
@@ -326,8 +351,16 @@ function fireIndirect(world: World, u: Unit, w: WeaponDef, t: Unit, m: V3): bool
   }
   const h = (x: number, z: number): number => world.terrain.heightAt(x, z) + world.terrain.buildingH(x, z);
   let sol = res.sol;
-  if (!arcClear(m, sol, g, h) && res.alt && arcClear(m, res.alt, g, h)) sol = res.alt;
-  // If neither arc clears, still fire: the shell genuinely hits the ridge (C04).
+  if (!arcClear(m, sol, g, h)) {
+    // Neither arc clears this fall of shot: the crew does not fire into the crest or the wall in
+    // front of it (balance lab 1.1: ~30 % of howitzer shells used to burst short, many on our own
+    // troops). Next tick draws a new fall of shot; a masked gun gets NO_ARC from canEngage.
+    if (!res.alt || !arcClear(m, res.alt, g, h)) {
+      u.status = 'status.noArc';
+      return false;
+    }
+    sol = res.alt;
+  }
   const fp = firepowerScale(u.def, u.hp, u.def.maxHp);
   spawnProjectile(world, {
     owner: u.owner, weapon: w, kind: 'shell', pos: m, vel: sol.vel, targetId: null, intendedHit: false, sourceId: u.id, srcType: u.def.id,
@@ -399,7 +432,7 @@ export function updateProjectiles(world: World): void {
 }
 
 function apCollision(world: World, pr: Projectile, x: number, y: number, z: number): Unit | null {
-  for (const u of world.spatial.query(x, z, 5)) {
+  for (const u of world.spatial.query(x, z, 5, SC_AP)) {
     if (u.hp <= 0 || u.id === pr.sourceId) continue;
     const isTarget = u.id === pr.targetId;
     // Missed rounds only collide with vehicles they physically cross; squads let AP pass through.

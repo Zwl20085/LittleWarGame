@@ -7,6 +7,10 @@ export const STRATEGY_AI = {
   adaptive: true,
   /** Round 2 eagerness layer (EAGER below); only active with `adaptive`. Off = round-1 behaviour, for A/B. */
   eager: true,
+  /** Round 3 home defence and fortification (homeguard.ts); only active with `eager`. Off = round-2 all-or-nothing recall, for A/B. */
+  homeDefence: true,
+  /** Round 4: capital siege-and-storm, recall spares assaults, crew weapons deploy where the fighting is (storm.ts, crewai.ts). Off = round 3, for A/B. */
+  storm: true,
 };
 
 export const ADAPT = {
@@ -105,6 +109,8 @@ export const EAGER = {
   brokenLead: 4,
   brokenArmy: 0.4,
   finishKeepS: 120,
+  /** Round 4: our population ≥ this × an enemy's → finish it now (lead: a 2–4× richer side should roll over). */
+  dwarfPop: 2,
   finishSpearheadM: 2200,
   /** Local ratio for a spearhead toward the target capital (2.2 otherwise), every 60 s instead of 120 s. */
   finishSpearRatio: 1.3,
@@ -120,3 +126,4 @@ export const EAGER = {
 
 export const adaptive = (): boolean => STRATEGY_AI.adaptive;
 export const eagerOn = (): boolean => STRATEGY_AI.adaptive && STRATEGY_AI.eager;
+export const stormOn = (): boolean => eagerOn() && STRATEGY_AI.storm;

@@ -48,8 +48,22 @@ export function arcPoint(p0: V3, vel: V3, g: number, t: number): V3 {
   return { x: p0.x + vel.x * t, y: p0.y + vel.y * t - 0.5 * g * t * t, z: p0.z + vel.z * t };
 }
 
+/** Horizontal metres in front of the muzzle checked every ~1.5 m (a gun parked against a wall or an up-slope is masked). */
+export const MUZZLE_CLEAR_M = 24;
+
 /** True if the arc clears terrain until shortly before impact. */
 export function arcClear(p0: V3, sol: ArcSolution, g: number, heightAt: (x: number, z: number) => number): boolean {
+  const vh = Math.hypot(sol.vel.x, sol.vel.z);
+  if (vh > 0) {
+    // The 0.1 s samples below start ~6-10 m out; a wall or bank right in front of the muzzle used to
+    // burst ~20 % of howitzer shells on the gun's own position (balance lab 1.1).
+    for (let d = 1.5; d <= MUZZLE_CLEAR_M; d += 1.5) {
+      const t = d / vh;
+      if (t >= sol.tFlight * 0.8) break;
+      const p = arcPoint(p0, sol.vel, g, t);
+      if (p.y < heightAt(p.x, p.z) + 0.5) return false;
+    }
+  }
   const steps = Math.max(8, Math.ceil(sol.tFlight / 0.1));
   for (let k = 1; k < steps - 1; k++) {
     const t = (k / steps) * sol.tFlight;

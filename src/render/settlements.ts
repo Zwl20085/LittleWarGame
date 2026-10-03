@@ -3,7 +3,7 @@ import type { Building, BuildingKind, Terrain } from '../sim/terrain';
 import { GeoBuilder, trs } from './instancing';
 import { PAL } from './palette';
 
-const TILE = 600;
+const TILE = 900; // bigger tiles: fewer instanced meshes per frame
 
 /** Unit gable roof: ridge along x, spans z in [-.5,.5], height 1. */
 export function gableRoof(): THREE.BufferGeometry {

@@ -191,9 +191,11 @@ export function updateMovement(world: World, u: Unit): void {
   }
   // Stuck watchdog: no progress for a while → fresh plan; still none → drop the order (the AI
   // picks another goal) instead of standing there for the rest of the war.
-  if (dist(u.pos, u.progressPos) > 1) {
-    u.progressPos.x = u.pos.x;
-    u.progressPos.z = u.pos.z;
+  // Progress = the waypoint advanced, or the distance to it shrank by 2 m (separation jostling
+  // moves a unit about without getting it anywhere).
+  if (u.pathIdx !== u.progressIdx || d < u.progressD - 2) {
+    u.progressIdx = u.pathIdx;
+    u.progressD = d;
     u.progressAt = world.time;
   } else if (world.time - u.progressAt > STUCK_DROP_S) {
     stop(u);

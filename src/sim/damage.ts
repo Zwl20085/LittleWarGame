@@ -11,6 +11,10 @@ import type { Fort, ProjectileKind, Unit, V3 } from './types';
 import { angleDiff, DEG, headingTo, type V2 } from './vec';
 import type { World } from './world';
 
+/** Query scratch arrays: the blast loop calls applyDamage, which queries with its own. */
+const SC_WIPE: Unit[] = [];
+const SC_BLAST: Unit[] = [];
+
 /**
  * Effective cover of `u` against an attack coming from `from` (fort cover is directional, 120° front).
  * A squad next to an intact building that stands between it and `from` is garrisoned: level 3.
@@ -72,7 +76,7 @@ export function applyDamage(world: World, u: Unit, dmg: number, attackerOwner: n
     if (fort) fort.occupant = null;
   }
   // Nearby friends lose a little morale when a unit is wiped (rate-limited per unit).
-  for (const n of world.spatial.query(u.pos.x, u.pos.z, 60)) {
+  for (const n of world.spatial.query(u.pos.x, u.pos.z, 60, SC_WIPE)) {
     if (n.owner === u.owner && n.id !== u.id && n.hp > 0 && world.time - n.lastMoraleWipeAt > 10) {
       n.morale = Math.max(0, n.morale - COMBAT.friendWipeMoraleLoss);
       n.lastMoraleWipeAt = world.time;
@@ -137,7 +141,7 @@ export function resolveBlast(
   if (radius <= 0) return;
   // Structural damage: AP rounds are shaped for armour, not walls (capped and halved).
   noteBuildingHit(world, at, kind === 'ap' ? Math.min(damage, 150) * 0.5 : damage);
-  const hits = world.spatial.query(at.x, at.z, radius + 4);
+  const hits = world.spatial.query(at.x, at.z, radius + 4, SC_BLAST);
   for (const u of hits) {
     if (u.id === exclude || u.hp <= 0) continue;
     const d = Math.hypot(u.pos.x - at.x, u.pos.z - at.z, u.y - at.y);

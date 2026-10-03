@@ -124,7 +124,9 @@ export function populationCap(world: World, f: Faction): number {
   const k = world.data.rules.proposed_defaults.army_scale ?? 1;
   let n = cap * terr.capital_pop_share;
   for (const o of world.objectives) if (o.owner === f.id) n += (terr.pop_per_place[o.kind] ?? 0) * k;
-  return Math.min(cap, Math.round(n));
+  // Territory-driven ceiling (1.1): the side that holds the map may field a larger army than the
+  // base cap, so the last fortified capital can be overmatched instead of stalling the war.
+  return Math.min(Math.round(cap * (terr.pop_cap_max_multiplier ?? 1)), Math.round(n));
 }
 
 function freeSlot(world: World, f: Faction, facility: string): number {
