@@ -108,11 +108,13 @@ export interface HomeThreat {
   works: number;
   /** Superior force heading for the capital (value) and its ETA. */
   far: number;
+  /** Round 5: forecast value from enemies in contact or actually heading for the capital (no off-axis share). */
+  aimed: number;
   farEta: number;
 }
 
 export function createHomeThreat(): HomeThreat {
-  return { level: 0, eta: -1, enemy: 0, garrison: 0, committed: 0, bearing: 0, active: false, since: 0, calmSince: 0, recall: [], recallAt: {}, fortify: false, fortifyUntil: -1, fortifyNoteAt: -1e9, noteAt: -1e9, works: 0, far: 0, farEta: -1 };
+  return { level: 0, eta: -1, enemy: 0, garrison: 0, committed: 0, bearing: 0, active: false, since: 0, calmSince: 0, recall: [], recallAt: {}, fortify: false, fortifyUntil: -1, fortifyNoteAt: -1e9, noteAt: -1e9, works: 0, far: 0, farEta: -1, aimed: 0 };
 }
 
 /** Recalled to the capital (new graded rule or the old all-or-nothing one). */
@@ -146,6 +148,7 @@ function forecast(world: World, f: Faction, groups: GroupInfo[]): number {
   let bx = 0;
   let bz = 0;
   let guardAway = 0;
+  let aimedV = 0;
   const key = hqKey(f.id);
   const tracks = approachOf(f);
   const acc = new Map<number, { dv: number; v: number }>();
@@ -193,12 +196,14 @@ function forecast(world: World, f: Faction, groups: GroupInfo[]): number {
     }
     if (w <= 0) continue;
     enemy += v * w;
+    if (aimed) aimedV += v * w;
     etaW += v * w * eta;
     bx += ((u.pos.x - hq.x) / Math.max(1, d)) * v * w;
     bz += ((u.pos.z - hq.z) / Math.max(1, d)) * v * w;
   }
   updateApproach(world, tracks, acc);
   ht.enemy = enemy;
+  ht.aimed = aimedV;
   ht.garrison = garrison;
   ht.eta = enemy > 0 ? etaW / enemy : far > 0 ? farEtaW / far : -1;
   ht.far = far;
@@ -361,11 +366,16 @@ function recall(world: World, f: Faction, groups: GroupInfo[], guards: Unit[], g
     }
   }
   const before = ht.recall.length;
+  // Round 5: a finisher keeps only its guards at home (a raid cannot cost it the war it is winning),
+  // and nobody recalls a whole group unless a real spearhead / contact is coming (no turtling).
+  const finisher = stormOn() && f.command.finisher;
+  if (finisher) ht.recall = [];
+  const groupsAllowed = !finisher && (!stormOn() || ht.aimed >= HOME.minThreat);
   const centre = (id: number): V2 => {
     const g = groups[id];
     return g && g.n > 0 ? { x: g.sx / g.n, z: g.sz / g.n } : hq;
   };
-  if (have < want) {
+  if (have < want && groupsAllowed) {
     // Only groups that can be home in time; the rest keep the offensive going.
     const window = Math.max(0, ht.eta) + HOME.reachSlackS;
     const army = ht.garrison + guardAway + groups.reduce((a, g) => a + g.value, 0);

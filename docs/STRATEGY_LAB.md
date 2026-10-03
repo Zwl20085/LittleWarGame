@@ -618,3 +618,67 @@ Strategy lab, 6 seeds × 50 min, same tree, `--ab storm`:
 
 Perf, paired 300 s: off 1.5 vs on 1.6 ms/tick, p90 3.0 for both. `npx vitest run` passes
 (51 tests).
+
+### Round 5: the finisher (capital-only victory)
+
+User decision: the only victory is occupying every enemy capital (`sim.checkElimination`:
+`last_standing` / `mutual`). All changes are behind `STRATEGY_AI.storm`; the constants are in
+`storm.FINISH`.
+
+**Finisher** (`storm.assessFinisher`, every HQ think). A faction becomes the finisher when both
+hold:
+- its population is ≥ **1.3 ×** its strongest remaining enemy's (it stays on until that falls
+  below 1.15 ×);
+- its stock is ≥ 50 % of the caps, or it is pop-capped (fullness ≥ 0.95).
+
+While on:
+- **Home defence** stands down to home guards and works: no army group is recalled, and recalled
+  groups are released.
+- **Rear guard and raids** stop: the troops join the storm.
+- **Occupation** drops to 2 detachments.
+- **Garrisons** are stripped to 2 per place. They are released after 15 s of calm (not 45 s),
+  and the garrison budget is 5 % of the army.
+- **Every group** besieges the finish target's capital, whatever the numbers.
+- **Forced storm**: with our army ≥ **1.5 ×** the target's known army, the storm starts at once
+  and never falls back to digging. The storm slots stay 25 m from the HQ, so units keep flowing in.
+
+**No turtling**: any faction now recalls whole groups only when the forecast includes ≥ 150
+value from units in contact or actually heading for the capital (`homeThreat.aimed`). Home
+guards still answer any raid.
+
+Two constants differ from the lead's spec, both measured on seed 7:
+- The finisher trigger is 1.3 ×, not 1.5 ×. At 1.5 × the leader became a finisher only at about
+  45 min, and the last capital fell at 59.9 min.
+- The forced storm is at 1.5 × army, not 2 ×. With 2 ×, the 1.5–1.9 × leader cycled storm and
+  dig against a defender whose whole army was at home, and the war did not end within 60 min.
+
+A rejected variant sent one group to the next capital in parallel: seed 7 then did not end
+within 60 min.
+
+Soak `npx tsx scripts/soak.ts 60 7,11,13` (media/hero-trailer tree):
+
+| build | seed 7 | seed 11 | seed 13 |
+|---|---|---|---|
+| before (round 4b) | 2 alive (44 / 100 places), no end | 3 alive (53/62/35) | 2 alive (73/78) |
+| finisher at 1.5 ×, forced storm at 2 × | 2 alive (44 / 99) | 3 alive (identical) | 2 alive |
+| finisher at 1.5 ×, forced storm at 1.5 × | **ends 59.9 min** | 3 alive | 2 alive |
+| **final**: finisher at 1.3 ×, forced storm at 1.5 × | **ends 58.9 min** | **2 alive (76/60)** | 2 alive (73/78) |
+| + parallel next-capital group (rejected) | 2 alive, no end | 2 alive | 2 alive |
+
+Strategy lab, 6 seeds × 60 min, `--ab storm` (same tree):
+
+| metric | storm off | final |
+|---|---:|---:|
+| wars ended | 1 (34.1 min) | 2 (mean 53.2 min) |
+| eliminations per match | 1.8 | 2.3 |
+| capitals lost although stoppable | 3 | 2 |
+| op success % | 14.3 | 21.1 |
+| captures per minute | 4.6 | 4.7 |
+| MG / AT firing % | 0.8 / 1.0 | 2.9 / 2.2 |
+
+- Seed 7 still ends after 50 min (58.9). The last capital takes about 15 min after the
+  second-to-last falls: a 2 km march, then a storm into the defender's whole army.
+- Op success is far below 40 % on both sides. On this tree 412 of about 520 ops target a
+  capital, and an op against a capital only counts as won when that capital falls.
+- Perf, paired 300 s: 1.3 vs 1.3 ms/tick. `npx vitest run` passes 51 tests.
+

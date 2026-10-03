@@ -27,7 +27,7 @@
     "player_factions": 1,
     "resources_auto_managed": true,
     "match_seconds_limit": 0,
-    "match_seconds_limit_comment": "User decision 2026-10-02: no time limit (0 = off); wars end by capital capture or resolve collapse.",
+    "match_seconds_limit_comment": "User decision 2026-10-02/03: no time limit and no territory rule; a war ends only when one side holds every capital (the field is kept at 0 and unused).",
     "map_1v1_dimensions_m": [1200, 800],
     "map_4ffa_dimensions_m": [1600, 1600],
     "map_height_range_m": [0, 80],
@@ -100,9 +100,6 @@
   },
   "victory": {
     "resolve_enabled": false,
-    "dominion_share": 0.5,
-    "dominion_hold_seconds": 300,
-    "dominion_comment": "1.1 conquest victory: a side holding at least dominion_share of all settlements for dominion_hold_seconds wins. Not a time limit: the hold breaks as soon as it drops below the share. Ends the two-empire duels that capital capture alone cannot.",
     "resolve_comment": "User decision 2026-10-02: no campaign-resolve system; a faction is defeated only when its capital (HQ) is captured. Resolve fields below are kept for a possible optional mode.",
     "initial_resolve": 900,
     "destroyed_population_resolve_multiplier": 3,

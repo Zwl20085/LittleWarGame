@@ -2,7 +2,7 @@
 
 **English** · [简体中文](README.zh-CN.md)
 
-<img src="docs/media/hero.gif" width="100%" alt="LITTLE WAR title screen over a live AI battle: rifle squads, tanks and trucks fighting through the streets of a town" />
+<img src="docs/media/hero.gif" width="100%" alt="Trailer cut from live play: a war map with fronts and attack arrows, a massed artillery salvo bursting over a village, a line of tanks rolling past a burning wreck, infantry storming city streets, tanks crossing a river bridge, and the LITTLE WAR title screen over a live battle" />
 
 # LITTLE WAR
 
@@ -31,7 +31,7 @@
 - **High command defends the capital.** It forecasts the threat from enemy groups aimed at the capital and closing in. When the threat is real, it recalls the nearest, least engaged army groups (one keeps attacking), sends home guards and digs trench rings and sandbag lines on the approach. The HQ card shows a **Capital threatened** row with the time until contact. In the strategy lab, capitals lost to attacks the army could have stopped fell from 7 to 0 (6 seeds × 45 min).
 - **Siege and storm.** Groups no longer throw spearheads at a fortified capital. They ring it, bring every gun into range, storm once they have the mass and dig in if the storm stalls. A recall no longer cuts an assault short.
 - **Crews deploy where the fighting is.** MGs and AT guns go to the stretch of front that is in contact, and fire about twice as often.
-- **Conquest victory and a territory-driven army.** A side that holds half the map's settlements for 5 minutes wins; the countdown breaks the moment its share drops. The population cap now grows with the land you hold, so a side that owns most of the map can field a bigger army than the last defender.
+- **A territory-driven army.** The population cap now grows with the land you hold (and shrinks when you lose it), so the side that owns the map can field the decisive force. Victory is still only by taking every enemy capital.
 - **Faster again.** Snapshots apply in half the time, hot spatial queries reuse their buffers, and larger vegetation and settlement tiles cut the scene's objects by a quarter. The worker holds 8× in every view ([docs/PERFORMANCE.md](docs/PERFORMANCE.md)).
 
 <details>
@@ -139,7 +139,7 @@ flowchart LR
   H[High command<br/>defend · occupy · attack] --> C
   C --> D{Front line}
   D -- capture towns --> A
-  D -- take the enemy capitals<br/>or hold half the map for 5 min --> V[Victory]
+  D -- take every enemy capital --> V[Victory]
   S[Supply convoys] --> C
   D -- raids --> S
 ```
@@ -147,7 +147,7 @@ flowchart LR
 1. **Mobilise.** Your capital and held towns produce units according to the weights in the bottom bar. A steward balances mobilisation, industry and logistics, or you take over.
 2. **Command.** Units join three army groups. Set a group's posture (cautious / assault / hold / fortify / withdraw) or its target, and the AI handles the rest: holding river lines, massing before crossings, pushing, breaking through. The high command keeps your towns garrisoned.
 3. **Fight for ground.** Every one of the 100+ settlements can be captured. Each one you take feeds your economy and starves the enemy's.
-4. **Win.** A side is eliminated when enemy infantry capture its **capital**. A side also wins by **conquest** if it holds half of all settlements for 5 minutes; the countdown breaks the moment its share drops below half. There is no resolve meter and **no time limit**: you can lose half your land and still fight back. Once one side dominates, its high command turns every army group on the weakest, nearest enemy capital, and lays siege to it if it is dug in.
+4. **Win.** A side is eliminated when enemy infantry capture its **capital**, and the war ends only when one side holds every capital. No resolve meter, no time limit and no territory rule: you can lose half your land and still fight back.
 
 ## Controls
 

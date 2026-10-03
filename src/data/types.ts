@@ -117,9 +117,6 @@ export interface Rules {
   readonly victory: {
     /** false (default since 2026-10-02): no resolve; defeat only by losing the capital. */
     readonly resolve_enabled?: boolean;
-    /** Conquest victory: hold this share of all settlements for `dominion_hold_seconds` (0 = off). */
-    readonly dominion_share?: number;
-    readonly dominion_hold_seconds?: number;
     readonly initial_resolve: number;
     readonly destroyed_population_resolve_multiplier: number;
     readonly majority_control_enemy_bleed_per_second: number;

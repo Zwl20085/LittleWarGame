@@ -47,7 +47,7 @@ function makeFaction(world: World, id: number, isPlayer: boolean): Faction {
     weights, caps: { ...world.data.rules.proposed_defaults.production_unit_caps }, paused: {}, unitSector: {},
     spent: [], protectedOrder: null, protectRetryAt: 0, nextRaidAt: 240, command: createHighCommand(), depot: 0, lastWorksAt: -999, orders: [], manualQueue: [], sectors: [], mainSector: 1,
     incomeP: 0, incomeM: 0, overflowWarnAt: -1e9, hqProgress: {}, lostUnits: 0, producedUnits: 0,
-    spentTotalP: 0, spentTotalM: 0, aiThinkAt: id * 0.7, trucksUnderFire: [], dominionSince: -1,
+    spentTotalP: 0, spentTotalM: 0, aiThinkAt: id * 0.7, trucksUnderFire: [],
   };
 }
 
@@ -263,40 +263,11 @@ function convoyNodes(world: World, f: number): SupplyNode[] {
   return out;
 }
 
-/**
- * Conquest victory (1.1): holding `dominion_share` of all settlements for `dominion_hold_seconds`
- * wins. Not a time limit: the countdown breaks the moment the share drops.
- */
-function checkDominion(world: World): void {
-  const v = world.data.rules.victory;
-  const share = v.dominion_share ?? 0;
-  const hold = v.dominion_hold_seconds ?? 0;
-  if (share <= 0 || hold <= 0 || world.result || world.tick % world.tickHz !== 0) return;
-  const total = world.objectives.length;
-  if (total === 0) return;
-  const held = new Int32Array(world.factions.length);
-  for (const o of world.objectives) if (o.owner >= 0) held[o.owner]++;
-  for (const f of world.factions) {
-    const holding = f.alive && held[f.id] >= share * total;
-    if (!holding) {
-      if (f.dominionSince >= 0) for (const g of world.factions) world.note(g.id, 'log.dominionBroken', { f: f.id }, 'info');
-      f.dominionSince = -1;
-      continue;
-    }
-    if (f.dominionSince < 0) {
-      f.dominionSince = world.time;
-      for (const g of world.factions) world.note(g.id, 'log.dominionStart', { f: f.id, s: hold }, 'alert');
-    } else if (world.time - f.dominionSince >= hold) {
-      world.result = { winners: [f.id], reason: 'dominion', tick: world.tick };
-      return;
-    }
-  }
-}
-
 function checkElimination(match: Match): void {
   const world = match.world;
   const out: Faction[] = [];
-  // Defeat = the capital falls (resolve only counts in the optional resolve mode).
+  // Defeat = the capital falls (resolve only counts in the optional resolve mode). A war ends
+  // only when one side has taken every enemy capital (user decision: no time or territory rule).
   const resolveOn = !!world.data.rules.victory.resolve_enabled;
   for (const f of world.factions) if (f.alive && ((resolveOn && f.resolve <= 0) || hqCaptured(world, f))) out.push(f);
   // Collect all first, then apply (order-independent, F02).
@@ -320,18 +291,6 @@ function checkElimination(match: Match): void {
     world.result = alive.length === 1
       ? { winners: [alive[0].id], reason: 'last_standing', tick: world.tick }
       : { winners: out.map((f) => f.id), reason: 'mutual', tick: world.tick };
-  }
-  const limit = world.data.rules.proposed_defaults.match_seconds_limit;
-  if (!world.result && limit > 0 && world.time >= limit) {
-    const score = (f: Faction): number[] => [
-      f.resolve,
-      world.objectives.filter((o) => o.owner === f.id && !o.contested).length,
-      [...world.units.values()].filter((u) => u.owner === f.id && u.hp > 0 && !u.fixed).reduce((s, u) => s + (u.def.costP + u.def.costM) * (u.hp / u.def.maxHp), 0),
-    ];
-    const ranked = alive.map((f) => ({ f, s: score(f) }));
-    ranked.sort((a, b) => b.s[0] - a.s[0] || b.s[1] - a.s[1] || b.s[2] - a.s[2]);
-    const top = ranked[0].s;
-    world.result = { winners: ranked.filter((r) => r.s.every((v, i) => Math.abs(v - top[i]) < 1e-6)).map((r) => r.f.id), reason: 'timeout', tick: world.tick };
   }
 }
 
@@ -414,6 +373,5 @@ export function step(match: Match): void {
     }
   }
   checkElimination(match);
-  checkDominion(world);
   world.tick++;
 }

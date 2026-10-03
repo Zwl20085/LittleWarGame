@@ -93,7 +93,6 @@ const zh: Dict = {
   'log.protect': '为 {unit} 预留资源', 'log.protectExpired': '{unit} 资源预留到期', 'log.exitBlocked': '城市出口拥堵，等待出场', 'log.capitalBesieged': '首都被围，新部队无法出城',
   'reason.resolve': '战役意志耗尽', 'reason.hq': '指挥部失守',
   // results
-  'res.dominion': '征服胜利', 'log.dominionStart': '第 {f} 方控制了大部分领土：{s} 秒后获胜', 'log.dominionBroken': '第 {f} 方的领土优势被打破',
   'res.victory': '胜利', 'res.defeat': '战败', 'res.draw': '共同毁灭', 'res.timeout': '时间到 · 裁定',
   'res.winner': '胜者：{f}', 'res.duration': '时长', 'res.produced': '出兵', 'res.lost': '损失', 'res.spent': '支出', 'res.resolve': '剩余意志',
   'res.again': '再来一局', 'res.menu': '回主界面', 'res.spectate': '继续观战', 'res.eliminatedSpectate': '你已被淘汰，可继续观战',
@@ -212,7 +211,6 @@ const en: Dict = {
   'log.convoyThreat': 'Convoy ran into the enemy and turned back', 'log.spearhead': '{n} units break through toward {point}', 'log.raidLaunched': '{n} units infiltrate to raid enemy supply', 'log.bridgeStarted': 'Engineers started a pontoon bridge', 'log.reservesShifted': '{n} units shifted to a hard-pressed sector', 'log.bridgeBuilt': 'Pontoon bridge completed', 'log.hqDefend': 'High command: {n} units sent to hold {point}', 'log.homeThreat': 'Capital threatened! ≈{enemy} enemy strength, arriving in about {eta} s', 'log.homeDefence': 'High command: {groups} army group(s) and {n} guard units recalled to the capital (enemy ≈{enemy})', 'log.homeFortify': 'High command: attack expected, digging trenches and sandbags around the capital', 'log.homeSafe': 'Threat to the capital has passed; army groups resume their orders', 'log.hqOccupy': 'High command: {n} units sent to occupy {point}', 'log.raid': '{unit} sent to raid enemy supply',
   'log.protect': 'Reserving resources for {unit}', 'log.protectExpired': 'Reservation for {unit} expired', 'log.exitBlocked': 'City exit congested, units waiting', 'log.capitalBesieged': 'Capital besieged: no units can roll out',
   'reason.resolve': 'resolve exhausted', 'reason.hq': 'HQ captured',
-  'res.dominion': 'Conquest', 'log.dominionStart': 'Faction {f} holds most of the map: victory in {s} s', 'log.dominionBroken': 'Faction {f} no longer holds most of the map',
   'res.victory': 'Victory', 'res.defeat': 'Defeat', 'res.draw': 'Mutual destruction', 'res.timeout': 'Time limit · decision',
   'res.winner': 'Winner: {f}', 'res.duration': 'Duration', 'res.produced': 'Produced', 'res.lost': 'Lost', 'res.spent': 'Spent', 'res.resolve': 'Resolve left',
   'res.again': 'Play again', 'res.menu': 'Main menu', 'res.spectate': 'Keep watching', 'res.eliminatedSpectate': 'You were eliminated — you may keep watching',
