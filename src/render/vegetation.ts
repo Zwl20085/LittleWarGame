@@ -3,7 +3,7 @@ import { Ground, type Terrain } from '../sim/terrain';
 import { GeoBuilder, tintedMaterial, trs } from './instancing';
 import { PAL } from './palette';
 
-const TILE = 400;
+const TILE = 800; // bigger tiles: fewer draw calls at the overview zoom (GPU is not the limit)
 const ZERO = new THREE.Color(0, 0, 0);
 
 function coniferGeo(): THREE.BufferGeometry {

@@ -2,6 +2,7 @@ import { populationCap, populationOf } from './production';
 import type { Faction, Personality, Unit } from './types';
 import { hostileMask } from './spatial';
 import { EAGER, eagerOn } from './strategyai';
+import { defendingHome } from './homeguard';
 import type { World } from './world';
 
 const PERSONALITY_MUL: Record<Personality, Record<string, number>> = {
@@ -65,12 +66,12 @@ export function thinkCity(world: World, f: Faction): void {
     const own = world.objectives.find((o) => o.id === s.targetObjective);
     let next = s.posture;
     const attacking = !own || own.owner !== f.id;
-    if (s.reason === 'reason.defendCity') next = 'hold';
+    if (defendingHome(s)) next = 'hold';
     else if ((surplus && attacking) || (s.id === best && (mainAssault || strength[best] > assaultAt))) next = 'assault';
     else if (own && own.owner === f.id) next = f.personality === 'infantry' ? 'fortify' : 'hold';
     else next = 'cautious';
     // Hold a posture ≥45 s unless the city is threatened.
-    if (next !== s.posture && (world.time - s.postureSince >= 45 || s.reason === 'reason.defendCity')) {
+    if (next !== s.posture && (world.time - s.postureSince >= 45 || defendingHome(s))) {
       s.posture = next;
       s.postureSince = world.time;
     }

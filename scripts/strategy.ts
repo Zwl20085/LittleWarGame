@@ -6,6 +6,9 @@
 // Usage: npx tsx scripts/strategy.ts --seeds 7,11,13 --minutes 20 [--map generated] [--jobs 3]
 //        [--baseline]   run with the adaptive strategy layer off (src/sim/strategyai.ts), for A/B
 //        [--compare]    run both variants on the same seeds and add a before/after table
+//        [--ab home]    with --baseline/--compare: the "baseline" side turns only the round-3 home
+//                       defence off (STRATEGY_AI.homeDefence) instead of the whole adaptive layer
+//        [--ab storm]   …or only the round-4 siege-and-storm / crew deployment (STRATEGY_AI.storm)
 //        [--no-rotate]  keep the default personality per slot (by default the 4 doctrines are
 //                       rotated across the map slots by seed index, so slot luck ≠ doctrine strength)
 // Output: media/stats/strategy-<timestamp>.md (+ raw per-seed JSON in media/stats/strategy-runs/).
@@ -31,22 +34,29 @@ if (!seeds.length || !(minutes > 0)) throw new Error('usage: --seeds 7,11,13 --m
 /** One match in this process (child mode): run, finalise the log, dump JSON. */
 const DOCTRINES = ['balanced', 'armor', 'infantry', 'mechanized'] as const;
 const rotate = !flag('no-rotate');
+const ab = opt('ab', 'adaptive');
+const runFile = (seed: number, baseline: boolean): string => `${runDir}/${ab === 'adaptive' ? '' : `${ab}-`}${baseline ? 'base' : 'adaptive'}-${mapId}-${seed}.json`;
 
 async function runOne(seed: number, baseline: boolean): Promise<void> {
   const { buildGameData } = await import('../src/data/loader');
   const { createMatch, step } = await import('../src/sim/sim');
   const { finalizeBattleLog, battleRecords } = await import('../src/sim/events');
   const { STRATEGY_AI } = await import('../src/sim/strategyai');
-  STRATEGY_AI.adaptive = !baseline;
+  const { homeSampler } = await import('./strategy/home');
+  if (ab === 'home') STRATEGY_AI.homeDefence = !baseline;
+  else if (ab === 'storm') STRATEGY_AI.storm = !baseline;
+  else STRATEGY_AI.adaptive = !baseline;
   const data = buildGameData(readFileSync('docs/data/units.csv', 'utf8'), readFileSync('docs/data/weapons.csv', 'utf8'), readFileSync('docs/data/rules.json', 'utf8'));
   const k = rotate ? Math.max(0, seeds.indexOf(seed)) % DOCTRINES.length : 0;
   const personalities = DOCTRINES.map((_, i) => DOCTRINES[(i + k) % DOCTRINES.length]);
   const match = createMatch(data, { mapId: mapId as 'generated', factions: 4, infoMode: 'open', seed, difficulty: 'normal', playerSlot: 0, spectate: true, personalities });
   const w = match.world;
   const t0 = performance.now();
+  const home = homeSampler(w);
   for (let i = 0; i < minutes * 60 * w.tickHz && !w.result; i++) {
     step(match);
     w.fx.length = 0;
+    if (i % w.tickHz === 0) home.sample();
   }
   finalizeBattleLog(w);
   const lostByFaction = w.stats.byType.map((tbl) => Object.values(tbl).reduce((a, r) => a + r.lost, 0));
@@ -62,15 +72,17 @@ async function runOne(seed: number, baseline: boolean): Promise<void> {
     })),
     objectives: w.objectives.length,
     log: battleRecords(w.battle),
+    home: home.result(),
   };
   mkdirSync(runDir, { recursive: true });
-  writeFileSync(`${runDir}/${baseline ? 'base' : 'adaptive'}-${mapId}-${seed}.json`, JSON.stringify(out));
+  writeFileSync(runFile(seed, baseline), JSON.stringify(out));
 }
 
 function child(seed: number, baseline: boolean): Promise<void> {
   return new Promise((resolve, reject) => {
     const a = ['tsx', 'scripts/strategy.ts', '--run', String(seed), '--seeds', seeds.join(','), '--minutes', String(minutes), '--map', mapId];
     if (baseline) a.push('--baseline');
+    if (ab !== 'adaptive') a.push('--ab', ab);
     if (!rotate) a.push('--no-rotate');
     const p = spawn('npx', a, { stdio: ['ignore', 'inherit', 'inherit'], shell: process.platform === 'win32' });
     p.on('exit', (code) => (code === 0 ? resolve() : reject(new Error(`seed ${seed}${baseline ? ' (baseline)' : ''} exited with ${code}`))));
@@ -91,7 +103,7 @@ async function runAll(variants: boolean[]): Promise<Map<boolean, RunData[]>> {
   await Promise.all(Array.from({ length: Math.min(jobs, tasks.length) }, worker));
   const out = new Map<boolean, RunData[]>();
   for (const b of variants) {
-    out.set(b, seeds.map((s) => JSON.parse(readFileSync(`${runDir}/${b ? 'base' : 'adaptive'}-${mapId}-${s}.json`, 'utf8')) as RunData));
+    out.set(b, seeds.map((s) => JSON.parse(readFileSync(runFile(s, b), 'utf8')) as RunData));
   }
   return out;
 }

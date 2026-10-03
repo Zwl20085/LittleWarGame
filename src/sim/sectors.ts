@@ -6,6 +6,8 @@ import { ADAPT, adaptive, EAGER, eagerOn } from './strategyai';
 import { maneuvering, planPincer, resetOperation, runOperation, siegeRing } from './doctrine';
 import { bridgeSiteFor } from './engineering';
 import { frontSegments, OPS, spreadAlong, planOperations } from './operations';
+import { defendingHome, homeOn, isRecalled, restoreOrders, saveOrders } from './homeguard';
+import { capitalSiege, stormRing } from './storm';
 import type { Faction, Objective, Sector, Unit } from './types';
 import { dist, headingTo, angleDiff, DEG, type V2 } from './vec';
 import type { World } from './world';
@@ -142,7 +144,10 @@ function nextTarget(world: World, f: Faction, s: Sector): { pos: V2; obj: Object
 /** Sector planner (2 s): target choice, gather/advance gate, city-defence override. */
 export function thinkSectors(world: World, f: Faction): void {
   const hq = world.hqPos(f.id);
-  const threat = knownEnemyStrength(world, f.id, hq, 280);
+  // Round 3: graded recall decided by the high command (homeguard.ts); else the old all-or-nothing rule.
+  const graded = homeOn();
+  const threat = graded ? 0 : knownEnemyStrength(world, f.id, hq, 280);
+  const ht = f.command.homeThreat;
   // Each group owns a stretch of the front so the whole line is held, not one point.
   const segs = frontSegments(world, f, world.frontInfo[f.id]?.cells ?? []);
   f.sectors.forEach((s, i) => (s.segment = segs[i] ?? []));
@@ -151,12 +156,19 @@ export function thinkSectors(world: World, f: Faction): void {
   planPincer(world, f, groups);
   for (const s of f.sectors) {
     const units = groups[s.id] ?? sectorUnits(world, f.id, s.id);
-    if (threat > 300 && !s.manualTarget) {
+    const recalled = graded ? isRecalled(f, s) : threat > 300 && !s.manualTarget;
+    if (graded && !recalled && defendingHome(s)) {
+      // Threat passed: the group gets its previous orders back.
+      if (restoreOrders(s)) setGoalReason(s);
+      else s.lastRetarget = -999;
+    }
+    if (recalled) {
+      if (graded) saveOrders(s);
       s.targetPos = { ...hq };
       s.targetObjective = null;
       s.targetCity = null;
-      s.reason = 'reason.defendCity';
-      s.reasonParams = {};
+      s.reason = graded ? 'reason.homeDefence' : 'reason.defendCity';
+      s.reasonParams = graded ? { enemy: Math.round(ht.enemy), mine: Math.round(ht.garrison + ht.committed), eta: Math.max(0, Math.round(ht.eta)) } : {};
       s.advancing = true;
       s.rally = lerpV(hq, world.cityOf(f.id).exit, 1.5);
       for (const u of units) if (u.behavior === 'rally') u.behavior = 'advance';
@@ -169,7 +181,7 @@ export function thinkSectors(world: World, f: Faction): void {
     const finishNow = eagerOn() && f.command.finishTarget >= 0 && s.targetCity !== f.command.finishTarget && s.opPhase !== 'assault';
     if (!s.manualTarget && !maneuvering(s) && (world.time - s.lastRetarget > 60 || finishNow)) {
       const t = nextTarget(world, f, s);
-      if (dist(t.pos, s.targetPos) > 1 || s.reason === 'reason.defendCity') {
+      if (dist(t.pos, s.targetPos) > 1 || defendingHome(s)) {
         s.targetPos = { ...t.pos };
         s.targetObjective = t.obj?.id ?? null;
         s.targetCity = t.city;
@@ -215,11 +227,11 @@ function planFront(world: World, f: Faction, s: Sector, units: Unit[], defensive
     ? { x: units.reduce((a, u) => a + u.pos.x, 0) / units.length, z: units.reduce((a, u) => a + u.pos.z, 0) / units.length }
     : world.cityOf(f.id).exit;
   const threat = threatCentre(world, f.id, s.targetPos, 600) ?? s.targetPos;
-  const holding = defensive || s.posture === 'hold' || s.posture === 'fortify' || s.reason === 'reason.defendCity';
+  const holding = defensive || s.posture === 'hold' || s.posture === 'fortify' || defendingHome(s);
   let front = s.targetPos;
   let facing = headingTo(centroid, s.targetPos);
   // After first contact the group fights along the real battle front (from the control map).
-  const anchor = s.reason === 'reason.defendCity' ? null : frontAnchor(world, f.id, s.targetPos);
+  const anchor = defendingHome(s) ? null : frontAnchor(world, f.id, s.targetPos);
   const contact = !!anchor && s.posture !== 'withdraw';
   if (anchor && s.posture !== 'withdraw') {
     const home = world.hqPos(f.id);
@@ -232,6 +244,9 @@ function planFront(world: World, f: Faction, s: Sector, units: Unit[], defensive
     const aggr = eagerOn() ? f.command.aggression : 0;
     let pushing = wantsPush && ratio > (s.posture === 'assault' ? 1.0 : adaptive() ? ADAPT.pushRatio - EAGER.pushAggressionCut * aggr : 1.4);
     if (eagerOn()) pushing = eagerPush(world, f, s, units, anchor, ratio, (strengthOf(units) + 1) / (theirs + 1), wantsPush, pushing);
+    // Round 4: a capital storm pushes whatever the local ratio at the anchor (the defenders mass
+    // there; the storm was launched on the mass at the capital vs its forecast defence, storm.ts).
+    if (capitalSiege(s) && s.op === 'siege' && s.opPhase === 'assault' && !defensive) pushing = true;
     if (pushing) {
       // Push the line forward toward the objective in bounded steps.
       const d = Math.min(110, dist(anchor, s.targetPos));
@@ -260,15 +275,17 @@ function planFront(world: World, f: Faction, s: Sector, units: Unit[], defensive
     }
     // Round 2 decisive offensive: spearheads toward the enemy capital go at a lower local edge and more often.
     const finishing = eagerOn() && f.command.finishTarget >= 0 && s.targetCity === f.command.finishTarget;
-    if (!defensive && ratio > (finishing ? EAGER.finishSpearRatio : 2.2) && world.time - s.lastSpearhead > (finishing ? 60 : 120)) launchSpearhead(world, f, s, units, anchor);
+    // Round 4: no trickle of spearheads while a capital siege masses / digs (storm.ts).
+    const massing = capitalSiege(s) && s.op === 'siege' && (s.opPhase === 'form' || s.opPhase === 'dig');
+    if (!defensive && !massing && ratio > (finishing ? EAGER.finishSpearRatio : 2.2) && world.time - s.lastSpearhead > (finishing ? 60 : 120)) launchSpearhead(world, f, s, units, anchor);
     s.crossing = null;
   } else if (holding) {
     // Anchor near the objective (or the city) on the best defensive ground facing the threat.
-    const anchor = s.reason === 'reason.defendCity' ? world.hqPos(f.id) : s.targetObjective && world.objectives.find((o) => o.id === s.targetObjective)?.owner === f.id ? s.targetPos : lerpV(centroid, s.targetPos, 0.5);
+    const anchor = defendingHome(s) ? world.hqPos(f.id) : s.targetObjective && world.objectives.find((o) => o.id === s.targetObjective)?.owner === f.id ? s.targetPos : lerpV(centroid, s.targetPos, 0.5);
     const dp = defensivePosition(world, anchor, threat, 220);
     front = dp.pos;
     facing = headingTo(front, threat);
-    if (s.reason !== 'reason.defendCity' && s.reason !== 'reason.waitGroup' && s.reason !== 'reason.outmatched') {
+    if (!defendingHome(s) && s.reason !== 'reason.waitGroup' && s.reason !== 'reason.outmatched') {
       const feat = nearestFeature(world, front, 500);
       const fi = feat ? (world.map.features ?? []).indexOf(feat) : -1;
       s.reason = dp.river ? 'reason.holdRiver' : dp.height > 6 ? 'reason.holdHigh' : 'reason.holdLine';
@@ -330,11 +347,14 @@ function planFront(world: World, f: Faction, s: Sector, units: Unit[], defensive
   // Spacing doctrine: spread wider once enemy shells land among the group.
   const spacing = world.time - s.shelledAt < OPS.shelledMemorySeconds ? OPS.shelledSpacing : OPS.minSpacing;
   const segLen = seg.length * FRONTLINE.cell;
-  const sieging = s.op === 'siege' && (s.opPhase === 'form' || s.opPhase === 'dig') && s.reason !== 'reason.defendCity';
-  const siegeSlots = sieging ? siegeRing(world, f.id, s, Math.max(5, Math.min(24, Math.ceil(liners.length / 2)))) : null;
+  const sieging = s.op === 'siege' && (s.opPhase === 'form' || s.opPhase === 'dig') && !defendingHome(s);
+  // Round 4: in the storm of a capital the whole line closes on the HQ (it crept with the front, 0.75–0.9 km out).
+  const storming = capitalSiege(s) && s.op === 'siege' && s.opPhase === 'assault' && !defendingHome(s);
+  const ringN = Math.max(5, Math.min(24, Math.ceil(liners.length / 2)));
+  const siegeSlots = sieging ? siegeRing(world, f.id, s, ringN) : storming ? stormRing(world, f.id, s, ringN) : null;
   // Round 2 Schwerpunkt: in contact, a share of the line masses on the axis toward the target
   // (the rest screens the segment) instead of the whole group thinning out along the front.
-  const massShare = eagerOn() && contact && !siegeSlots && seg.length > 0 && s.reason !== 'reason.defendCity'
+  const massShare = eagerOn() && contact && !siegeSlots && seg.length > 0 && !defendingHome(s)
     ? EAGER.massShare + EAGER.massShareAggr * f.command.aggression : 0;
   for (const [rank, all] of byRank) {
     let arr = all;
@@ -348,7 +368,7 @@ function planFront(world: World, f: Faction, s: Sector, units: Unit[], defensive
     }
     // Round 2: screen slots in the units' own order along the segment (they were assigned by id, so
     // a unit's slot could be across the front: 0.3 % of line units stood at their slot, 30 % > 500 m off).
-    if (eagerOn() && !siegeSlots && seg.length > 0 && s.reason !== 'reason.defendCity') arr = orderAlong(arr, seg);
+    if (eagerOn() && !siegeSlots && seg.length > 0 && !defendingHome(s)) arr = orderAlong(arr, seg);
     // Along the whole front segment when in contact; otherwise a compact line at the objective.
     const perRow = seg.length > 0 ? Math.max(1, Math.floor(segLen / spacing)) : arr.length;
     arr.forEach((u, i) => {
@@ -359,7 +379,7 @@ function planFront(world: World, f: Faction, s: Sector, units: Unit[], defensive
         const base = siegeSlots[i % siegeSlots.length];
         const hd = headingTo(s.targetPos, base);
         p = { x: base.x + Math.cos(hd) * (row + rank) * 28, z: base.z + Math.sin(hd) * (row + rank) * 28 };
-      } else if (seg.length > 0 && s.reason !== 'reason.defendCity') {
+      } else if (seg.length > 0 && !defendingHome(s)) {
         const row = Math.floor(i / perRow);
         const inRow = Math.min(perRow, arr.length - row * perRow);
         const base = spreadAlong(seg, inRow)[i % perRow] ?? seg[0];

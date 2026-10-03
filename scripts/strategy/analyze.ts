@@ -1,4 +1,5 @@
 // Strategy-lab analysis: pure functions from per-seed battle logs to Markdown tables.
+import type { HomeStats } from './home';
 import type { BattleSample, CaptureRecord, DirectiveRecord, EngagementRecord, OpRecord } from '../../src/sim/events';
 
 export interface RunData {
@@ -17,6 +18,8 @@ export interface RunData {
     samples: BattleSample[];
     skirmishes: number;
   };
+  /** Round 3 capital-defence sampler (absent in older runs). */
+  home?: HomeStats;
 }
 
 const pct = (a: number, b: number): string => (b > 0 ? `${((a / b) * 100).toFixed(0)}%` : '-');
@@ -233,7 +236,51 @@ export function headline(runs: RunData[]): Record<string, number> {
     'fighting share %': mean(samples.map((s) => s.fighting / s.units)) * 100,
     'max doctrine lead rate %': runs.length ? (Math.max(0, ...leads.values()) / runs.length) * 100 : 0,
     'eliminations per match': runs.reduce((a, r) => a + r.factions.filter((f) => !f.alive).length, 0) / runs.length,
+    'captures per minute': caps / Math.max(1e-9, runs.reduce((a, r) => a + r.minutes, 0)),
+    'wars ended (result)': runs.filter((r) => r.result).length,
+    'mean result time (min)': mean(runs.filter((r) => r.result).map((r) => r.result!.t / 60)),
+    ...homeHeadline(runs),
   };
+}
+
+/** Capital-defence rows (round 3), summed over runs unless noted. */
+function homeHeadline(runs: RunData[]): Record<string, number> {
+  const hs = runs.map((r) => r.home).filter((h): h is HomeStats => !!h);
+  if (hs.length === 0) return {};
+  const sum = (k: keyof Omit<HomeStats, 'fallMin'>): number => hs.reduce((a, h) => a + h[k], 0);
+  return {
+    'capital attack episodes': sum('episodes'),
+    'episodes with defender ≥ 1.5× in reach': sum('stoppable'),
+    'capitals lost': sum('capitalsLost'),
+    'capitals lost although stoppable': sum('stoppableLost'),
+    'capital capture-progress seconds': sum('progressS'),
+    'home works started': sum('worksStarted'),
+    'home works built': sum('worksBuilt'),
+    'home alarms': sum('alarms'),
+    'group-minutes recalled home': sum('groupMinutesHome'),
+    ...crewHeadline(hs),
+  };
+}
+
+/** Round 4: crew weapons — % of samples firing / relocating with no target, per type. */
+function crewHeadline(hs: HomeStats[]): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const id of ['mg', 'at_gun', 'mortar', 'howitzer']) {
+    let n = 0;
+    let firing = 0;
+    let reloc = 0;
+    for (const h of hs) {
+      const c = h.crew?.[id];
+      if (!c) continue;
+      n += c.n;
+      firing += c.firing;
+      reloc += c.relocating;
+    }
+    if (n === 0) continue;
+    out[`${id} firing %`] = (firing / n) * 100;
+    out[`${id} relocating w/o target %`] = (reloc / n) * 100;
+  }
+  return out;
 }
 
 export function compareTable(before: RunData[], after: RunData[]): string {

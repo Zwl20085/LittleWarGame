@@ -46,13 +46,16 @@ export const COVER: Record<CoverLevel, { hit: number; direct: number; blast: num
 
 /** Indirect fire dispersion per BALANCE_SPEC §8.2. */
 export const DISPERSION = {
-  mortar_shell: { base: 5, perRange: 0.015 },
-  howitzer_shell: { base: 8, perRange: 0.02 },
+  mortar_shell: { base: 4, perRange: 0.01 },
+  howitzer_shell: { base: 6, perRange: 0.012 },
   noObserverMul: 1.5,
   staleIntelMul: 1.8,
   reconMul: 0.7,
   reconRange: 220,
   ninetyFiveFactor: 2.45,
+  /** Fraction of a moving target's travel during the shell's flight that the gunners lead by, and its cap. */
+  leadFactor: 0.8,
+  leadMaxM: 60,
 } as const;
 
 /** Terrain movement multipliers per BALANCE_SPEC §7. */

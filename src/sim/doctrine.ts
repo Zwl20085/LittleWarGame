@@ -5,9 +5,11 @@ import type { Faction, OperationKind, Sector, Unit } from './types';
 import { DEG, dist, headingTo, type V2 } from './vec';
 import { recordOp } from './stats';
 import { noteOpEnd, noteOpPhase, noteOpStart, type OpOutcome } from './events';
-import { ADAPT, adaptive, eagerOn } from './strategyai';
+import { ADAPT, adaptive, eagerOn, stormOn } from './strategyai';
 import { startLine, WORKS } from './works';
 import type { World } from './world';
+import { defendingHome, isRecalled } from './homeguard';
+import { capitalDefence, capitalSiege, STORM, stormMass, wantsCapitalSiege } from './storm';
 
 /**
  * Battle doctrines (user request): 正面推进 frontal, 侧面迂回 flank, 钳形攻势 pincer,
@@ -47,6 +49,10 @@ interface OpState {
   phaseAt: number;
   side: 1 | -1;
   initial: number; // manoeuvre group value at launch
+  /** Round 4 capital siege: forecast defence and storm mass at the last progress check, and its time. */
+  ref?: number;
+  massRef?: number;
+  checkAt?: number;
 }
 
 const ops = new WeakMap<Sector, OpState>();
@@ -95,6 +101,8 @@ export function chooseOperation(world: World, f: Faction, s: Sector, units: Unit
   const value = units.reduce((a, u) => a + valueOf(u), 0) + 1;
   // Round 2: no slow siege of the capital chosen for the decisive offensive (it gave the defender time).
   const finishing = eagerOn() && s.targetCity !== null && s.targetCity === f.command.finishTarget;
+  // Round 4: …but a fortified, garrisoned capital is besieged and stormed (storm.ts).
+  if (wantsCapitalSiege(world, f, s, units, value)) return 'siege';
   if (!finishing && siegeWorthy(world, f.id, s, value)) return 'siege';
   const mobile = units.filter((u) => MOBILE.has(u.def.id)).length / Math.max(1, units.length);
   const foot = units.filter((u) => FOOT.has(u.def.id)).length;
@@ -125,6 +133,8 @@ export function planPincer(world: World, f: Faction, groups: Unit[][]): void {
   const right = f.sectors.find((s) => s.key === 'right');
   if (!left || !right || left.opLocked || right.opLocked || left.manualTarget || right.manualTarget) return;
   if (left.op === 'siege' || right.op === 'siege') return;
+  // Round 3: a wing recalled to the capital is no jaw (151 pincer 'noForce' in the first build).
+  if (isRecalled(f, left) || isRecalled(f, right) || defendingHome(left) || defendingHome(right)) return;
   // Round 2: during the decisive offensive every group already converges on the capital; pincers there
   // mostly failed to form (50 noForce in 3 × 20 min).
   if (eagerOn() && f.command.finishTarget >= 0) return;
@@ -156,7 +166,10 @@ export function runOperation(world: World, f: Faction, s: Sector, units: Unit[])
   const key = `${Math.round(s.targetPos.x)},${Math.round(s.targetPos.z)}`;
   let st = ops.get(s);
   // Re-plan when the objective changes, or (unlocked) once the current operation has run its course.
-  if (!st || st.key !== key || (s.opPhase === '' && world.time - st.startedAt > DOCTRINE.rethinkS)) {
+  // Round 4: a frontal march on a capital (phase 'move', no rethink) turns into a siege on arrival.
+  const toSiege = !!st && st.key === key && capitalSiege(s) && !s.opLocked && s.op === 'frontal' && s.opPhase !== 'assault'
+    && world.time - st.startedAt > 10 && wantsCapitalSiege(world, f, s, units, units.reduce((a, u) => a + valueOf(u), 0) + 1);
+  if (!st || st.key !== key || toSiege || (s.opPhase === '' && world.time - st.startedAt > DOCTRINE.rethinkS)) {
     const why: OpOutcome = st && st.key !== key ? 'retarget' : 'rethink';
     releaseAll(units);
     if (!s.opLocked && s.op !== 'pincer') s.op = chooseOperation(world, f, s, units);
@@ -285,7 +298,8 @@ function stepManeuver(world: World, f: Faction, s: Sector, units: Unit[], st: Op
     if (ready) setPhase(world, s, st, 'assault');
   }
   const target = s.opPhase === 'assault' ? s.targetPos : wp;
-  for (const u of group) u.opTarget = target;
+  // Round 4: each unit aims at a spot on its own nav grid (heavy tanks were sent to infantry-only waypoints).
+  for (const u of group) u.opTarget = stormOn() ? unitGoal(world, u, target) : target;
   const left = group.reduce((a, u) => a + valueOf(u), 0);
   const won = world.objectives.some((o) => o.id === s.targetObjective && o.owner === f.id);
   if (won) recordOp(world.stats, `won:${s.op}`);
@@ -337,6 +351,7 @@ export function siegeRing(world: World, f: number, s: Sector, n: number): V2[] {
 }
 
 function stepSiege(world: World, f: Faction, s: Sector, units: Unit[], st: OpState): void {
+  if (capitalSiege(s)) return stepCapitalSiege(world, f, s, units, st);
   const ring = siegeRing(world, f.id, s, 9);
   s.opRoute = ring;
   const mine = units.reduce((a, u) => a + valueOf(u), 0) + 1;
@@ -357,13 +372,7 @@ function stepSiege(world: World, f: Faction, s: Sector, units: Unit[], st: OpSta
     }
   }
   if (s.opPhase === 'dig') {
-    // Lay trench lines along the ring facing the place; diggers come from the line itself.
-    // One trench at a time so the diggers concentrate; centre of the arc first, then outward.
-    const site = world.forts.filter((x) => x.owner === f.id && x.kind === 'trench' && x.hp > 0 && dist(x.pos, s.targetPos) < 700);
-    if (site.length < WORKS.maxPerSite && !site.some((x) => x.progress < 1)) {
-      const order = [4, 3, 5, 2, 6, 1, 7, 0, 8];
-      for (const k of order) if (startLine(world, f, 'trench', ring[k], headingTo(ring[k], s.targetPos))) break;
-    }
+    digRing(world, f, s, ring);
     const worn = theirs < mine * 0.35;
     if ((elapsed > DOCTRINE.siegeMinS && worn) || elapsed > DOCTRINE.siegeMaxS) {
       setPhase(world, s, st, 'assault');
@@ -373,6 +382,86 @@ function stepSiege(world: World, f: Faction, s: Sector, units: Unit[], st: OpSta
     }
   }
   if (s.opPhase === 'assault' && world.time - st.phaseAt > DOCTRINE.assaultTimeoutS) endOp(world, s, st, units, 'timeout');
+}
+
+/** Lay trench lines along the ring facing the place, one at a time, centre of the arc first. */
+function digRing(world: World, f: Faction, s: Sector, ring: V2[]): void {
+  const site = world.forts.filter((x) => x.owner === f.id && x.kind === 'trench' && x.hp > 0 && dist(x.pos, s.targetPos) < 700);
+  if (site.length < WORKS.maxPerSite && !site.some((x) => x.progress < 1)) {
+    const order = [4, 3, 5, 2, 6, 1, 7, 0, 8];
+    for (const k of order) {
+      // Round 4: on ground the diggers can reach (soak: siege diggers 'unreachable' on a 36° slope).
+      const p = stormOn() ? world.nav(false, 35).nearestPassable(ring[k], 40) ?? ring[k] : ring[k];
+      if (startLine(world, f, 'trench', p, headingTo(p, s.targetPos))) break;
+    }
+  }
+}
+
+/** A unit's own reachable goal near p (cached per unit and goal). */
+const goals = new WeakMap<Unit, { key: number; p: V2 }>();
+function unitGoal(world: World, u: Unit, p: V2): V2 {
+  const key = Math.round(p.x) * 100003 + Math.round(p.z);
+  const g = goals.get(u);
+  if (g && g.key === key) return g.p;
+  const q = world.navFor(u).nearestPassable(p, 120) ?? p;
+  goals.set(u, { key, p: q });
+  return q;
+}
+
+/**
+ * Round 4 siege-and-storm of an enemy capital (storm.ts): mass on the ring with the guns in range,
+ * storm at ≥ 2× the forecast defence; a stalled storm falls back to dig in and bombard, then storms
+ * again once the garrison is worn down.
+ */
+function stepCapitalSiege(world: World, f: Faction, s: Sector, units: Unit[], st: OpState): void {
+  const city = s.targetCity ?? -1;
+  s.opRoute = siegeRing(world, f.id, s, 9);
+  if (!world.factions[city]?.alive) {
+    recordOp(world.stats, 'won:siege');
+    endOp(world, s, st, units, 'won');
+    return;
+  }
+  const now = world.time;
+  if (now - st.startedAt > STORM.maxS) {
+    endOp(world, s, st, units, 'timeout');
+    return;
+  }
+  const inPhase = now - st.phaseAt;
+  const def = capitalDefence(world, f.id, city);
+  const mass = stormMass(world, f.id, s.targetPos);
+  const storm = (): void => {
+    setPhase(world, s, st, 'assault');
+    st.ref = def;
+    st.massRef = mass;
+    st.checkAt = now;
+    releaseAll(units);
+    world.note(f.id, 'log.opSiegeAssault', { point: '' }, 'info');
+    recordOp(world.stats, 'siegeAssault');
+  };
+  const dig = (): void => {
+    setPhase(world, s, st, 'dig');
+    st.ref = def;
+  };
+  if (s.opPhase === 'form') {
+    if (inPhase >= STORM.formMinS && mass >= def * STORM.massRatio) storm();
+    else if (inPhase > STORM.formMaxS) {
+      if (mass >= def * STORM.minRatio) storm();
+      else dig();
+    }
+  } else if (s.opPhase === 'dig') {
+    digRing(world, f, s, s.opRoute);
+    const worn = def <= (st.ref ?? def) * STORM.wornShare || mass >= def * STORM.massRatio;
+    if ((inPhase >= STORM.digMinS && worn) || inPhase > STORM.digMaxS) storm();
+  } else if (s.opPhase === 'assault' && now - (st.checkAt ?? st.phaseAt) > STORM.stallS) {
+    // Stalled = no progress over the last stallS: the defence did not drop and no more mass arrived.
+    const progress = def < (st.ref ?? def) * STORM.stallKeep || mass > (st.massRef ?? mass) * 1.1;
+    if (!progress && mass < def * 1.5) dig();
+    else {
+      st.ref = def;
+      st.massRef = mass;
+      st.checkAt = now;
+    }
+  }
 }
 
 /** Finish this attempt: release the roles; an unlocked group falls back to frontal. */

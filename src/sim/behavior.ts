@@ -1,5 +1,6 @@
 import { selectTarget, hasIndirectSolution } from './combat';
 import { thinkGarrison, thinkOccupy } from './command';
+import { fallBackHome } from './homeguard';
 import { dig, openWork } from './works';
 import { FORT } from './config';
 import { moveTo, stop } from './movement';
@@ -11,7 +12,8 @@ import { thinkConvoyTruck } from './convoy';
 import { thinkBridgeBuilder } from './engineering';
 import { enemyDistance, safeRear } from './frontai';
 import { enemyConvoyTargets } from './operations';
-import { EAGER, eagerOn } from './strategyai';
+import { EAGER, eagerOn, stormOn } from './strategyai';
+import { crewPost, gunPost, holdAfterFire } from './crewai';
 import { coverSpot, threatCentre } from './terrainai';
 import type { Sector, Unit } from './types';
 import { dist, headingTo, type V2 } from './vec';
@@ -154,6 +156,8 @@ export function thinkUnit(world: World, u: Unit): void {
     return;
   }
   u.behavior = 'advance';
+  // Round 3: a group recalled to the capital falls back in good order before it fights again.
+  if (fallBackHome(world, u, s)) return;
   switch (u.def.id) {
     case 'mortar': case 'howitzer': return thinkArtillery(world, u, s);
     case 'mg': case 'at_gun': return thinkCrewWeapon(world, u, s);
@@ -234,6 +238,9 @@ function thinkAssault(world: World, u: Unit, s: Sector): void {
  * directly instead of gathering at the shared rally point).
  */
 function approachPoint(u: Unit, s: Sector, p: V2): V2 {
+  // Round 4: a capital siege / storm goes straight for its ring slot (the front point sat at a river
+  // 1.2–1.9 km out and held the whole besieging army there).
+  if (stormOn() && s.op === 'siege' && s.targetCity !== null && s.opPhase !== '') return p;
   return eagerOn() && dist(u.pos, p) > APPROACH_M && dist(u.pos, s.front) > APPROACH_M ? s.front : p;
 }
 
@@ -271,11 +278,17 @@ function thinkArtillery(world: World, u: Unit, s: Sector): void {
   const safe = eagerOn() ? (how ? EAGER.howitzerSafe : EAGER.mortarSafe) : how ? 300 : 180;
   const want0 = behind(world, u, s.front, homeFor(world, u), w.range * ratio);
   // Guns stay inside friendly territory, well clear of enemy-held ground.
-  const want = safeRear(world, u.owner, want0, homeFor(world, u), safe);
-  const off = spread(u, 20);
+  // Round 4: deploy within range of the group's fight / the besieged capital, and keep the post (crewai.ts).
+  const post = stormOn() ? gunPost(world, u, s, safe) : null;
+  const want = post ?? safeRear(world, u.owner, want0, homeFor(world, u), safe);
+  const off = post ? { x: 0, z: 0 } : spread(u, 20);
   const pos = { x: want.x + off.x, z: want.z + off.z };
   selectTarget(world, u, s.targetPos);
   const t = world.unitAlive(u.targetId);
+  if (stormOn() && !t && !u.moving && holdAfterFire(world, u, true)) {
+    u.status = 'status.covering';
+    return;
+  }
   // Shoot and scoot: after a few salvos the battery relocates (it has been sound-ranged).
   if (u.salvos >= 6 && u.setup === 'set') {
     u.salvos = 0;
@@ -303,11 +316,18 @@ function thinkCrewWeapon(world: World, u: Unit, s: Sector): void {
   const back = u.def.id === 'mg' ? 45 : u.def.id === 'at_gun' ? 60 : 130;
   const front = s.front;
   const slot = s.slots[u.id];
-  const want = slot ?? behind(world, u, front, homeFor(world, u), back);
-  const off = slot ? { x: 0, z: 0 } : spread(u, 25);
+  // Round 4: on the axis of the group's fight, inside range of the enemy mass (crewai.ts).
+  const post = stormOn() ? crewPost(world, u, s) : null;
+  const want = post ?? slot ?? behind(world, u, front, homeFor(world, u), back);
+  const off = post || slot ? { x: 0, z: 0 } : spread(u, 25);
   const pos = { x: want.x + off.x, z: want.z + off.z };
   selectTarget(world, u, s.targetPos);
   const t = world.unitAlive(u.targetId);
+  if (stormOn() && !t && !u.moving && holdAfterFire(world, u, false)) {
+    if (u.setup === 'set') u.turret = s.facing;
+    u.status = 'status.covering';
+    return;
+  }
   if (t && u.setup === 'set') {
     u.status = 'status.firing';
     stop(u);

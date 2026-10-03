@@ -1,8 +1,12 @@
 import type { Faction, Unit } from './types';
 import { dist, headingTo, type V2 } from './vec';
 import { enemyDistance } from './frontai';
-import { EAGER, eagerOn } from './strategyai';
+import { EAGER, eagerOn, stormOn } from './strategyai';
+import { navPost } from './crewai';
 import type { World } from './world';
+
+/** Query scratch for crowding() (called per blast victim). */
+const SC_CROWD: Unit[] = [];
 
 /**
  * Operational layer (user request 2026-10-02): spread the war across the whole front,
@@ -113,12 +117,16 @@ export function revealBattery(world: World, u: Unit, reveals: BatteryReveal[]): 
 /** Count friendly units crowded around p (for spacing doctrine and the crowding penalty). */
 export function crowding(world: World, u: Unit): number {
   let n = 0;
-  for (const o of world.spatial.query(u.pos.x, u.pos.z, OPS.crowdRadius)) if (o.owner === u.owner && o.hp > 0 && o.id !== u.id) n++;
+  for (const o of world.spatial.query(u.pos.x, u.pos.z, OPS.crowdRadius, SC_CROWD)) if (o.owner === u.owner && o.hp > 0 && o.id !== u.id) n++;
   return n;
 }
 
 const isRaider = (u: Unit): boolean => u.def.id === 'light_tank' || u.def.id === 'recon' || u.def.id === 'infantry' || u.def.id === 'motor_inf';
-const isGuard = (u: Unit): boolean => u.def.id === 'infantry' || u.def.id === 'motor_inf' || u.def.id === 'mg' || u.def.id === 'light_tank';
+// Round 4: MGs no longer guard routes (they were 39 % of all MGs, idle at the rear; crewai.ts puts them at the front).
+/** Round 4: a rear-guard post on the unit's own nav grid (soak: guards 'unreachable' on steep / water route points). */
+const guardSpot = (world: World, u: Unit, p: V2): V2 => (stormOn() ? navPost(world, u, p) : p);
+
+const isGuard = (u: Unit): boolean => u.def.id === 'infantry' || u.def.id === 'motor_inf' || (u.def.id === 'mg' && !stormOn()) || u.def.id === 'light_tank';
 
 /**
  * Faction-level operations (every sector think, cheap): keep a rear guard on our convoy routes
@@ -131,6 +139,7 @@ export function planOperations(world: World, f: Faction): void {
   const contact = (world.frontInfo[f.id]?.cells.length ?? 0) > 0;
   // Rear guard: posts along our own convoy routes, filled from units far from the front.
   const route = ownConvoyRoute(world, f);
+  if (stormOn()) for (const u of mine) if (u.opRole === 'rearguard' && !isGuard(u)) u.opRole = 'line';
   const guards = mine.filter((u) => u.opRole === 'rearguard');
   // Round 2: guards fired 1–2 % of the time; keep a small guard until our convoys are actually hit.
   const raided = f.trucksUnderFire.some((h) => world.time - h.at < EAGER.rearGuardAlertS);
@@ -141,13 +150,13 @@ export function planOperations(world: World, f: Faction): void {
       .sort((a, b) => enemyDistance(world, f.id, b.pos) - enemyDistance(world, f.id, a.pos));
     for (const u of pool.slice(0, wantGuards - guards.length)) {
       u.opRole = 'rearguard';
-      u.opTarget = route[(u.id * 7) % route.length];
+      u.opTarget = guardSpot(world, u, route[(u.id * 7) % route.length]);
     }
   } else if (guards.length > wantGuards + 2) {
     for (const u of guards.slice(wantGuards)) u.opRole = 'line';
   }
   // Re-post guards to the current routes now and then.
-  if (route.length) for (const u of guards) if (!u.opTarget || (world.tick + u.id) % 600 === 0) u.opTarget = route[(u.id * 7) % route.length];
+  if (route.length) for (const u of guards) if (!u.opTarget || (world.tick + u.id) % 600 === 0) u.opTarget = guardSpot(world, u, route[(u.id * 7) % route.length]);
   // Raids through the weakest front stretch toward the enemy rear.
   if (!contact || world.time < f.nextRaidAt) return;
   f.nextRaidAt = world.time + OPS.raidEverySeconds;

@@ -58,11 +58,15 @@ export class SpatialHash {
     return j * this.nx + i;
   }
 
-  rebuild(units: Iterable<Unit>): void {
+  /**
+   * Rebuild from the world's flat unit array. Copied, not held by reference: the world compacts
+   * that array when units die mid-tick, which would shift the indices this grid stores.
+   */
+  rebuild(units: readonly Unit[]): void {
     const list = this.units;
-    list.length = 0;
-    for (const u of units) list.push(u);
-    const n = list.length;
+    const n = units.length;
+    list.length = n;
+    for (let k = 0; k < n; k++) list[k] = units[k];
     if (this.order.length < n) {
       const cap = Math.max(64, n * 2);
       this.order = new Int32Array(cap);

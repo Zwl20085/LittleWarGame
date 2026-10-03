@@ -47,7 +47,7 @@ export class SectorsPanel {
     } else {
       const counts = f.sectors.map((s) => sectorUnits(w, f.id, s.id).length);
       const dirs = f.command?.directives ?? [];
-      const sig = JSON.stringify([f.sectors.map((s) => [s.posture, s.reason, s.reasonParams, s.share, s.manualTarget, s.op, s.opPhase, s.opLocked]), f.mainSector, counts, this.expanded, dirs.map((d) => [d.kind, d.obj, d.assigned])]);
+      const sig = JSON.stringify([f.sectors.map((s) => [s.posture, s.reason, s.reasonParams, s.share, s.manualTarget, s.op, s.opPhase, s.opLocked]), f.mainSector, counts, this.expanded, dirs.map((d) => [d.kind, d.obj, d.assigned]), f.command?.homeThreat?.active, Math.round((f.command?.homeThreat?.eta ?? 0) / 10)]);
       if (sig !== this.sig) {
         this.sig = sig;
         this.renderCommand();
@@ -62,9 +62,19 @@ export class SectorsPanel {
   private renderCommand(): void {
     const w = this.ctx.match.world;
     const dirs = w.factions[this.ctx.playerId].command?.directives ?? [];
+    const home = w.factions[this.ctx.playerId].command?.homeThreat;
     this.command.innerHTML = '';
-    this.command.style.display = dirs.length ? '' : 'none';
+    this.command.style.display = dirs.length || home?.active ? '' : 'none';
     this.command.append(h('div', { class: 'hq-title' }, t('hq.title')));
+    // Round 3: the capital alarm (homeguard.ts forecast) heads the card.
+    if (home?.active) {
+      const hq = w.hqPos(this.ctx.playerId);
+      this.command.append(h('button', { class: 'hq-row k-defend', title: t('hq.goto'), onclick: () => this.ctx.renderer.rig.lookAt(hq.x, hq.z) },
+        h('span', { class: 'hq-kind' }, t('hq.home')),
+        h('span', { class: 'hq-obj' }, home.eta >= 0 ? t('hq.homeEta', { eta: Math.round(home.eta) }) : ''),
+        h('span', { class: 'hq-n' }, home.recall.length > 0 ? t('hq.homeGroups', { n: home.recall.length }) : ''),
+      ));
+    }
     for (const d of dirs) {
       this.command.append(h('button', {
         class: `hq-row k-${d.kind}`,

@@ -30,7 +30,8 @@ export interface Snapshot {
   readonly units: Float64Array;
   readonly statusTable: string[];
   readonly manual: [number, ManualTask | null, number][];
-  readonly factions: Faction[];
+  /** Null on most snapshots (sent every FACTION_EVERY-th snapshot). */
+  readonly factions: Faction[] | null;
   /**
    * Objectives are static apart from owner / contest / activation / capture progress, so only
    * those travel, as flat arrays in map order (no 150 object clones per snapshot).
@@ -40,8 +41,9 @@ export interface Snapshot {
   readonly forts: Fort[];
   readonly fx: FxEvent[];
   readonly log: LogEntry[];
-  readonly visible: number[][];
-  readonly lastSeen: [number, number, V2][];
+  /** Observer's visible enemy ids and memory (fog mode only; null in open mode). */
+  readonly visible: number[] | null;
+  readonly lastSeen: [number, number, V2][] | null;
   readonly front: { owner: Int8Array; version: number } | null;
   readonly frontView: { owner: Int8Array; version: number } | null;
   readonly supplyNodes: SupplyNode[][];
@@ -55,11 +57,13 @@ export interface SnapshotCursor {
   viewVersion: number;
   statusIndex: Map<string, number>;
   statusSent: number;
+  /** Snapshots made so far (faction records go out on every FACTION_EVERY-th). */
+  sent: number;
   /** Unit type id → index in `unitOrder` (built once, not per snapshot). */
   defIndex: Map<string, number> | null;
 }
 
-export const newCursor = (): SnapshotCursor => ({ lastLog: null, frontVersion: -1, viewVersion: -1, statusIndex: new Map(), statusSent: 0, defIndex: null });
+export const newCursor = (): SnapshotCursor => ({ lastLog: null, frontVersion: -1, viewVersion: -1, statusIndex: new Map(), statusSent: 0, sent: 0, defIndex: null });
 
 function packObjectives(objectives: readonly Objective[]): Snapshot['objectives'] {
   const n = objectives.length;
@@ -81,7 +85,12 @@ function packObjectives(objectives: readonly Objective[]): Snapshot['objectives'
   return out;
 }
 
+/** Faction records are sent on every N-th snapshot (the HUD refreshes at 5 Hz). */
+const FACTION_EVERY = 4;
+
 export function makeSnapshot(match: Match, cur: SnapshotCursor, observer: number): Snapshot {
+  const fog = match.world.config.infoMode === 'fog';
+  cur.sent++;
   const w = match.world;
   const list = w.aliveUnits.filter((u) => u.hp > 0);
   const buf = new Float64Array(list.length * STRIDE);
@@ -127,14 +136,17 @@ export function makeSnapshot(match: Match, cur: SnapshotCursor, observer: number
     units: buf,
     statusTable,
     manual,
-    factions: w.factions.map((f) => ({ ...f, command: { ...f.command, attackBias: {}, threatAt: {} }, spent: [], sectors: f.sectors.map((s) => ({ ...s, slots: {}, segment: [], bridgeSite: null })) })),
+    // Faction records (economy, orders, groups) feed the HUD, which refreshes at 5 Hz: sending
+    // them with every snapshot (up to 60 Hz) is wasted cloning on both threads.
+    factions: cur.sent % FACTION_EVERY === 0 ? w.factions.map((f) => ({ ...f, command: { ...f.command, attackBias: {}, threatAt: {} }, spent: [], sectors: f.sectors.map((s) => ({ ...s, slots: {}, segment: [], bridgeSite: null })) })) : null,
     objectives: packObjectives(w.objectives),
     projectiles: w.projectiles,
     forts: w.forts,
     fx,
     log,
-    visible: w.visibleTo.map((s) => [...s]),
-    lastSeen: seen ? [...seen].map(([id, v]) => [id, v.tick, v.pos]) : [],
+    // Only the observer's visibility matters on the main thread, and only in fog mode.
+    visible: fog && w.visibleTo[observer] ? [...w.visibleTo[observer]] : null,
+    lastSeen: fog && seen ? [...seen].map(([id, v]) => [id, v.tick, v.pos]) : null,
     front,
     frontView,
     supplyNodes: match.supplyNodes,
@@ -185,7 +197,7 @@ export function applySnapshot(match: Match, snap: Snapshot, observer: number): v
   for (const u of w.units.values()) if (!seen.has(u.id)) u.hp = 0;
   w.removeDead();
   w.tick = snap.tick;
-  snap.factions.forEach((f, i) => Object.assign(w.factions[i], f));
+  if (snap.factions) snap.factions.forEach((f, i) => Object.assign(w.factions[i], f));
   {
     const so = snap.objectives;
     for (let i = 0; i < w.objectives.length && i < so.owner.length; i++) {
@@ -207,13 +219,13 @@ export function applySnapshot(match: Match, snap: Snapshot, observer: number): v
   if (w.fx.length > 4000) w.fx.splice(0, w.fx.length - 4000);
   for (const l of snap.log) w.log.push(l);
   if (w.log.length > 400) w.log.splice(0, w.log.length - 400);
-  snap.visible.forEach((ids, f) => {
-    const set = w.visibleTo[f];
+  if (snap.visible && w.visibleTo[observer]) {
+    const set = w.visibleTo[observer];
     set.clear();
-    for (const id of ids) set.add(id);
-  });
+    for (const id of snap.visible) set.add(id);
+  }
   const ls = w.lastSeen[observer];
-  if (ls) {
+  if (ls && snap.lastSeen) {
     ls.clear();
     for (const [id, tick, pos] of snap.lastSeen) ls.set(id, { tick, pos });
   }
@@ -227,7 +239,7 @@ export function applySnapshot(match: Match, snap: Snapshot, observer: number): v
   }
   match.supplyNodes = snap.supplyNodes;
   w.result = snap.result;
-  w.spatial.rebuild(w.units.values());
+  w.spatial.rebuild(w.aliveUnits);
 }
 
 function replace<T>(target: T[], src: T[]): void {

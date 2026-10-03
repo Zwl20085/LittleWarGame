@@ -65,6 +65,20 @@ cover rules, the battle-event log, concentration of force that keeps far more un
 the browser (Edge, 1600×900, high quality) the worker holds 8.0× with 350–500 units and
 `renderer.frame` averages 5–8 ms (`gl.render` 3–5 ms); snapshot apply is 1.0–1.2 ms.
 
+## 1.1 round (no gameplay change)
+
+| Change | Effect |
+|---|---|
+| Faction records in snapshots only every 4th snapshot (the HUD refreshes at 5 Hz); visibility sets and enemy memory only in fog mode and only for the observer | snapshot apply 1.06 → 0.54 ms |
+| Every hot spatial query (target selection, blast, wipe morale, capture presence, supply, crowding, AP collision, observers) reuses a module-level result array | fewer short-lived arrays per tick |
+| Front info skipped for eliminated factions | front-line pass shrinks as the war narrows |
+| Map labels drawn from cached sprites (halo + fill rendered once per text/font/dpr) | labels 0.71 → 0.58 ms at the overview |
+| Vegetation tiles 400 → 800 m, settlement tiles 600 → 900 m | scene objects 671 → 493, shadow casters 346 → 168; `gl.render` 4.0 → 3.7 ms overview, ~2.0 ms in battle views |
+
+Browser at 8× (Edge, 1600×900, high quality, ~350 units): `renderer.frame` 6.2 ms overview, 3.5 ms
+front, 3.4 ms close; 8.00× achieved in all views. Headless mean tick 1.6 ms at 330 units
+(p50 0.9, p90 3.2, p99 10.7) with other work running on the machine.
+
 ## Where the remaining time goes
 
 Headless, final tree, ~350 units: path building + flow-field expansion 12 % (units now march far

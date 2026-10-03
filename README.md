@@ -2,7 +2,7 @@
 
 **English** · [简体中文](README.zh-CN.md)
 
-<img src="docs/media/hero.gif" width="100%" alt="LITTLE WAR title screen: a huge stencil title over a live AI battle" />
+<img src="docs/media/hero.gif" width="100%" alt="LITTLE WAR title screen over a live AI battle: rifle squads, tanks and trucks fighting through the streets of a town" />
 
 # LITTLE WAR
 
@@ -18,13 +18,24 @@
 ![Simulation](https://img.shields.io/badge/sim-deterministic%2020%20Hz-6b7a3a)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
-[What's new](#whats-new-in-10) · [Features](#features) · [Download](#download-and-play) · [How a war plays](#how-a-war-plays) · [Controls](#controls) · [Under the hood](#under-the-hood) · [Build from source](#build-from-source)
+[What's new](#whats-new-in-11) · [Features](#features) · [Download](#download-and-play) · [How a war plays](#how-a-war-plays) · [Controls](#controls) · [Under the hood](#under-the-hood) · [Build from source](#build-from-source)
 
 </div>
 
 ---
 
-## What's new in 1.0
+## What's new in 1.1
+
+- **Stronger artillery.** Mortars and howitzers lead moving targets and no longer burst on their own gun line. Shells hit harder and burst wider (howitzer 180 damage in a 16 m radius, mortar 125 in 11 m), so two guns can break a squad caught in the open in a few salvos. Fewer, cheaper howitzers keep artillery at about a fifth of all kills.
+- **Unit identity audit.** Every unit's damage and HP were checked against what its name promises. The heavy tank's gun now hits like one (150 → 210), and the balance spec matches the data again.
+- **High command defends the capital.** It forecasts the threat from enemy groups aimed at the capital and closing in. When the threat is real, it recalls the nearest, least engaged army groups (one keeps attacking), sends home guards and digs trench rings and sandbag lines on the approach. The HQ card shows a **Capital threatened** row with the time until contact. In the strategy lab, capitals lost to attacks the army could have stopped fell from 7 to 0 (6 seeds × 45 min).
+- **Siege and storm.** Groups no longer throw spearheads at a fortified capital. They ring it, bring every gun into range, storm once they have the mass and dig in if the storm stalls. A recall no longer cuts an assault short.
+- **Crews deploy where the fighting is.** MGs and AT guns go to the stretch of front that is in contact, and fire about twice as often.
+- **Conquest victory and a territory-driven army.** A side that holds half the map's settlements for 5 minutes wins; the countdown breaks the moment its share drops. The population cap now grows with the land you hold, so a side that owns most of the map can field a bigger army than the last defender.
+- **Faster again.** Snapshots apply in half the time, hot spatial queries reuse their buffers, and larger vegetation and settlement tiles cut the scene's objects by a quarter. The worker holds 8× in every view ([docs/PERFORMANCE.md](docs/PERFORMANCE.md)).
+
+<details>
+<summary><b>What was new in 1.0</b></summary>
 
 - **Soldiers move like people.** Each soldier walks to his place in the formation at a capped pace, turns gradually and strides by the distance he covers. A marching column wheels through a bend instead of turning as one rigid block, and gun crews walk round the gun as it traverses.
 - **Terrain and buildings fight.** Squads garrison houses and fire from the windows until HE brings the building down. High ground aims and spots better, a crest shields defenders, forests hide troops that hold fire, and fords and bridges leave them exposed. The AI holds town edges and crests.
@@ -32,28 +43,30 @@
 - **A sharper AI.** The rules for choosing battle plans were retuned from a strategy lab that records every operation: success rose from 42 % to 58 %. A dominant side now concentrates its army groups on an enemy capital, so wars reach an end.
 - **Faster.** 8× speed keeps up with about 500 units. The mean simulation tick is 2.7 ms at about 460 units, down from 4.5 ms. Settlement markers are instanced, and a new **Graphics quality** setting (auto / high / medium / low) has an auto mode that steps down when frames run slow.
 
+</details>
+
 ## Features
 
 <table>
   <tr>
-    <td width="50%"><img src="docs/media/artillery.gif" width="100%" alt="Howitzer shells arc over a village in glowing trails and burst into dirt columns" /></td>
-    <td width="50%"><img src="docs/media/front.gif" width="100%" alt="A rifle line fires across a river by two bridges while a mortar crew works its tube" /></td>
+    <td width="50%"><img src="docs/media/artillery.gif" width="100%" alt="Shells streak in over the edge of a village and burst among rifle squads and tanks on the road" /></td>
+    <td width="50%"><img src="docs/media/front.gif" width="100%" alt="Rifle squads and tanks fight across open fields along the front" /></td>
   </tr>
   <tr>
-    <td><b>Artillery you can follow with your eyes.</b> Mortar and howitzer shells fly real ballistic arcs over ridges and roofs, leave glowing trails, and burst on walls and fields. Batteries are sound-ranged by the enemy and must relocate after a few salvos.</td>
+    <td><b>Artillery you can follow with your eyes.</b> Mortar and howitzer shells fly real ballistic arcs over ridges and roofs, leave glowing trails, and burst on walls and fields. Gunners lead moving targets, and a burst can break up a squad caught in the open. Batteries are sound-ranged by the enemy and must relocate after a few salvos.</td>
     <td><b>Real fronts, not lanes.</b> Ground control is computed from where troops stand. Army groups hold good ground, push when stronger and launch armoured spearheads through weak points. Tanks are tough enough to lead the attack, and AT guns are what stops them.</td>
   </tr>
   <tr>
-    <td><img src="docs/media/city.gif" width="100%" alt="Rifle squads push down a village street and fight among the houses" /></td>
-    <td><img src="docs/media/river.gif" width="100%" alt="A column crossing a bridge toward a riverside town" /></td>
+    <td><img src="docs/media/city.gif" width="100%" alt="A street fight in a town: squads fire from the corners of houses while a dug trench cuts across the street" /></td>
+    <td><img src="docs/media/river.gif" width="100%" alt="A rifle column marches up a village street and onto a river bridge" /></td>
   </tr>
   <tr>
     <td><b>Towns are solid and worth holding.</b> Every building has collision: troops move through the streets, and walls block sight lines, direct fire and incoming shells. Each town adds income, production and population, so a theatre <i>high command</i> garrisons threatened towns and sends detachments to occupy open ones.</td>
     <td><b>Rivers shape the war.</b> Valleys carry rivers with bridges and fords. Groups stage before a crossing, mass, then force it, and engineers throw pontoon bridges across when the nearest crossing is a long detour.</td>
   </tr>
   <tr>
-    <td><img src="docs/media/overview.gif" width="100%" alt="Overview of a generated map with forests, rivers, villages and cities" /></td>
-    <td><img src="docs/media/convoy.gif" width="100%" alt="Supply trucks driving along a road toward the front" /></td>
+    <td><img src="docs/media/overview.gif" width="100%" alt="Whole-map view of a generated war: four armies' unit counters, war-map arrows and siege lines among rivers, ranges, towns and cities" /></td>
+    <td><img src="docs/media/convoy.gif" width="100%" alt="Supply trucks and rifle squads on a road leading out of a village toward the front" /></td>
   </tr>
   <tr>
     <td><b>Every map is new.</b> Each seed builds a large map (about 3.6 km square for four sides) with mountain ranges and passes, rivers along the valleys, forests, a field patchwork, over a hundred villages, street-grid towns, cities with towers, and a capital per faction.</td>
@@ -61,7 +74,7 @@
   </tr>
   <tr>
     <td><img src="docs/media/march.gif" width="100%" alt="A rifle squad marching in column wheels round a bend in a village road, each soldier facing the way he walks" /></td>
-    <td><img src="docs/media/garrison.jpg" width="100%" alt="A street fight: one army's riflemen fill a street while defenders hold the corner of a house" /></td>
+    <td><img src="docs/media/garrison.jpg" width="100%" alt="Defenders hold the corners of houses at the edge of a town, a dug trench behind them, while attackers close in across the field" /></td>
   </tr>
   <tr>
     <td><b>Soldiers, not tokens.</b> Every soldier walks to his own place in the formation at a walking pace, turns gradually and strides by the ground he covers, so feet don't slide. On roads a squad marches in file or column and wheels through bends along the leader's path. Gun crews walk round their piece as it traverses.</td>
@@ -71,7 +84,7 @@
 
 ### Battle plans, sieges and doctrines
 
-<img src="docs/media/plans.jpg" width="100%" alt="War-map arrows: a pincer converging on a town, and a hatched siege line ringing a city" />
+<img src="docs/media/plans.jpg" width="100%" alt="War-map arrows: two groups swing round a river bend to close on a village, while a hatched siege line rings a city" />
 
 Every army group attacks with a **battle plan**, drawn on the map as a war-room arrow. The AI picks one from its force mix, the target and its doctrine, or you can lock one per group:
 
@@ -85,11 +98,11 @@ Every army group attacks with a **battle plan**, drawn on the map as a war-room 
 
 <table>
   <tr>
-    <td width="50%"><img src="docs/media/works.jpg" width="100%" alt="A zig-zag trench line with sandbagged parapet" /></td>
-    <td width="50%"><img src="docs/media/motorized.jpg" width="100%" alt="Motorized rifles riding two troop trucks" /></td>
+    <td width="50%"><img src="docs/media/works.jpg" width="100%" alt="Zig-zag trench lines with sandbagged parapets dug in a town, the garrison standing behind them" /></td>
+    <td width="50%"><img src="docs/media/motorized.jpg" width="100%" alt="Motorized rifles riding troop trucks across the fields" /></td>
   </tr>
   <tr>
-    <td><b>Field works.</b> Besiegers dig zig-zag trenches, and garrisons stack sandbag barricades. Troops behind finished works get the best cover against shells and fire from the front, so neither side can simply shell the other off the map. Digging costs manpower.</td>
+    <td><b>Field works.</b> Besiegers dig zig-zag trenches, and garrisons stack sandbag barricades. A threatened capital digs a ring of trenches on the approach. Troops behind finished works get the best cover against shells and fire from the front, so neither side can simply shell the other off the map. Digging costs manpower.</td>
     <td><b>Motorized rifles.</b> They ride trucks on long, safe trips and dismount near the enemy, when fired on or at the end of the trip. They are fast for flanks and quick captures, but vulnerable while mounted.</td>
   </tr>
 </table>
@@ -97,8 +110,8 @@ Every army group attacks with a **battle plan**, drawn on the map as a war-room 
 **Doctrine.** Before a battle, choose *balanced*, *infantry first*, *armour first*, *mechanized* or *artillery first*. Your doctrine sets your production mix and the plans your groups prefer. Each AI faction has its own doctrine.
 
 <div align="center">
-<img src="docs/media/hud.gif" width="100%" alt="War-room HUD: high-command directives, army-group cards, event log, production bar and minimap" />
-<br/><sub>The war-room HUD. Top left: high-command directives (defend / attack / occupy). Below them: army groups and the event log. Bottom: production. Bottom right: minimap. Chinese by default, English with one click.</sub>
+<img src="docs/media/hud.gif" width="100%" alt="War-room HUD at a threatened capital: high-command card with a Capital threatened row, army-group cards, event log, production bar and minimap" />
+<br/><sub>The war-room HUD. Top left: high-command directives (defend / attack / occupy), headed here by a <i>Capital threatened</i> row with the time until contact. Below them: army groups and the event log. Bottom: production. Bottom right: minimap. Chinese by default, English with one click.</sub>
 </div>
 
 Also inside:
@@ -126,7 +139,7 @@ flowchart LR
   H[High command<br/>defend · occupy · attack] --> C
   C --> D{Front line}
   D -- capture towns --> A
-  D -- take the enemy capital --> V[Victory]
+  D -- take the enemy capitals<br/>or hold half the map for 5 min --> V[Victory]
   S[Supply convoys] --> C
   D -- raids --> S
 ```
@@ -134,7 +147,7 @@ flowchart LR
 1. **Mobilise.** Your capital and held towns produce units according to the weights in the bottom bar. A steward balances mobilisation, industry and logistics, or you take over.
 2. **Command.** Units join three army groups. Set a group's posture (cautious / assault / hold / fortify / withdraw) or its target, and the AI handles the rest: holding river lines, massing before crossings, pushing, breaking through. The high command keeps your towns garrisoned.
 3. **Fight for ground.** Every one of the 100+ settlements can be captured. Each one you take feeds your economy and starves the enemy's.
-4. **Win.** A side is defeated only when enemy infantry capture its **capital**. No resolve meter and **no time limit**: you can lose half your land and still fight back. Once one side dominates, its high command turns every army group on the weakest, nearest enemy capital to finish the war.
+4. **Win.** A side is eliminated when enemy infantry capture its **capital**. A side also wins by **conquest** if it holds half of all settlements for 5 minutes; the countdown breaks the moment its share drops below half. There is no resolve meter and **no time limit**: you can lose half your land and still fight back. Once one side dominates, its high command turns every army group on the weakest, nearest enemy capital, and lays siege to it if it is dug in.
 
 ## Controls
 
@@ -175,12 +188,12 @@ flowchart LR
 ```
 
 - **Deterministic simulation.** Fixed 20 Hz ticks with seeded RNG, so the same seed and the same commands give the same war. A test checks this. The simulation runs in a Web Worker, and the main thread only draws.
-- **Data-oriented hot paths.** Lazy flow fields (Dial's algorithm) are shared per goal, and paths are built in 320 m stretches. A cell-sorted spatial hash handles queries, and a 2 m building raster with local detours handles movement through towns. In the 1.0 round the mean tick fell from 4.5 ms to 2.7 ms at about 460 units, and the worker kept up with 8× speed with 360–500 units on the dev machine ([docs/PERFORMANCE.md](docs/PERFORMANCE.md)).
-- **Render budget.** Settlement markers are drawn as 4 instanced meshes instead of about 600, which halves the scene's object count. Each soldier is a few floats in a flat array, stepped every frame, with no per-soldier objects. Quality tiers set the shadow map, pixel ratio and scatter.
+- **Data-oriented hot paths.** Lazy flow fields (Dial's algorithm) are shared per goal, and paths are built in 320 m stretches. A cell-sorted spatial hash handles queries, and a 2 m building raster with local detours handles movement through towns. In the 1.0 round the mean tick fell from 4.5 ms to 2.7 ms at about 460 units. In the 1.1 round snapshot apply fell from 1.06 to 0.54 ms, and the headless mean tick is 1.6 ms at about 330 units; the worker holds 8× speed in the overview, front and close views on the dev machine ([docs/PERFORMANCE.md](docs/PERFORMANCE.md)).
+- **Render budget.** Settlement markers are drawn as 4 instanced meshes instead of about 600, and larger vegetation and settlement tiles bring the scene down to about 500 objects. Map labels come from cached sprites. Each soldier is a few floats in a flat array, stepped every frame, with no per-soldier objects. Quality tiers set the shadow map, pixel ratio and scatter.
 - **Numbers you can inspect.** Balance and AI changes are tested in headless AI-vs-AI wars before they ship:
   - `scripts/balance.ts` prints a ledger for each unit type, a kill matrix and an economy timeline.
   - The **balance lab** (`scripts/lab.ts`) runs A/B experiments with data overrides on the same seeds and checks army fullness, hoarding, attrition and territory churn against target bands ([docs/BALANCE_LAB.md](docs/BALANCE_LAB.md), Chinese).
-  - The **strategy lab** (`scripts/strategy.ts`) records every operation, engagement and capture, then reports which plans work against which odds and terrain ([docs/STRATEGY_LAB.md](docs/STRATEGY_LAB.md)). With the retuned plan rules, operation success went from 42 % to 58 % and captures per match rose 17 % (8 seeds × 20 min).
+  - The **strategy lab** (`scripts/strategy.ts`) records every operation, engagement and capture, then reports which plans work against which odds and terrain ([docs/STRATEGY_LAB.md](docs/STRATEGY_LAB.md)). With the retuned plan rules, operation success went from 42 % to 58 % and captures per match rose 17 % (8 seeds × 20 min). In the 1.1 rounds (6 seeds × 45 min), home defence cut capitals lost to stoppable attacks from 7 to 0, and siege-and-storm with the new crew deployment raised operation success from 38.9 % to 42.3 % and doubled the MG firing share.
   - The **soak test** (`scripts/soak.ts`) plays whole wars and flags NaNs, stuck units, idle groups and slow ticks.
 
 <details>
@@ -188,15 +201,15 @@ flowchart LR
 
 ```
 == Operations launched / won ==
-flank 38  frontal 24  infiltrate 16  pincer 9  won:flank 22  won:infiltrate 1  won:pincer 7
+flank 24  frontal 21  infiltrate 10  pincer 9  siege 21  won:flank 4
 
 type            built  lost  K/D   kills  dmgOut  dmgIn  dmg/min/unit  value-kill/spent  dmg/cost  share
-infantry          120    87  0.94     82     66k    87k         25.9             0.79      6.92  48.9%
-light_tank         33     5  6.20     31     29k   8.1k        128.1             0.38      3.99  21.3%
-medium_tank        13     1 18.00     18     17k   6.0k        246.6             0.50      3.69  12.4%
-recon              61    32  0.31     10    9.8k    18k         11.7             0.18      2.02   7.2%
-howitzer           26     2  1.50      3    7.4k   2.8k         56.5             0.09      0.94   5.4%
-at_gun             18     2  3.00      6    5.1k    952         32.2             0.34      1.76   3.7%
+infantry          102    72  0.79     57     49k    72k         18.9             0.60      6.00  44.5%
+light_tank         32     5  3.40     17     19k   8.5k         88.5             0.25      2.72  17.4%
+howitzer           31     3  4.67     14     15k   2.0k         97.9             0.19      1.75  13.3%
+medium_tank        17     0     -     11     11k   1.4k        147.4             0.21      1.77   9.6%
+recon              56    35  0.23      8    8.6k    21k         10.3             0.14      1.93   7.8%
+mg                  8     2  4.00      8    5.3k    919         58.7             0.64      5.28   4.8%
 ```
 
 It also prints an attacker × victim kill matrix, damage shares by attacker for each victim type, and an economy timeline: units, population against cap, settlements held, income and stock per faction every 5 minutes.

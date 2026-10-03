@@ -282,3 +282,339 @@ and event tests.
   them expire or get contested, even though the absolute number of captures rose.
 - The dominant faction still sits at the stock cap once it reaches the pop cap; nothing in the AI
   can spend that money.
+
+## Round 3: home defence and fortification
+
+User requests: *"加强统帅部决策，when the base is under risk, troops should back to defend"* and
+*"for the base defend, I recommend to let the 统帅部建造工事, when they feel the base will be
+attacked by the enemy"*. The new logic is in `src/sim/homeguard.ts` (constants in `HOME`). It is
+gated by `STRATEGY_AI.homeDefence`, which is only active with `eager`, so the lab can A/B the
+same tree (`--ab home` in the strategy lab, `HOME_DEFENCE=0` for the soak).
+
+### Before: the round-2 rule
+
+`sectors.thinkSectors` checked the known enemy value within 280 m of the HQ every 2 s. Above
+300, **every** army group dropped its operation and marched home, and it went back to the
+offensive as soon as the value dipped below 300. There was no forecast and no fortification. The
+rule only fired once the enemy was already in the town, and it pulled every group at once. On
+the current tree (6 seeds × 45 min), **7 of 10 capitals that fell had ≥ 1.5× the attackers'
+value within 1.5 km** when the capture started. Those were raids and spearheads that the army
+could have stopped.
+
+### Design
+
+**Forecast** (`forecast`, every HQ think = 5 s, one O(units) pass per faction):
+
+- *Enemy*: the known (`world.knows`) hostile value around the capital, weighted as follows:
+  - inside 450 m: weight 1;
+  - 450–900 m: weight 1 if the unit is aimed at us (its spearhead is `hq:<f>`, its group's
+    `targetCity` is us, or its destination is within 400 m of the HQ). Otherwise 0.35 if its
+    group is closing in, else 0.1;
+  - 900–2 400 m: aimed **and** closing only, with the weight falling linearly to 0 at 2 400 m.
+  "Closing" means the group's value-weighted distance to our HQ shrinks at ≥ 0.25 m/s (smoothed
+  from think to think). The first build used no closing test. A group aimed at us but fighting
+  elsewhere then kept all three of our groups at home for 10 minutes.
+- *ETA*: the value-weighted mean of (distance − 150 m) ÷ unit speed.
+- *Bearing*: the value-weighted direction of the threat.
+- *Garrison*: our value within 250 m. Each own unit is counted once: as garrison, as a home guard
+  on its way, or as part of its group (value, centroid, share firing in the last 10 s).
+- `level = enemy ÷ (enemy + garrison + 150)`.
+- The result is exposed as `faction.command.homeThreat` (`level`, `eta`, `enemy`, `garrison`,
+  `committed`, `bearing`, `active`, `recall`, `fortify`, `works`, `far`, `farEta`). The snapshot
+  copies it with the rest of `command`. The HQ card (`ui/sectors.ts`) shows a 首都受威胁 /
+  "Capital threatened" row with the ETA and the number of recalled groups.
+
+**Alarm** (hysteresis): the alarm goes on at `level ≥ 0.4` with a forecast ≥ 150. It goes off
+only after `level < 0.25` for 30 s **and** at least 60 s after it started. Log notes:
+`log.homeThreat` when it goes on (alert), `log.homeDefence` for each recall (warn),
+`log.homeSafe` when it ends, all in zh and en.
+
+**Graded recall** (`recall`): the aim is home strength ≥ 1.5 × the forecast.
+
+1. **Home guards** come first (`guardPool`). They are units on duty at the capital
+   (`opRole 'garrison'`, `opObjective 'hq:<f>'`), at most 14, taken from within 1.5 km in this
+   order, nearest first within each tier:
+   - occupation detachments within 600 m, and garrisons of quiet towns;
+   - then AT guns and MGs;
+   - then free line troops of groups that are not in an operation phase.
+2. **Whole army groups** come next, only while the guards are not enough. Candidates are sorted
+   by cost = distance from the HQ ÷ 1 000 + 1.5 × share firing + 1 if storming + 0.4 if pushing.
+   That is, the nearest and least engaged group goes first. A group is a candidate only if it can
+   march home (1.6 m/s) within the threat's ETA + 360 s. The others keep the offensive going.
+3. **Limits**: one group always stays on the offensive unless 1.5 × the forecast is ≥ half the
+   whole army. If the forecast is ≥ 1.5 × our whole army and the enemy is still more than 120 s
+   away, no further group is recalled early. Guards and works still go in, and groups are
+   recalled once the enemy is at the gates.
+4. **No yo-yo**: a recalled group stays recalled while the alarm lasts. A group is released early
+   only after ≥ 60 s at home, and only if the rest still covers the target. When the alarm ends,
+   `restoreOrders` gives each group back the target, rally point and retarget clock it had
+   before.
+5. **Explained in the UI**: a recalled group's reason is `reason.homeDefence`, for example
+   "回防首都（敌约 {enemy}，我 {mine}，{eta} 秒后接敌）".
+6. **Falling back**: units of a recalled group that are more than 450 m from the HQ walk back to
+   their slot and fire at targets of opportunity (`fallBackHome`, `status.fallingBack`). This is
+   a retreat in good order, not a rout. Guns are excluded. The group's line is anchored on the
+   best defensive ground within 220 m of the HQ, facing the threat, with AT guns and MGs in the
+   rank behind the infantry.
+
+**Fortification** (`fortifyHome`, `ensureDiggers`, `thinkHomeGuard`):
+
+- **Trigger**: (`level ≥ 0.2` and forecast ≥ 150) **or** a superior force (≥ 1.2 × garrison +
+  our groups within 1.5 km) closing in with ETA ≤ 900 s, and no known enemy within 150 m of the
+  HQ (inside that range they fight instead). Once on, the order stands for ≥ 60 s.
+  `log.homeFortify` is announced at most once per 2 minutes.
+- **Works**:
+  - up to **3 trench lines** 160 m out (±20–35 m to avoid buildings and water), on the threat
+    bearing and ±0.45 rad, each laid across the approach axis and facing out;
+  - up to **4 sandbag barricades** at the town edge (85 m, ±0.22 and ±0.6 rad).
+  - Built through `works.startLine`, so the P cost and `WORKS.startEverySeconds` pacing apply.
+    At most 2 works are unfinished at a time, and a work starts only if P ≥ 1.5 × its cost, so
+    production is not starved.
+- **Diggers**: engineers within 1.5 km first, then infantry, about 2 per open work, as home
+  guards. A home guard digs whenever no enemy is within 150 m of it. Otherwise it mans a post on
+  the threatened approach:
+  - infantry stand just behind a finished trench or sandbag line facing the threat, so the
+    existing cover rules (`updateWorksCover`) apply;
+  - AT guns and MGs stand 120 m out on the axis;
+  - tanks stand at the town edge.
+  Enemies inside 125 m of the HQ are attacked so the capture ring holds a defender. Guards go
+  back to the line when neither the alarm nor the fortify order is on.
+- **Towns and cities** (generalised): the two most pressed **garrisoned** towns or cities with a
+  defend directive get one trench across the approach, 40 m outside the place
+  (`fortifyPlace`). Their garrison digs it before it mans its posts (`command.digPlaceWork`).
+  The first build let the garrison alternate between its post and the trench, and the soak
+  flagged 30 "stuck" units. Digging now comes before manning the post, and the soak reports no
+  stuck diggers.
+
+Other changes: `planPincer` no longer uses a recalled wing as a jaw. The first build had 151
+pincer `noForce` ops in 3 matches. `cityai` holds the posture for both recall reasons.
+
+### Before / after — strategy lab (6 seeds × 45 min, same tree, `homeDefence` off → on)
+
+`npx tsx scripts/strategy.ts --seeds 7,11,13,17,23,29 --minutes 45 --compare --ab home --jobs 12`.
+The capital rows come from `scripts/strategy/home.ts`, sampled once per game second. "In reach"
+means own value within 1.5 km against attackers within 300 m when capture progress starts.
+
+| metric | off (round 2) | on (round 3) | Δ |
+|---|---:|---:|---:|
+| capital attack episodes (capture progress started) | 29 | 11 | −62 % |
+| … of which the defender had ≥ 1.5× in reach | 20 | 0 | |
+| capitals lost | 10 | 6 | −4 |
+| **capitals lost although stoppable** | **7** | **0** | −7 |
+| capital capture-progress seconds | 1 297 | 362 | −72 % |
+| trench / sandbag lines started / finished at capitals | 0 / 0 | 84 / 63 (≈ 14 / 10.5 per match) | |
+| home alarms | 0 | 27 (4.5 per match) | |
+| group-minutes recalled home | 308 | 619 | +311 |
+| captures per minute | 5.9 | 5.7 | −3 % ✓ |
+| captures per match | 267 | 259 | −3 % ✓ |
+| op success rate % | 40.6 | 36.8 | −3.7 pts (−9 % rel.) ✗ |
+| wasted ops % | 20.0 | 16.9 | −3.1 |
+| captures per 100 units lost | 32.4 | 31.3 | −1.1 |
+| units lost per match | 824 | 827 | ≈ |
+| occupy directives → captured % | 58.2 | 55.3 | −2.9 |
+| eliminations per match | 1.7 | 1.0 | −0.7 |
+| wars ended within 45 min | 0 / 6 | 0 / 6 | |
+
+Iterations, all with the same-tree A/B (the other agents' balance edits moved the baseline
+between runs):
+
+| build | seeds | group-min home / match | captures / min Δ | stoppable losses (off → on) |
+|---|---:|---:|---:|---|
+| v1: no closing test, all groups recallable | 3 | 113 | −6 % | 5 → 0 |
+| v2: + reach window, surplus release | 3 | 105 | −6 % | 5 → 2 |
+| v3: + idle off-axis weight 0.1, level 0.4 / 0.25, one group kept attacking | 3 | 91 | −3 % | 5 → 2 (151 pincer `noForce`) |
+| v4: + no pincer with a recalled wing | 6 | 97 | −9 % | 6 → 2 |
+| **final**: + hopeless rule, occupation guards only within 600 m | 6 | 103 | −3 % | **7 → 0** |
+
+Most of the recalled group-minutes come from factions that are already losing: a decisive
+offensive of 15–35 k value closing on a capital. In the local diagnostic (`media/r3/diag.ts`,
+seed 11), one faction had all 3 groups home for its last 9 minutes before it fell at 28 min.
+Recalling there is the intended behaviour, and it is why eliminations per match fell.
+
+### Soak (`npx tsx scripts/soak.ts 45 7,11,13`, same tree, off → on)
+
+| seed | off | on |
+|---|---|---|
+| 7 | no result; 2 eliminated (held 85/0/0/45) | no result; 1 eliminated (68/0/32/37) |
+| 11 | no result; 2 eliminated (0/0/48/95) | no result; 2 eliminated (0/0/49/97) |
+| 13 | no result; 2 eliminated (50/0/0/88) | no result; 0 eliminated (39/40/28/44) |
+
+**No war ended within 45 min on this tree with home defence off either.** In 1.0, 2 of 3 seeds
+ended. The balance work done at the same time has already moved the baseline (round-2 rule).
+Home defence slows the endgame further: 6 → 3 eliminations in 3 × 45 min. The remaining
+anomalies with home defence on are path / reachability reports (`unreachable`, 20), plus one
+stuck unit each in five other states (maneuver, raiding, rearGuard, spearhead, toDepot). None of
+them comes from digging or garrison duty.
+
+### Performance
+
+`npx tsx scripts/perf.ts generated 300 7`: 1.4 ms/tick before the change (quiet machine), 1.6
+after (p50 0.8, p90 3.3). Paired on/off runs started together (a local wrapper that sets the
+flag) at 300 s: 1.9 vs 1.9 ms/tick. At 1 200 s, with alarms and works active: **1.4 (on) vs 1.5
+(off)**, p90 2.8 vs 3.2. The forecast runs at HQ cadence: one O(units) pass and at most two pool
+scans per faction every 5 s. The per-unit home-guard think does one spatial query (260 m) and a
+scan of the works list, and a post is refreshed at most every 20 s. Nothing runs per tick per
+unit. `npx vitest run` passes (48 tests), including determinism, the events tests and the new
+`tests/homeguard.test.ts` (forecast → proportional recall → works on the approach → stand-down).
+
+### Open issues
+
+- **Wars end later.** Eliminations dropped from 1.7 to 1.0 per match. Together with the balance
+  changes of the same week, no seed ends within 45 min. The next step is on the attacker's side:
+  a siege op (trenches + guns) against a fortified capital, instead of frontal spearheads into
+  dug-in guards.
+- **Op success fell by 3.7 points**, mostly flank ops `reset` by a recall. A recall could wait for
+  an op in its `assault` phase to finish when the ETA allows.
+- The capital metrics rest on few events: 6–10 falls per 6 matches. The stoppable-loss count
+  needs more seeds before it is a stable number.
+- One AT gun (seed 11) sat "unreachable" for 10 minutes without a destination. Guard posts for
+  crews use `terrain.freeNear` but do not test the crew's nav class. (Fixed in round 4.)
+
+## Round 4: siege-and-storm, recall spares assaults, crew deployment
+
+The lead's follow-up after the artillery balance round: on the combined tree no soak seed ended
+within 45 min, with home defence on or off. The attacker needed an answer to fortified, garrisoned
+capitals. This round also has to stop a recall from cutting an assault short, put the crew weapons
+where the fighting is, and choose posts on the right nav grid. Everything is gated by
+`STRATEGY_AI.storm`. The A/B uses the same tree: `--ab storm` in the strategy lab and `STORM=0`
+for the soak.
+
+### Changes
+
+| change | where |
+|---|---|
+| **Capital siege-and-storm** through the existing siege op. A group whose target is an enemy capital, with ≥ 40 % of its units within 1.8 km and a forecast defence ≥ 0.2 × its value, lays siege instead of attacking frontally. A frontal march on a capital (phase `move`) switches to the siege on arrival. **Forecast defence** = the known value within 320 m of the capital + 160 per finished trench + 80 per finished sandbag line. **Mass** = our value within 1 km. **form**: the groups mass on the siege ring, with no spearheads in this phase. They storm at mass ≥ 1.6 × forecast after ≥ 40 s. After 150 s they storm anyway at ≥ 1.1 ×, or else switch to dig. **storm**: the front pushes whatever the local ratio at the anchor is. If after 75 s the forecast is still ≥ 0.8 × its value at the start and mass < 1.5 × forecast, the group falls back to **dig**: it digs its own trench ring while the guns work. It storms again once the forecast is ≤ 0.7 × its value when digging started (or the mass is enough), between 60 and 200 s. The op is `won` when the capital falls and times out after 20 min | `storm.ts`, `doctrine.ts` `stepCapitalSiege`, `digRing`; `sectors.ts` (push, spearheads) |
+| **Guns at the capital**: every howitzer and mortar of a besieging group deploys within range of the defenders' mass: 0.8 × its range, on our side, at half its usual safety distance | `crewai.gunPost`, `storm.bombardPoint` |
+| **A recall spares assaults**: a group in an `assault` phase, a breakthrough, or a siege of its own is not recalled unless the enemy is ≤ 120 s from the capital | `homeguard.ts` `recall` |
+| **Crew deployment**: MGs and AT guns go to the nearest stretch of our front that is actually fighting. That is a front cell with known enemies within 250 m, out of 64 cells sampled every 3 s, within 900 m of the crew. Otherwise they go to the group's engagement. They stand on our side of the enemy mass, at 0.85 × (MG) or 0.8 × (AT) of their range. A post moves only if the wanted spot moves > 50 m (guns: > 90 m). Crews hold still for 15 s after the last shot (guns: 20 s). Mortars and howitzers deploy the same way at 0.75 × or 0.7 × their range, inside the safety distance. **MGs no longer guard convoy routes**: they were 39 % of all MGs, idle in the rear. **Garrison crews** man the town edge facing the threat and no longer charge enemies inside the town | `crewai.ts`, `behavior.ts`, `operations.ts`, `command.ts` |
+| **Nav-grid posts**: guard, garrison, rear-guard and manoeuvre goals use `world.navFor(u).nearestPassable`. Siege and home trenches sit on infantry-passable ground. A unit leaves a work it failed to path to to others | `crewai.navPost`, `homeguard.ts`, `command.ts`, `operations.ts`, `doctrine.unitGoal`, `works.dig` |
+
+The spec asked for a storm at ≥ 2 × the forecast defence. In the first build, mass counted within
+700 m of the capital and the 2 × threshold. The groups held the ring 0.6–1 km out and were never
+counted as massed. The besieger then alternated form → dig → storm for 15 minutes, holding in
+place, because the local push ratio at the anchor stayed < 1. The defenders mass there. The final
+build counts mass within 1 km, storms at 1.6 ×, and forces the push during the storm. In
+`media/r3/stormdiag.ts`, seed 13, the defence forecast fell from 10.5 k to 4 k under the guns and
+the storm, and the capital fell at 37 min.
+
+### Before / after — strategy lab (6 seeds × 45 min, same tree, `storm` off → on)
+
+| metric | off (round 3) | on (round 4) | target |
+|---|---:|---:|---|
+| op success rate % | 38.9 | **42.3** | within 5 % of round 2 (40.6) ✓ |
+| wasted ops % | 16.8 | 15.5 | |
+| value lost in failed ops per match (k) | 24.2 | 15.0 | |
+| captures per match | 254 | 269 (+6 %) | |
+| captures per 100 units lost | 31.4 | 33.4 | |
+| MG firing % | 1.3 | **2.8** (×2.2) | ≥ 2× ✓ |
+| AT gun firing % | 1.6 | **2.9** (×1.8) | ≥ 2× ✗ (close) |
+| mortar firing % | 19.6 | 18.1 | |
+| howitzer firing % | 13.5 | 15.1 | |
+| AT / mortar / howitzer relocating with no target % | 76 / 72 / 52 | 74 / 71 / 46 | |
+| capitals lost | 7 | 6 | |
+| capitals lost although stoppable | 0 | **1** (seed 23, 42.9 min) | 0 ✗ |
+| capital capture-progress seconds | 564 | 579 | |
+| eliminations per match | 1.2 | 1.0 | |
+| wars ended within 45 min | 0 / 6 | 0 / 6 | |
+
+The relocating share stays high because crews walk 340–500 m on average to their post (crew diag,
+seed 7). They spawn behind the line and move at 0.9–1.3 m/s. MGs now spend that time walking
+instead of idling on rear-guard duty, so their "relocating" share rose while their firing share
+doubled. One more variant let storming groups be recalled at threat level ≥ 0.6. It still lost
+the seed-23 capital, and op success fell back to 39.2 %, so it was dropped.
+
+### Soak (`npx tsx scripts/soak.ts 45 7,11,13`, same tree)
+
+| seed | storm off | storm on |
+|---|---|---|
+| 7 | no result; 1 eliminated (69/0/34/40) | no result; 1 eliminated (70/0/53/17) |
+| 11 | no result; 2 eliminated (0/0/46/101) | no result; 2 eliminated (0/0/80/66) |
+| 13 | no result; 2 eliminated (0/34/0/96) | no result; 2 eliminated (0/0/91/42) |
+| "unreachable" lines | 6 / 3 / 4 = 13 | **3 / 2 / 2 = 7** (round 3: 20) |
+
+**The target (2 of 3 seeds end, ≥ 2 eliminations on the third) is not met.** The timelines show
+why. Capitals now fall between 28 and 43 min: one at about 30–35 min, a second at 40–45 min. That
+leaves two factions at or near the population cap (780) for the last duel, the stall already
+noted in round 2. Ending a 4-faction war needs three capital falls. At the pace of one capital per
+~8–10 minutes after the first decisive offensive (≈ 25 min), the third fall lands after 45 min.
+The AI cannot fix the pop-cap duel alone. Options are a pop cap by land share, spawning outside
+the HQ ring, or a resolve or majority victory condition (`victory.resolve_enabled`).
+
+### Performance
+
+Paired runs started together (`media/r3/perfab4.ts` sets the flag), generated map, seed 7:
+
+| run | off | on |
+|---|---:|---:|
+| `perf.ts` 300 s | 1.2 ms/tick, p90 2.4, p99 8.4 | 1.2 ms/tick, p90 2.4, p99 8.3 |
+| `perf.ts` 1 200 s | 1.2 ms/tick, p90 2.5, p99 7.6 | 1.2 ms/tick, p90 2.5, p99 7.8 |
+
+The hot spots are 64 spatial queries per faction every 3 s. The engagement centre is cached per
+group for 2 s. A post is recomputed only when the wanted spot moves. The capital forecast and mass
+are 2 spatial queries per besieging group every 2 s. `npx vitest run` passes (51 tests), including
+determinism, events, `homeguard.test.ts` and the new `storm.test.ts`.
+
+### Open issues
+
+- **Wars still do not end within 45 min.** The remaining blocker is the pop-capped final duel,
+  which is an economy or capture-rule question (see above).
+- **AT guns fire 1.8× as often, short of 2×.** Transit dominates: crews walk 340–500 m to the
+  fight. Spawning crews at the forward town nearest the fight, or towing, would help.
+- **One stoppable capital loss** (seed 23 at 42.9 min) appeared with storm on. Recalling storming
+  groups at a high threat level did not prevent it, so the cause is elsewhere.
+- **Mortars** still relocate about 70 % of the time. They follow hot spots that move as the front
+  breathes. A longer hold, or a battery-level post, is the next step.
+
+### Round 4b: endgame pace, with the territory-driven pop cap
+
+The lead asked for wars to end within 35–50 min after the economy change: `territory.capital_pop_share`
+0.25 and `pop_cap_max_multiplier` 1.5, so a map-holding leader fields 950–990 pop. These
+constants changed in this pass (measured with `media/r3/stormdiag.ts` and soaks):
+
+| constant | before → after | why |
+|---|---|---|
+| `HOME.overmatch` | 1.5 → 1.2 | recall only enough to cover the forecast |
+| hopeless rule (`homeguard.recall`) | no early recall unless the enemy is within 120 s → **no new group recall at all** once the forecast is ≥ 1.5 × our whole army | the doomed defender's whole army sat at home for 15 min; raids never reach that ratio |
+| `EAGER.dwarfPop` (new) | 2 | `chooseFinishTarget`: our pop ≥ 2 × an enemy's → finish it now. `storm.wantsCapitalSiege`: no siege then; it is rolled over frontally with spearheads |
+| `STORM.stormRingM` / `stormArc` (new) | 25 m / ±1.4 rad | in the storm, the line's slots close on the HQ itself. It used to creep with the front 0.75–0.9 km out |
+| storm stall | 75 s with no defence drop → **75 s with neither a defence drop nor ≥ 10 % more mass arriving** | storms 1.2 km out were called off before the mass could arrive |
+| `behavior.approachPoint` | — | units of a capital siege or storm go straight for their ring slot, not via the group's front point (that point sat at a river 1.2–1.9 km out) |
+
+Soak `npx tsx scripts/soak.ts 50 7,11,13` on the combined tree. "elim." is eliminations by 50 min.
+
+| build | seed 7 | seed 11 | seed 13 | wars ended |
+|---|---|---|---|---|
+| lead's baseline (round 4 as shipped) | **ends 41.6 min** | 2 elim. | 2 elim. | 1 / 3 |
+| round 4b (this pass, final) | 2 elim. | 1 elim. | 2 elim. | 0 / 3 |
+| round 4b, `SIEGE=0` (no capital siege) | 2 elim. | 1 elim. | 2 elim. | 0 / 3 |
+| round 4b, `HOME_DEFENCE=0` | 2 elim. | 2 elim. | 2 elim. | 0 / 3 |
+| `STORM=0` (round 3) | **ends 34.1 min** | 1 elim. | 1 elim. | 1 / 3 |
+| `STORM=0 HOME_DEFENCE=0` (round 2 rules) | **ends 40.2 min** | 2 elim. | **ends 47.8 min** | 2 / 3 |
+
+Strategy lab, 6 seeds × 50 min, same tree, `--ab storm`:
+
+| metric | storm off | storm on (4b) |
+|---|---:|---:|
+| wars ended | 1 (34.1 min) | 1 (49.8 min) |
+| eliminations per match | 1.8 | 2.0 |
+| op success % | 15.8 | 21.1 |
+| captures per minute | 4.8 | 5.2 |
+| capitals lost although stoppable | 3 | 2 |
+| MG / AT firing % | 0.9 / 1.0 | 2.9 / 2.1 |
+
+**The target (≥ 2 of 3 soak seeds end within 50 min) is not met.**
+
+- Only the round-2 rules (no home defence, no siege) reach 2 of 3 on the three soak seeds. On
+  6 seeds the storm build ends as many wars as storm off (1 each) and eliminates slightly more
+  factions.
+- Single soak outcomes swing by a whole elimination between builds that differ in one constant.
+  The war end is a threshold event, and 3 seeds cannot separate the variants.
+- What remains in most runs is a **duel between two sides of similar size**, for example 80 vs 61
+  or 66 vs 83 places at 50 min. Neither side dwarfs the other, so no AI rule makes one roll over
+  the other in 10 minutes.
+- Op success in the lab dropped to 16–21 % on this tree on both sides, against 39–42 % before the
+  economy change, so the economy change probably caused it. The lab runs show the same.
+- Capitals lost although stoppable is 2 per 6 matches, above the ≤ 1 target.
+
+Perf, paired 300 s: off 1.5 vs on 1.6 ms/tick, p90 3.0 for both. `npx vitest run` passes
+(51 tests).

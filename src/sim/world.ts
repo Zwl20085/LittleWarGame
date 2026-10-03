@@ -258,7 +258,8 @@ export class World {
       terrainMulAt: -1,
       legCheckIdx: -1,
       legClear: false,
-      progressPos: { ...pos },
+      progressIdx: -1,
+      progressD: Infinity,
       progressAt: this.time,
     };
     this.units.set(u.id, u);

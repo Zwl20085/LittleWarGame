@@ -118,8 +118,9 @@ export interface Unit {
   /** Waypoint index whose "next leg is wall-free" test has been evaluated, and its result (perf). */
   legCheckIdx: number;
   legClear: boolean;
-  /** Stuck watchdog: where/when the unit last made a metre of progress while moving. */
-  progressPos: V2;
+  /** Stuck watchdog: waypoint index and distance at the last progress, and when that was. */
+  progressIdx: number;
+  progressD: number;
   progressAt: number;
 }
 
@@ -244,6 +245,8 @@ export interface Faction {
   aiThinkAt: number;
   /** Supply trucks of this faction hit recently (id, time); escorts read this short list (perf). */
   trucksUnderFire: { id: number; at: number }[];
+  /** Conquest-victory countdown start (-1 = not holding the required share). */
+  dominionSince: number;
 }
 
 export interface Objective {
@@ -340,6 +343,6 @@ export interface MatchConfig {
 
 export interface MatchResult {
   readonly winners: number[];
-  readonly reason: 'last_standing' | 'timeout' | 'mutual';
+  readonly reason: 'last_standing' | 'timeout' | 'mutual' | 'dominion';
   readonly tick: number;
 }

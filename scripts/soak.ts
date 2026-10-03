@@ -1,7 +1,7 @@
 /**
  * Soak test: run whole AI-vs-AI wars headless and report what a player would see as a problem.
  *
- *   npx tsx scripts/soak.ts [minutes=60] [seeds=7,11,13]
+ *   npx tsx scripts/soak.ts [minutes=60] [seeds=7,11,13]      (HOME_DEFENCE=0 → round-3 home defence off)
  *
  * For each seed it prints the outcome (who won, when, why — or "no result" at the cap), then
  * every 5 game-minutes a health line, and at the end a list of anomalies:
@@ -16,6 +16,15 @@ import { buildGameData } from '../src/data/loader';
 import { createMatch, step } from '../src/sim/sim';
 import type { Unit } from '../src/sim/types';
 import { dist } from '../src/sim/vec';
+import { STRATEGY_AI } from '../src/sim/strategyai';
+import { STORM_AB } from '../src/sim/storm';
+
+// A/B: HOME_DEFENCE=0 turns the round-3 home defence off (docs/STRATEGY_LAB.md "Round 3").
+if (process.env.HOME_DEFENCE === '0') STRATEGY_AI.homeDefence = false;
+// A/B: STORM=0 turns the round-4 siege-and-storm / crew deployment off.
+if (process.env.STORM === '0') STRATEGY_AI.storm = false;
+// A/B: SIEGE=0 turns only the round-4 capital siege off.
+if (process.env.SIEGE === '0') STORM_AB.siege = false;
 
 const data = buildGameData(readFileSync('docs/data/units.csv', 'utf8'), readFileSync('docs/data/weapons.csv', 'utf8'), readFileSync('docs/data/rules.json', 'utf8'));
 const minutes = Number(process.argv[2] ?? 60);
@@ -61,7 +70,7 @@ for (const seed of seeds) {
       const wants = u.path.length > 0 && u.targetId === null && !u.mounted;
       if (!wants || dist(u.pos, tr) > 4) { tr.x = u.pos.x; tr.z = u.pos.z; tr.since = w.time; tr.flaggedStuck = false; }
       else if (!tr.flaggedStuck && w.time - tr.since > 90) { tr.flaggedStuck = true; note(`t=${Math.round(w.time)}s ${u.def.id}#${u.id} stuck > 90 s status ${u.status} ${navContext(u)} path ${u.path.length}/${u.pathIdx} next ${u.path[u.pathIdx] ? `${u.path[u.pathIdx].x.toFixed(0)},${u.path[u.pathIdx].z.toFixed(0)}` : '-'} walk ${w.navFor(u).walkableXZ(u.pos.x, u.pos.z) ? 'y' : 'N'} crowd ${w.spatial.query(u.pos.x, u.pos.z, 8).length - 1} morale ${u.moraleState} setup ${u.setup}`); }
-      if (u.pathFailed) { if (tr.unreachableSince < 0) tr.unreachableSince = w.time; else if (w.time - tr.unreachableSince > 60) { note(`t=${Math.round(w.time)}s ${u.def.id}#${u.id} unreachable > 60 s ${navContext(u)}`); tr.unreachableSince = w.time; } } else tr.unreachableSince = -1;
+      if (u.pathFailed) { if (tr.unreachableSince < 0) tr.unreachableSince = w.time; else if (w.time - tr.unreachableSince > 60) { note(`t=${Math.round(w.time)}s ${u.def.id}#${u.id} unreachable > 60 s status ${u.status} role ${u.opRole} ${navContext(u)}`); tr.unreachableSince = w.time; } } else tr.unreachableSince = -1;
     }
     for (const f of w.forts) if (f.occupant !== null && !w.unitAlive(f.occupant)) note(`t=${Math.round(w.time)}s fort#${f.id} occupant ${f.occupant} is dead`);
   }

@@ -3,6 +3,9 @@ import type { Faction, Objective, Unit } from './types';
 import { dist } from './vec';
 import type { World } from './world';
 
+/** Query scratch (no per-second allocation per objective). */
+const SC_PRESENT: Unit[] = [];
+
 /** Eligible capturer: infantry/recon/engineer, ≥50 % strength, not routing nor suppressed (§5.3). */
 export function eligibleCapturer(world: World, u: Unit): boolean {
   if (u.hp <= 0 || u.fixed || u.def.kind !== 'infantry') return false;
@@ -12,7 +15,7 @@ export function eligibleCapturer(world: World, u: Unit): boolean {
 
 function presentFactions(world: World, x: number, z: number, r: number): Set<number> {
   const set = new Set<number>();
-  for (const u of world.spatial.query(x, z, r)) {
+  for (const u of world.spatial.query(x, z, r, SC_PRESENT)) {
     if (world.factions[u.owner].alive && eligibleCapturer(world, u)) set.add(u.owner);
   }
   return set;
