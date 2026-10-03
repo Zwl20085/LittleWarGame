@@ -144,7 +144,9 @@ export function planOperations(world: World, f: Faction): void {
   // Round 2: guards fired 1–2 % of the time; keep a small guard until our convoys are actually hit.
   const raided = f.trucksUnderFire.some((h) => world.time - h.at < EAGER.rearGuardAlertS);
   const share = eagerOn() && !raided ? EAGER.rearGuardQuiet : OPS.rearGuardShare;
-  const wantGuards = contact && route.length ? Math.round(mine.length * share) : 0;
+  // Round 5: a finisher sends its rear guard and raiders to the capital storm instead (storm.FINISH).
+  const finisher = stormOn() && f.command.finisher;
+  const wantGuards = contact && route.length && !finisher ? Math.round(mine.length * share) : 0;
   if (guards.length < wantGuards) {
     const pool = mine.filter((u) => u.opRole === 'line' && !u.spearhead && !u.manual && isGuard(u) && u.behavior === 'advance')
       .sort((a, b) => enemyDistance(world, f.id, b.pos) - enemyDistance(world, f.id, a.pos));
@@ -158,7 +160,7 @@ export function planOperations(world: World, f: Faction): void {
   // Re-post guards to the current routes now and then.
   if (route.length) for (const u of guards) if (!u.opTarget || (world.tick + u.id) % 600 === 0) u.opTarget = guardSpot(world, u, route[(u.id * 7) % route.length]);
   // Raids through the weakest front stretch toward the enemy rear.
-  if (!contact || world.time < f.nextRaidAt) return;
+  if (!contact || finisher || world.time < f.nextRaidAt) return;
   f.nextRaidAt = world.time + OPS.raidEverySeconds;
   const cells = world.frontInfo[f.id].cells;
   const gap = weakestPoint(world, f.id, cells);

@@ -52,6 +52,48 @@ const value = (u: Unit): number => (u.def.costP + u.def.costM) * (u.hp / (u.fixe
 /** Is this group's target an enemy capital it should besiege (round 4 on)? */
 export const capitalSiege = (s: Sector): boolean => stormOn() && STORM_AB.siege && s.targetCity !== null;
 
+/**
+ * Round 5 finisher (user: the only victory is occupying every enemy capital). A side whose
+ * population is ≥ `popRatio` × its strongest remaining enemy's, with stock ≥ `stockShare` of the
+ * caps (or pop-capped), finishes: home defence keeps only its guards, every group besieges the
+ * finish target's capital, garrisons are stripped, and with an army ≥ `forceArmyRatio` × the
+ * defender's the storm is forced and never falls back to digging.
+ */
+export const FINISH = {
+  popRatio: 1.3,
+  /** Stays on until the ratio falls below this (hysteresis). */
+  offRatio: 1.15,
+  stockShare: 0.5,
+  fullness: 0.95,
+  forceArmyRatio: 1.5,
+  garrisonShare: 0.05,
+  /** Occupation detachments kept while finishing (was 3–10). */
+  occupyDetachments: 2,
+  releaseCalmS: 15,
+} as const;
+
+/** Update `command.finisher` and `command.finishArmyRatio` (every HQ think, from assessMood's numbers). */
+export function assessFinisher(world: World, f: Faction, army: number, known: Map<number, number>): void {
+  const hc = f.command;
+  if (!stormOn()) {
+    hc.finisher = false;
+    hc.finishArmyRatio = 0;
+    return;
+  }
+  let strongest = 0;
+  for (const e of world.factions) if (e.alive && e.id !== f.id && world.isHostile(f.id, e.id)) strongest = Math.max(strongest, e.popPresent);
+  const econ = world.data.rules.economy;
+  const rich = f.p + f.m >= (econ.cap_p + econ.cap_m) * FINISH.stockShare || hc.fullness >= FINISH.fullness;
+  const ratio = f.popPresent / Math.max(1, strongest);
+  hc.finisher = strongest > 0 && (hc.finisher ? ratio >= FINISH.offRatio : ratio >= FINISH.popRatio && rich);
+  hc.finishArmyRatio = hc.finishTarget >= 0 ? army / Math.max(1, known.get(hc.finishTarget) ?? 0) : 0;
+}
+
+/** This group is the finisher's storm on its finish target, with the army to force it. */
+export function forcedStorm(f: Faction, s: Sector): boolean {
+  return f.command.finisher && s.targetCity !== null && s.targetCity === f.command.finishTarget && f.command.finishArmyRatio >= FINISH.forceArmyRatio;
+}
+
 /** Lab switch for the capital siege alone (the rest of round 4 stays on). */
 export const STORM_AB = { siege: true };
 
@@ -94,6 +136,8 @@ export function stormRing(world: World, f: number, s: Sector, n: number): V2[] {
 /** Should a group start a capital siege now (doctrine.chooseOperation)? */
 export function wantsCapitalSiege(world: World, f: Faction, s: Sector, units: Unit[], groupValue: number): boolean {
   if (!capitalSiege(s) || s.targetCity === null) return false;
+  // Round 5: the finisher besieges its finish target whatever the numbers.
+  if (f.command.finisher && s.targetCity === f.command.finishTarget) return true;
   // A side that dwarfs the defender (≥ EAGER.dwarfPop × its population) rolls over it frontally with
   // spearheads (soak: sieges by a 3–4× richer side waited in form / dig while frontal pushes ended wars).
   const them = world.factions[s.targetCity];

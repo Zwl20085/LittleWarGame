@@ -6,6 +6,7 @@ import { hostileMask } from './spatial';
 import { noteDirective } from './events';
 import { ADAPT, adaptive, EAGER, eagerOn, stormOn } from './strategyai';
 import { navPost } from './crewai';
+import { assessFinisher, FINISH } from './storm';
 import { populationCap } from './production';
 import { createHomeThreat, fortifyPlace, homeOn, thinkHomeDefence, thinkHomeGuard, type HomeThreat } from './homeguard';
 import type { Faction, Objective, Unit } from './types';
@@ -64,12 +65,16 @@ export interface HighCommand {
   /** Decisive offensive: enemy faction whose capital every group goes for (-1 = none), and since when. */
   finishTarget: number;
   finishSince: number;
+  /** Round 5 finisher: we dwarf our strongest remaining enemy and have the money (storm.assessFinisher). */
+  finisher: boolean;
+  /** Our army value ÷ the known army of the finish target (0 = none). */
+  finishArmyRatio: number;
   /** Round 3: forecast risk to the capital, recalled groups and the fortify order (homeguard.ts). */
   homeThreat: HomeThreat;
 }
 
 export function createHighCommand(): HighCommand {
-  return { directives: [], attackBias: {}, threatAt: {}, nextAt: 0, fullness: 0, need: 0, aggression: 0, finishTarget: -1, finishSince: 0, homeThreat: createHomeThreat() };
+  return { directives: [], attackBias: {}, threatAt: {}, nextAt: 0, fullness: 0, need: 0, aggression: 0, finishTarget: -1, finishSince: 0, finisher: false, finishArmyRatio: 0, homeThreat: createHomeThreat() };
 }
 
 const clamp01 = (x: number): number => Math.max(0, Math.min(1, x));
@@ -117,6 +122,7 @@ function assessMood(world: World, f: Faction): void {
   const idleShare = line > 0 ? idle / line : 0;
   hc.aggression = clamp01(full * (0.4 + 0.6 * relW) + (hc.fullness > EAGER.fullLo ? 0.3 * idleShare : 0));
   chooseFinishTarget(world, f, army, known);
+  assessFinisher(world, f, army, known);
 }
 
 /**
@@ -284,18 +290,22 @@ function assignGarrisons(world: World, f: Faction, defend: Directive[]): void {
     if (u.opRole === 'garrison') tied += valueOf(u);
   }
   // Release garrisons whose town has been quiet for a while (or was lost).
+  const kept = new Map<string, number>();
   for (const u of mine) {
     if (u.opRole !== 'garrison' || !u.opObjective || u.opObjective.startsWith('hq:')) continue;
     const o = world.objectives.find((x) => x.id === u.opObjective);
-    const quiet = world.time - (f.command.threatAt[u.opObjective] ?? -1e9) > HQ.releaseCalmSeconds;
-    if (!o || o.owner !== f.id || quiet) {
+    // Round 5: a finisher strips its garrisons to the minimum, and faster (FINISH.releaseCalmS).
+    const quiet = world.time - (f.command.threatAt[u.opObjective] ?? -1e9) > (f.command.finisher ? FINISH.releaseCalmS : HQ.releaseCalmSeconds);
+    const n = kept.get(u.opObjective) ?? 0;
+    const surplus = f.command.finisher && n >= HQ.minGarrison;
+    if (!o || o.owner !== f.id || quiet || surplus) {
       u.opRole = 'line';
       u.opObjective = null;
       u.opTarget = null;
       tied -= valueOf(u);
-    }
+    } else kept.set(u.opObjective, n + 1);
   }
-  const budget = army * HQ.garrisonShare;
+  const budget = army * (f.command.finisher ? FINISH.garrisonShare : HQ.garrisonShare);
   for (const d of defend) {
     const s = strengthNear(world, f.id, d.pos, HQ.threatRadius);
     let have = 0;
@@ -344,7 +354,7 @@ function assignOccupations(world: World, f: Faction, occupy: Directive[]): void 
   // Adaptive: nearest places first (fixed-time detachments marching far tended to expire).
   const order = adaptive() ? byReach(occupy, pool) : occupy;
   // Round 2: more detachments for a bigger idle pool and a needier economy (was a flat 3 × 3).
-  const maxDetachments = eagerOn()
+  const maxDetachments = f.command.finisher ? FINISH.occupyDetachments : eagerOn()
     ? Math.min(EAGER.occupyCap, EAGER.occupyBase + Math.floor((pool.length / EAGER.occupyPerUnits) * (0.5 + f.command.need)))
     : HQ.occupyMaxDetachments;
   for (const d of order) {

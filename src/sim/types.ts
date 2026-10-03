@@ -245,8 +245,6 @@ export interface Faction {
   aiThinkAt: number;
   /** Supply trucks of this faction hit recently (id, time); escorts read this short list (perf). */
   trucksUnderFire: { id: number; at: number }[];
-  /** Conquest-victory countdown start (-1 = not holding the required share). */
-  dominionSince: number;
 }
 
 export interface Objective {
@@ -343,6 +341,6 @@ export interface MatchConfig {
 
 export interface MatchResult {
   readonly winners: number[];
-  readonly reason: 'last_standing' | 'timeout' | 'mutual' | 'dominion';
+  readonly reason: 'last_standing' | 'mutual';
   readonly tick: number;
 }

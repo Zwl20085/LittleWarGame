@@ -9,7 +9,7 @@ import { ADAPT, adaptive, eagerOn, stormOn } from './strategyai';
 import { startLine, WORKS } from './works';
 import type { World } from './world';
 import { defendingHome, isRecalled } from './homeguard';
-import { capitalDefence, capitalSiege, STORM, stormMass, wantsCapitalSiege } from './storm';
+import { capitalDefence, capitalSiege, forcedStorm, STORM, stormMass, wantsCapitalSiege } from './storm';
 
 /**
  * Battle doctrines (user request): 正面推进 frontal, 侧面迂回 flank, 钳形攻势 pincer,
@@ -428,6 +428,8 @@ function stepCapitalSiege(world: World, f: Faction, s: Sector, units: Unit[], st
   }
   const inPhase = now - st.phaseAt;
   const def = capitalDefence(world, f.id, city);
+  // Round 5: a finisher with ≥ 2× the defender's army storms at once and keeps storming.
+  const forced = forcedStorm(f, s);
   const mass = stormMass(world, f.id, s.targetPos);
   const storm = (): void => {
     setPhase(world, s, st, 'assault');
@@ -442,7 +444,10 @@ function stepCapitalSiege(world: World, f: Faction, s: Sector, units: Unit[], st
     setPhase(world, s, st, 'dig');
     st.ref = def;
   };
-  if (s.opPhase === 'form') {
+  if (forced) {
+    if (s.opPhase !== 'assault') storm();
+    st.checkAt = now;
+  } else if (s.opPhase === 'form') {
     if (inPhase >= STORM.formMinS && mass >= def * STORM.massRatio) storm();
     else if (inPhase > STORM.formMaxS) {
       if (mass >= def * STORM.minRatio) storm();
