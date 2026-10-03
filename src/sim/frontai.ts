@@ -17,10 +17,16 @@ export interface FrontInfo {
 }
 
 export function buildFrontInfo(world: World, field: FrontlineField): FrontInfo[] {
+  return world.factions.map((f) => buildFrontInfoFor(world, field, f.id));
+}
+
+/** One faction's front info (the per-faction work is staggered over ticks to avoid a burst). */
+export function buildFrontInfoFor(world: World, field: FrontlineField, factionId: number): FrontInfo {
   const { nx, nz, cell, owner } = field;
   const n = nx * nz;
   const nf = world.factions.length;
-  return world.factions.map((f) => {
+  const f = world.factions[factionId];
+  {
     const cells: V2[] = [];
     const ed = new Float32Array(n);
     const BIG = 1e6;
@@ -53,7 +59,7 @@ export function buildFrontInfo(world: World, field: FrontlineField): FrontInfo[]
     chamfer(ed, nx, nz);
     for (let k = 0; k < n; k++) ed[k] = Math.min(BIG, ed[k] * cell);
     return { cells, enemyDist: ed, nx, nz, cell };
-  });
+  }
 }
 
 /**

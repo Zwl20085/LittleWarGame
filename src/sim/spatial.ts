@@ -107,6 +107,43 @@ export class SpatialHash {
   }
 
   /**
+   * First unit within r whose owner bit is in `owners` and that satisfies `pred`, or null.
+   * Stops at the first match (no result array), for the many "is any enemy near?" checks.
+   */
+  findOwner(x: number, z: number, r: number, owners: number, pred: (u: Unit) => boolean): Unit | null {
+    const s = this.size;
+    const i0 = Math.max(0, Math.floor((x - r) / s));
+    const i1 = Math.min(this.nx - 1, Math.floor((x + r) / s));
+    const j0 = Math.max(0, Math.floor((z - r) / s));
+    const j1 = Math.min(this.nz - 1, Math.floor((z + r) / s));
+    const r2 = r * r;
+    const start = this.cellStart;
+    const mask = this.cellMask;
+    const xs = this.xs;
+    const zs = this.zs;
+    const ownerBit = this.ownerBit;
+    const order = this.order;
+    const units = this.units;
+    for (let j = j0; j <= j1; j++) {
+      const row = j * this.nx;
+      for (let c = row + i0; c <= row + i1; c++) {
+        if ((mask[c] & owners) === 0) continue;
+        const b = start[c + 1];
+        for (let k = start[c]; k < b; k++) {
+          if ((ownerBit[k] & owners) === 0) continue;
+          const dx = xs[k] - x;
+          const dz = zs[k] - z;
+          if (dx * dx + dz * dz <= r2) {
+            const u = units[order[k]];
+            if (pred(u)) return u;
+          }
+        }
+      }
+    }
+    return null;
+  }
+
+  /**
    * Like `query`, restricted to units whose owner bit is in `owners` (same relative order as
    * `query`). Cells without any such owner are skipped without scanning their units.
    */

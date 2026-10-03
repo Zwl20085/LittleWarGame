@@ -95,7 +95,6 @@ function whistle(sr: number, v: number, dur: number, f0: number, f1: number): Fl
   return finish(b, 0.6);
 }
 const shellWhistle: Recipe = (sr, v) => whistle(sr, v, 1.25, 1500 - v * 120, 620);
-const bombWhistle: Recipe = (sr, v) => whistle(sr, v, 2.0, 1000 - v * 80, 330);
 
 /** Debris: scattered small clicks of falling earth / fragments. */
 function debris(b: Float32Array, sr: number, r: () => number, t0: number, span: number, n: number, amp: number): void {
@@ -153,18 +152,6 @@ const ricochet: Recipe = (sr, v) => {
   return finish(b, 0.55);
 };
 
-const flak: Recipe = (sr, v) => {
-  const r = rng(1212 + v);
-  const b = alloc(sr, 1.0);
-  for (let i = 0; i < 2; i++) {
-    const t = i * 0.16 + r() * 0.02;
-    noiseBurst(b, sr, r, t, 0.9, 0.008);
-    sweep(b, sr, t, 150, 70, 0.05, 0.8, 0.07);
-  }
-  rumble(b, sr, r, 0.02, 0.8, 0.22);
-  return finish(b, 0.8);
-};
-
 const vehicleDeath: Recipe = (sr, v) => {
   const r = rng(1313 + v * 29);
   const b = alloc(sr, 3.8);
@@ -177,23 +164,6 @@ const vehicleDeath: Recipe = (sr, v) => {
     sweep(b, sr, t, 160, 80, 0.04, 0.25, 0.05);
   }
   return finish(lowpass(b, sr, 4500), 0.95);
-};
-
-/** Radial-engine drone loop: harmonic stack with blade-rate beating, sealed for looping. */
-const engineLoop: Recipe = (sr, v) => {
-  const r = rng(1414 + v);
-  const dur = 2.2;
-  const b = alloc(sr, dur);
-  const f = 52 + v * 6;
-  for (let i = 0; i < b.length; i++) {
-    const t = i / sr;
-    let s = 0;
-    for (let k = 1; k <= 5; k++) s += Math.sin(TAU * f * k * t + k * 1.3) / (k * 0.9);
-    const am = 0.7 + 0.3 * Math.sin(TAU * 3.6 * t);
-    b[i] = s * am * 0.3 + (r() * 2 - 1) * 0.15;
-  }
-  lowpass(b, sr, 900);
-  return finish(loopSeal(b, sr, 0.3), 0.7);
 };
 
 const rumbleLoop: Recipe = (sr, v) => {
@@ -292,14 +262,11 @@ export const RECIPES = {
   mortar: { make: mortarLaunch, variants: 2 },
   howitzer: { make: howitzerLaunch, variants: 2 },
   whistle: { make: shellWhistle, variants: 2 },
-  bombWhistle: { make: bombWhistle, variants: 1 },
   expSmall: { make: explosionSmall, variants: 3 },
   expBig: { make: explosionBig, variants: 2 },
   apHit: { make: apHit, variants: 2 },
   ricochet: { make: ricochet, variants: 3 },
-  flak: { make: flak, variants: 2 },
   vehicleDeath: { make: vehicleDeath, variants: 2 },
-  engine: { make: engineLoop, variants: 2 },
   rumble: { make: rumbleLoop, variants: 1 },
   click: { make: uiClick, variants: 2 },
   chime: { make: bellChime, variants: 1 },

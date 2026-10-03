@@ -4,6 +4,7 @@ import type { Faction, ProductionOrder, Unit } from './types';
 import type { World } from './world';
 import { dist, type V2 } from './vec';
 import { recordBuilt } from './stats';
+import { hostileMask } from './spatial';
 
 export type OrderBlock =
   | 'LOCKED'
@@ -228,6 +229,12 @@ function reserveFor(world: World, unitId: string): { p: number; m: number } {
   return { p: d.costP, m: d.costM };
 }
 
+/** Any live hostile combat unit (armed, not a truck) within r of the capital. */
+function capitalBesieged(world: World, f: number, r: number): boolean {
+  const hq = world.hqPos(f);
+  return world.spatial.findOwner(hq.x, hq.z, r, hostileMask(world, f), (u) => u.hp > 0 && u.primary !== null && u.def.id !== 'supply_truck' && world.isHostile(f, u.owner)) !== null;
+}
+
 /** Advance orders; completed units spawn at the city exit (or wait if blocked). */
 export function advanceProduction(world: World, f: Faction, seconds: number): void {
   for (let i = 0; i < f.orders.length; i++) {
@@ -237,13 +244,29 @@ export function advanceProduction(world: World, f: Faction, seconds: number): vo
       continue;
     }
     const at = o.spawn ?? world.cityOf(f.id).exit;
+    // A besieged capital cannot keep refilling its own capture ring with fresh units.
+    const siegeR = world.data.rules.victory.siege_blocks_production_radius_m ?? 0;
+    if (siegeR > 0 && dist(at, world.hqPos(f.id)) < siegeR * 1.5 && capitalBesieged(world, f.id, siegeR)) {
+      if (!o.blocked) world.note(f.id, 'log.capitalBesieged', {}, 'warn');
+      o.blocked = true;
+      continue;
+    }
     const near = world.spatial.query(at.x, at.z, 10);
     if (near.length > 6) {
       if (!o.blocked) world.note(f.id, 'log.exitBlocked', {}, 'warn');
       o.blocked = true;
       continue;
     }
-    const jitter = world.navFor({ def: world.data.units.get(o.unitId)! } as Unit).nearestPassable({ x: at.x + world.rngAi.range(-12, 12), z: at.z + world.rngAi.range(-12, 12) }, 40) ?? at;
+    const nav = world.navFor({ def: world.data.units.get(o.unitId)! } as Unit);
+    let jitter = nav.nearestPassable({ x: at.x + world.rngAi.range(-12, 12), z: at.z + world.rngAi.range(-12, 12) }, 40) ?? at;
+    // A jittered point can land in a cut-off pocket next to the exit: roll out at the exit instead.
+    // A forward place can be foot-only ground (a valley town behind steep slopes): a vehicle that
+    // could never drive out rolls out of the capital instead.
+    const exit = world.cityOf(f.id).exit;
+    if (!nav.connected(jitter, exit)) {
+      const atOk = nav.nearestPassable(at, 40);
+      jitter = atOk && nav.connected(atOk, exit) ? atOk : (nav.nearestPassable({ x: exit.x + world.rngAi.range(-12, 12), z: exit.z + world.rngAi.range(-12, 12) }, 40) ?? exit);
+    }
     const u = world.spawnUnit(f.id, o.unitId, jitter, o.sectorId);
     u.behavior = 'rally';
     recordBuilt(world.stats, u);

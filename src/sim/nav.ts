@@ -3,6 +3,11 @@ import { EdgeTable, FIELD_INF, FlowField } from './flowfield';
 import { Ground, type Terrain } from './terrain';
 import { clamp, dist2, type V2 } from './vec';
 
+/** Flow-field goals snap to this lattice (fewer distinct fields to build and cache). */
+const GOAL_LATTICE_M = 128;
+/** Cached flow fields per navigation grid (each ~0.8 MB on a large map). */
+const FIELD_CACHE = 128;
+
 export interface NavClass {
   readonly vehicle: boolean;
   readonly maxSlopeDeg: number;
@@ -65,7 +70,11 @@ class Heap {
   }
 }
 
-export type PathResult = { ok: true; points: V2[] } | { ok: false; reason: 'UNREACHABLE' | 'OUT_OF_BOUNDS' };
+/**
+ * `partial`: the path stops at the horizon short of the goal (the mover must ask for the rest).
+ * `bestEffort`: the goal is cut off on this grid; the path only gets as close as possible.
+ */
+export type PathResult = { ok: true; points: V2[]; partial: boolean; bestEffort?: true } | { ok: false; reason: 'UNREACHABLE' | 'OUT_OF_BOUNDS' };
 
 /** Coarse navigation grid (8 m) per movement class; derived from the same Terrain as LOS. */
 export class NavGrid {
@@ -196,13 +205,50 @@ export class NavGrid {
     const n = Math.ceil(len / (this.cell * 0.5));
     // Do not shortcut through slower ground than the segment start (keeps road following).
     const ref = Math.max(this.cost[this.idx(a)], this.cost[this.idx(b)]) * 1.15;
+    const cost = this.cost;
+    const built = this.built;
+    let touchesBuilt = built[this.idx(a)] | built[this.idx(b)];
+    const nx = this.nx;
+    const last = cost.length - 1;
     for (let k = 1; k < n; k++) {
       const t = k / n;
       const k2 = this.idxXZ(a.x + (b.x - a.x) * t, a.z + (b.z - a.z) * t);
-      const c = this.cost[k2];
+      const c = cost[k2];
       if (c <= 0 || c > ref) return false;
+      // Include the 4-neighbourhood so a segment clipping a built cell's corner is not missed.
+      touchesBuilt |= built[k2] | built[k2 > 0 ? k2 - 1 : 0] | built[k2 < last ? k2 + 1 : last] | built[k2 >= nx ? k2 - nx : 0] | built[k2 + nx <= last ? k2 + nx : last];
     }
-    return this.clearOfBuildings(a, b, len);
+    // The fine 1.5 m building pass only matters where the segment crosses built-up cells
+    // (open country, the common case, skips it entirely).
+    return touchesBuilt === 0 || this.clearOfBuildings(a, b, len);
+  }
+
+  /**
+   * Greedy string pulling with a bounded look-ahead: from `anchor`, keep the farthest point
+   * (within `look` steps) that is reachable in a straight clear line. Open ground succeeds on
+   * the first try; otherwise a binary search finds a clear cut in O(log look) line checks
+   * instead of scanning every candidate.
+   */
+  private pull(anchor: V2, pts: V2[], look: number, out: V2[]): void {
+    let i = 0;
+    while (i < pts.length) {
+      const hi = Math.min(pts.length - 1, i + look);
+      let far = i;
+      if (hi > i && this.lineClear(anchor, pts[hi])) far = hi;
+      else if (hi > i) {
+        let lo = i;
+        let up = hi;
+        while (up - lo > 1) {
+          const m = (lo + up) >> 1;
+          if (this.lineClear(anchor, pts[m])) lo = m;
+          else up = m;
+        }
+        far = lo;
+      }
+      out.push(pts[far]);
+      anchor = pts[far];
+      i = far + 1;
+    }
   }
 
   /** Fine check against the building raster, only where the segment touches built-up cells. */
@@ -218,6 +264,11 @@ export class NavGrid {
   }
 
   static builds = 0;
+  /** Flow-field cache hits (perf diagnostics; builds = misses). */
+  static fieldHits = 0;
+  /** Cache evictions and distinct goal cells ever requested (perf diagnostics). */
+  static evictions = 0;
+  static readonly goalCells = new Set<number>();
   /** Cells settled by flow-field searches (perf diagnostics). */
   static expanded = 0;
   private readonly fields = new Map<number, FlowField>();
@@ -230,25 +281,29 @@ export class NavGrid {
    * expanded lazily (see flowfield.ts); call `settle(start)` before reading it.
    */
   flowField(goal: V2): FlowField | null {
-    // Snap goals to a 48 m lattice so whole formations share one field.
-    const q = 64;
+    // Snap goals to a coarse lattice so whole formations (and successive horizon stretches)
+    // share one field; the exact last stretch is a short local search (pathByField).
+    const q = GOAL_LATTICE_M;
     const snapped = { x: Math.round(goal.x / q) * q, z: Math.round(goal.z / q) * q };
-    const g0 = this.nearestPassable(snapped, 48) ?? this.nearestPassable(goal, 48);
+    const g0 = this.nearestPassable(snapped, q * 0.75) ?? this.nearestPassable(goal, 48);
     if (!g0) return null;
     const gi = this.idx(g0);
     const hit = this.fields.get(gi);
     if (hit) {
       hit.used = ++this.fieldClock;
+      NavGrid.fieldHits++;
       return hit;
     }
     let spare: Int32Array | undefined;
-    if (this.fields.size >= 96) {
+    if (this.fields.size >= FIELD_CACHE) {
       let oldK = -1;
       let oldU = Infinity;
       for (const [k, v] of this.fields) if (v.used < oldU) { oldU = v.used; oldK = k; }
       spare = this.fields.get(oldK)?.dist;
       this.fields.delete(oldK);
+      NavGrid.evictions++;
     }
+    if (NavGrid.goalCells.size < 50000) NavGrid.goalCells.add(gi * 4 + (this.cls.vehicle ? 1 : 0) + (this.cls.maxSlopeDeg === 25 ? 2 : 0));
     this.edges ??= new EdgeTable(this.cost, this.nx, this.nz, this.cell);
     const field = new FlowField(this.edges, this.nx * this.nz, gi, spare);
     field.used = ++this.fieldClock;
@@ -257,66 +312,84 @@ export class NavGrid {
     return field;
   }
 
-  /** Path from `start` by descending a flow field toward `dest`, with bounded look-ahead smoothing. */
-  pathByField(start: V2, dest: V2): PathResult {
+  private static readonly descent = new Int32Array(4096);
+
+  /**
+   * Path from `start` by descending a flow field toward `dest`, with bounded look-ahead smoothing.
+   * `horizonCells` caps the path length (cells); a capped path is marked `partial` and the mover
+   * asks for the next stretch when it gets there, so the per-call cost is bounded no matter how
+   * far the goal is (the field itself is shared and cached).
+   */
+  pathByField(start: V2, dest: V2, horizonCells = 4000): PathResult {
     const field = this.flowField(dest);
     if (!field) return { ok: false, reason: 'UNREACHABLE' };
     const s0 = this.nearestPassable(start, 24) ?? start;
     let cur = this.idx(s0);
     NavGrid.expanded += field.settle(cur);
-    if (field.value(cur) === FIELD_INF) return { ok: false, reason: 'UNREACHABLE' };
+    // Start and goal in different pockets: get as close as the local search allows.
+    if (field.value(cur) === FIELD_INF) {
+      const local = this.findPath(start, dest, 4000);
+      return local.ok ? local : this.findPath(start, dest, 4000, true);
+    }
     const nx = this.nx;
-    const cells: number[] = [cur];
-    for (let guard = 0; guard < 4000 && field.value(cur) > 0; guard++) {
+    const nz = this.nz;
+    // Every cell on a steepest descent from a settled start is final (strictly cheaper than the
+    // start, hence below the frontier), so raw distances can be read without the frontier test.
+    const dist = field.dist;
+    const cells = NavGrid.descent;
+    const limit = Math.min(cells.length, horizonCells);
+    let n = 0;
+    cells[n++] = cur;
+    while (n < limit && dist[cur] > 0) {
       const ci = cur % nx;
       const cj = (cur / nx) | 0;
       let best = cur;
-      let bv = field.value(cur);
-      for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) {
-        const ni = ci + di;
-        const nj = cj + dj;
-        if (ni < 0 || nj < 0 || ni >= nx || nj >= this.nz) continue;
-        const k = nj * nx + ni;
-        const v = field.value(k);
-        if (v < bv) { bv = v; best = k; }
+      let bv = dist[cur];
+      const i0 = ci > 0 ? -1 : 0;
+      const i1 = ci < nx - 1 ? 1 : 0;
+      const j0 = cj > 0 ? -1 : 0;
+      const j1 = cj < nz - 1 ? 1 : 0;
+      for (let dj = j0; dj <= j1; dj++) {
+        const row = (cj + dj) * nx + ci;
+        for (let di = i0; di <= i1; di++) {
+          const v = dist[row + di];
+          if (v < bv) { bv = v; best = row + di; }
+        }
       }
       if (best === cur) break;
       cur = best;
-      cells.push(cur);
+      cells[n++] = cur;
     }
-    const pts = cells.map((k) => ({ x: (k % nx) * this.cell, z: ((k / nx) | 0) * this.cell }));
+    const partial = dist[cur] > 0;
+    const pts: V2[] = new Array(n);
+    for (let k = 0; k < n; k++) pts[k] = { x: (cells[k] % nx) * this.cell, z: ((cells[k] / nx) | 0) * this.cell };
     // Last stretch from the shared lattice goal to the exact destination.
-    const tail = pts[pts.length - 1];
-    if (this.passable(dest) && dist2(tail, dest) > 1) {
+    const tail = pts[n - 1];
+    if (!partial && this.passable(dest) && dist2(tail, dest) > 1) {
       if (this.lineClear(tail, dest)) pts.push({ ...dest });
       else {
         const local = this.findPath(tail, dest, 3000);
         if (local.ok) pts.push(...local.points);
       }
     }
-    // Greedy smoothing with a 24-cell look-ahead.
     const out: V2[] = [];
-    let anchor = s0;
-    let i = 0;
-    while (i < pts.length) {
-      let far = i;
-      for (let m = Math.min(pts.length - 1, i + 24); m > i; m--) {
-        if (this.lineClear(anchor, pts[m])) { far = m; break; }
-      }
-      out.push(pts[far]);
-      anchor = pts[far];
-      i = far + 1;
-    }
-    return { ok: true, points: out };
+    // Pull from the unit's real position, past its own cell centre (which may lie behind it).
+    this.pull(start, pts.length > 1 ? pts.slice(1) : pts, 24, out);
+    return { ok: true, points: out, partial };
   }
 
-  findPath(start: V2, goal: V2, maxExpand = 30000): PathResult {
+  /**
+   * A* on the coarse grid. `relaxCorners` allows diagonal steps between two blocked cells: not
+   * for normal routes (it would cut river and wall corners) but as an escape for a unit that
+   * drove into a graph island through such a squeeze (continuous movement allows it).
+   */
+  findPath(start: V2, goal: V2, maxExpand = 30000, relaxCorners = false): PathResult {
     const s0 = this.nearestPassable(start, 24) ?? start;
     const g0 = this.nearestPassable(goal, 40);
     if (!g0) return { ok: false, reason: 'UNREACHABLE' };
     const si = this.idx(s0);
     const gi = this.idx(g0);
-    if (si === gi) return { ok: true, points: [g0] };
+    if (si === gi) return { ok: true, points: [g0], partial: false };
     const gen = ++this.gen;
     const nx = this.nx;
     const gx = gi % nx;
@@ -330,6 +403,10 @@ export class NavGrid {
     const closed = this.closedAt;
     let found = false;
     let expanded = 0;
+    // Best effort: when the goal is cut off (a pocket behind steep ground, an island), the path
+    // goes to the reachable cell nearest the goal instead of failing outright.
+    let closest = si;
+    let closestD = Infinity;
     while (heap.size > 0) {
       const cur = heap.pop();
       if (cur === gi) {
@@ -338,6 +415,12 @@ export class NavGrid {
       }
       if (closed[cur] === gen) continue;
       closed[cur] = gen;
+      {
+        const dx = (cur % nx) - gx;
+        const dz = ((cur / nx) | 0) - gz;
+        const dd = dx * dx + dz * dz;
+        if (dd < closestD) { closestD = dd; closest = cur; }
+      }
       if (++expanded > maxExpand) break;
       const ci = cur % nx;
       const cj = (cur / nx) | 0;
@@ -350,7 +433,7 @@ export class NavGrid {
           const nidx = nj * nx + ni;
           const c = this.cost[nidx];
           if (c <= 0) continue;
-          if (di !== 0 && dj !== 0 && (this.cost[cj * nx + ni] <= 0 || this.cost[nj * nx + ci] <= 0)) continue;
+          if (!relaxCorners && di !== 0 && dj !== 0 && (this.cost[cj * nx + ni] <= 0 || this.cost[nj * nx + ci] <= 0)) continue;
           const step = (di !== 0 && dj !== 0 ? 1.4142 : 1) * this.cell * (c + this.cost[cur]) * 0.5;
           const ng = this.g[cur] + step;
           if (this.stamp[nidx] === gen && ng >= this.g[nidx]) continue;
@@ -364,28 +447,25 @@ export class NavGrid {
         }
       }
     }
-    if (!found) return { ok: false, reason: 'UNREACHABLE' };
+    if (!found && closest === si) return { ok: false, reason: 'UNREACHABLE' };
     const raw: V2[] = [];
-    for (let c = gi; c !== -1 && c !== si; c = this.from[c]) raw.push({ x: (c % nx) * this.cell, z: ((c / nx) | 0) * this.cell });
+    for (let c = found ? gi : closest; c !== -1 && c !== si; c = this.from[c]) raw.push({ x: (c % nx) * this.cell, z: ((c / nx) | 0) * this.cell });
     raw.reverse();
-    raw[raw.length - 1] = g0;
-    // String pulling.
+    if (found) raw[raw.length - 1] = g0;
     const out: V2[] = [];
-    let anchor = s0;
-    let k = 0;
-    while (k < raw.length) {
-      let far = k;
-      for (let m = raw.length - 1; m > k; m--) {
-        if (this.lineClear(anchor, raw[m])) {
-          far = m;
-          break;
-        }
-      }
-      out.push(raw[far]);
-      anchor = raw[far];
-      k = far + 1;
-    }
-    return { ok: true, points: out };
+    this.pull(start, raw, 48, out);
+    return found ? { ok: true, points: out, partial: false } : { ok: true, points: out, partial: true, bestEffort: true };
+  }
+
+  /** Can `a` reach `b` on this grid (shares the cached flow field of `b`)? */
+  connected(a: V2, b: V2): boolean {
+    const field = this.flowField(b);
+    if (!field) return false;
+    const s0 = this.nearestPassable(a, 24);
+    if (!s0) return false;
+    const k = this.idx(s0);
+    NavGrid.expanded += field.settle(k);
+    return field.value(k) !== FIELD_INF;
   }
 }
 

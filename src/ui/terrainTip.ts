@@ -100,7 +100,7 @@ export class TerrainTip {
       h('div', { class: 'tt-grid' },
         h('span', {}, t('terr.height')), h('b', { class: 'num' }, `${Math.round(i.height)} m`),
         h('span', {}, t('terr.slope')), h('b', { class: 'num' }, `${Math.round(i.slopeDeg)}°`),
-        h('span', {}, t('terr.cover')), h('b', {}, t(`cover.${Math.max(0, Math.min(2, Math.round(i.cover)))}`))),
+        h('span', {}, t('terr.cover')), h('b', {}, t(`cover.${Math.max(0, Math.min(3, Math.round(i.cover)))}`))),
       i.feature ? h('div', { class: 'tt-feat' }, `${t('terr.near')} · ${i.feature.name}${lang() === 'zh' ? '（' : ' ('}${t(`feat.${i.feature.kind}`)}${lang() === 'zh' ? '）' : ')'}${i.feature.dist > 0 ? ` · ${i.feature.dist} m` : ''}`) : null,
     ];
     this.el.append(...parts.filter((x): x is HTMLElement => x !== null));

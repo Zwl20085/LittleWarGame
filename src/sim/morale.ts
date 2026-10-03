@@ -35,11 +35,8 @@ export function updateMorale(world: World, u: Unit, seconds: number): void {
   u.morale = Math.min(100, u.morale + regen * seconds);
 }
 
-const scratch: Unit[] = [];
 export function enemyWithin(world: World, u: Unit, r: number): boolean {
-  // Owner-filtered query: cells holding only friendly units are skipped.
-  for (const o of world.spatial.queryOwners(u.pos.x, u.pos.z, r, hostileMask(world, u.owner), scratch)) {
-    if (o.hp > 0 && world.isHostile(u.owner, o.owner) && world.knows(u.owner, o)) return true;
-  }
-  return false;
+  // Owner-filtered search that stops at the first known live enemy (no result list).
+  const f = u.owner;
+  return world.spatial.findOwner(u.pos.x, u.pos.z, r, hostileMask(world, f), (o) => o.hp > 0 && world.isHostile(f, o.owner) && world.knows(f, o)) !== null;
 }

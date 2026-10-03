@@ -1,14 +1,14 @@
-import { missionDef, requestAir } from './air';
-import { availableM, populationCap, populationOf } from './production';
+import { populationCap, populationOf } from './production';
 import type { Faction, Personality, Unit } from './types';
 import { hostileMask } from './spatial';
+import { EAGER, eagerOn } from './strategyai';
 import type { World } from './world';
 
 const PERSONALITY_MUL: Record<Personality, Record<string, number>> = {
   balanced: {},
   armor: { light_tank: 1.5, medium_tank: 1.7, heavy_tank: 1.7, infantry: 0.8, supply_truck: 1.5 },
   infantry: { infantry: 1.25, mg: 1.6, engineer: 1.8, mortar: 1.3, light_tank: 0.7, medium_tank: 0.7 },
-  artillery: { mortar: 1.6, howitzer: 1.6, recon: 1.5, aa: 1.3, heavy_tank: 0.7 },
+  artillery: { mortar: 1.6, howitzer: 1.6, recon: 1.5, heavy_tank: 0.7 },
   mechanized: { motor_inf: 3.5, light_tank: 1.5, medium_tank: 1.2, recon: 1.3, supply_truck: 1.4, infantry: 0.55, howitzer: 0.6, mortar: 0.8 },
 };
 
@@ -31,7 +31,7 @@ function knownEnemyMix(world: World, f: number): { armor: number; total: number 
   return { armor, total };
 }
 
-/** City planner for AI factions: production mix, postures, automatic air support. Same interfaces as the player. */
+/** City planner for AI factions: production mix, postures and reserves. Same interfaces as the player. */
 export function thinkCity(world: World, f: Faction): void {
   if (!f.alive || f.isPlayer) return;
   const w = personalityWeights(world, f.personality);
@@ -40,7 +40,6 @@ export function thinkCity(world: World, f: Faction): void {
     w.at_gun = (w.at_gun ?? 0) * 1.6;
     w.medium_tank = (w.medium_tank ?? 0) * 1.2;
   }
-  if (world.planes.some((p) => world.isHostile(f.id, p.owner))) w.aa = (w.aa ?? 0) * 2.5;
   f.weights = w;
   // Postures: strongest sector assaults, others push cautiously; hold freshly taken points.
   const strength = f.sectors.map((s) => {
@@ -50,14 +49,24 @@ export function thinkCity(world: World, f: Faction): void {
   });
   const best = strength.indexOf(Math.max(...strength));
   const assaultAt = 900 * (world.data.rules.proposed_defaults.army_scale ?? 1);
-  // Rich and at the population cap: money can't buy more troops, so use them — go for the kill.
-  const pop = populationOf(world, f);
-  const surplus = f.p > world.data.rules.economy.cap_p * 0.5 && pop.present + pop.reserved >= populationCap(world, f) * 0.9;
+  // Round 2: the old trigger (P stock > cap_p/2 and pop ≥ 90 % cap) never fired once stocks were
+  // tuned down. Aggression (command.ts assessMood) = army fullness × strength vs the neighbour
+  // + idle line share: a full, idle army attacks with its main group, then with every group.
+  let surplus: boolean;
+  let mainAssault = false;
+  if (eagerOn()) {
+    surplus = f.command.aggression >= EAGER.assaultAll || f.command.finishTarget >= 0;
+    mainAssault = f.command.aggression >= EAGER.assaultMain;
+  } else {
+    const pop = populationOf(world, f);
+    surplus = f.p > world.data.rules.economy.cap_p * 0.5 && pop.present + pop.reserved >= populationCap(world, f) * 0.9;
+  }
   for (const s of f.sectors) {
     const own = world.objectives.find((o) => o.id === s.targetObjective);
     let next = s.posture;
+    const attacking = !own || own.owner !== f.id;
     if (s.reason === 'reason.defendCity') next = 'hold';
-    else if (surplus || (s.id === best && strength[best] > assaultAt)) next = 'assault';
+    else if ((surplus && attacking) || (s.id === best && (mainAssault || strength[best] > assaultAt))) next = 'assault';
     else if (own && own.owner === f.id) next = f.personality === 'infantry' ? 'fortify' : 'hold';
     else next = 'cautious';
     // Hold a posture ≥45 s unless the city is threatened.
@@ -68,37 +77,6 @@ export function thinkCity(world: World, f: Faction): void {
   }
   f.mainSector = best;
   balanceReserves(world, f, strength);
-  autoAir(world, f);
-}
-
-function autoAir(world: World, f: Faction): void {
-  if (f.air.phase !== 'idle') return;
-  const ids = ['air_bomb', 'air_strafe'];
-  const missionId = ids.find((id) => {
-    const m = missionDef(world, id)!;
-    return world.time >= m.unlock_seconds && availableM(world, f) >= m.cost_m + 120;
-  });
-  if (!missionId) return;
-  // Only known enemy clusters or emplaced weapons (§12.2).
-  let best: Unit | null = null;
-  let bestScore = 0;
-  for (const u of world.units.values()) {
-    if (u.hp <= 0 || !world.isHostile(f.id, u.owner) || !world.knows(f.id, u)) continue;
-    let n = 0;
-    for (const o of world.spatial.query(u.pos.x, u.pos.z, 30)) if (o.owner === u.owner && o.hp > 0) n++;
-    const score = n + (u.setup === 'set' ? 1.5 : 0) + (u.def.kind === 'vehicle' ? 0.5 : 0);
-    const friendNear = world.spatial.query(u.pos.x, u.pos.z, 45).some((o) => o.owner === f.id && o.hp > 0);
-    if (!friendNear && score > bestScore && score >= 3) {
-      bestScore = score;
-      best = u;
-    }
-  }
-  if (!best) return;
-  // AI avoids heavy AA belts when it can see them.
-  let aa = 0;
-  for (const o of world.spatial.query(best.pos.x, best.pos.z, 320)) if (o.def.id === 'aa' && o.hp > 0 && world.isHostile(f.id, o.owner)) aa++;
-  if (aa >= 2) return;
-  if (world.rngAi.chance(0.5)) requestAir(world, f, missionId, best.pos);
 }
 
 /**

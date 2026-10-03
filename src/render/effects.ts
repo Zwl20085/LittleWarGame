@@ -11,11 +11,11 @@ const COL = {
   flash: C('#ffe6b0'), fire: C('#ff9a40'), fireDeep: C('#e0601c'), fireCore: C('#ffd890'),
   dust: C('#b8a888'), dustPale: C('#cfc2a4'), smokeLight: C('#d8d0c0'), smokeGround: C('#9a8d74'), smokeAir: C('#5a5650'),
   smokeLinger: C('#a39f97'), smokeDark: C('#3b3833'), smokeWreck: C('#6a655c'), clod: C('#5e4c36'), clodDark: C('#3f3326'),
-  ricochet: C('#ffe0a0'), aa: C('#ffc060'), strafe: C('#ffd080'), mg: C('#ffb050'), shell: C('#ffe0a0'),
+  ricochet: C('#ffe0a0'), mg: C('#ffb050'), shell: C('#ffe0a0'),
   trail: C('#f3e3b8'), splash: C('#dfe6dc'),
 };
-const TRACER_COLORS = [COL.shell, COL.aa, COL.strafe, COL.mg] as const;
-const TRACER_GLOW = [C('#ffb060'), C('#ffc070'), C('#ffb050'), C('#ff9a40')] as const;
+const TRACER_COLORS = [COL.shell, COL.mg] as const;
+const TRACER_GLOW = [C('#ffb060'), C('#ff9a40')] as const;
 
 /**
  * Prevailing wind (m/s): every drifting smoke particle leans the same way so the field reads as
@@ -33,13 +33,10 @@ const _n = new THREE.Vector3();
 const _up = new THREE.Vector3(0, 1, 0);
 const _p = new THREE.Vector3();
 const _s = new THREE.Vector3();
-const _fwd = new THREE.Vector3(0, 0, 1);
-const _dir = new THREE.Vector3();
-const _one = new THREE.Vector3(1, 1, 1);
 
 /**
  * Pooled particle / tracer / projectile visuals: two particle draw calls (additive + alpha),
- * one line-segment buffer, instanced shells, bombs and persistent craters. Purely cosmetic.
+ * one line-segment buffer, instanced shells and persistent craters. Purely cosmetic.
  */
 export class Effects {
   readonly group = new THREE.Group();
@@ -57,7 +54,6 @@ export class Effects {
   private readonly trBolt = new Uint8Array(MAX_TRACERS);
   private trN = 0;
   private readonly shells: THREE.InstancedMesh;
-  private readonly bombs: THREE.InstancedMesh;
   private readonly craters: THREE.InstancedMesh;
   private decalN = 0;
   private decalHead = 0;
@@ -79,16 +75,15 @@ export class Effects {
     this.arty = new ArtilleryFx(this.glow, this.smoke, this.lines, heightAt);
     this.towns = new TownFires(this.smoke, this.glow);
     this.shells = new THREE.InstancedMesh(new THREE.SphereGeometry(0.16, 6, 4), new THREE.MeshBasicMaterial({ color: '#f6e7b8' }), 2000);
-    this.bombs = new THREE.InstancedMesh(new THREE.CapsuleGeometry(0.35, 1.4, 3, 6).rotateX(Math.PI / 2), new THREE.MeshStandardMaterial({ color: '#3d3f38' }), 256);
     const crater = new THREE.PlaneGeometry(2, 2).rotateX(-Math.PI / 2);
     this.craters = new THREE.InstancedMesh(crater, new THREE.MeshBasicMaterial({ map: craterTexture(), color: '#ffffff', transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 }), MAX_DECALS);
-    for (const im of [this.shells, this.bombs, this.craters]) {
+    for (const im of [this.shells, this.craters]) {
       im.count = 0;
       im.frustumCulled = false;
       im.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     }
     this.craters.renderOrder = 1;
-    this.group.add(this.craters, this.arty.shocks, this.smoke.mesh, this.glow.mesh, this.lines.lines, this.arty.trails.mesh, this.shells, this.bombs);
+    this.group.add(this.craters, this.arty.shocks, this.smoke.mesh, this.glow.mesh, this.lines.lines, this.arty.trails.mesh, this.shells);
   }
 
   /** Smoke density from the settings (0 = off); shared with the artillery visuals. */
@@ -141,9 +136,6 @@ export class Effects {
           this.shake = Math.max(this.shake, 0.3);
         }
         break;
-      case 'planeDown':
-        this.explosion(e.pos.x, e.pos.y, e.pos.z, 8, 'he');
-        break;
     }
   }
 
@@ -179,7 +171,7 @@ export class Effects {
 
   private tracer(ax: number, ay: number, az: number, bx: number, by: number, bz: number, w: string, hit: boolean): void {
     const rifle = w.includes('rifle');
-    const ci = w === 'aa_shell' ? 1 : w === 'strafe' ? 2 : w === 'mg' || w === 'coax_mg' ? 3 : 0;
+    const ci = w === 'mg' || w === 'coax_mg' ? 1 : 0;
     if (this.trN >= MAX_TRACERS) this.trN--; // drop the newest slot rather than allocate
     const i = this.trN++;
     const o = i * 6;
@@ -195,12 +187,9 @@ export class Effects {
     if (!rifle) {
       // A hot glowing slug that actually travels the path (reads on bright ground, unlike a 1 px line).
       const life = this.trMax[i] * 0.8;
-      this.glow.emit(ax, ay, az, { life, size: ci === 1 ? 1.4 : 1.0, color: TRACER_GLOW[ci], vx: (bx - ax) / life * 0.8, vy: (by - ay) / life * 0.8, vz: (bz - az) / life * 0.8, drag: 0, fade: 0.3 });
+      this.glow.emit(ax, ay, az, { life, size: 1.0, color: TRACER_GLOW[ci], vx: (bx - ax) / life * 0.8, vy: (by - ay) / life * 0.8, vz: (bz - az) / life * 0.8, drag: 0, fade: 0.3 });
     }
-    if (!hit || w === 'strafe') {
-      this.smoke.emit(bx, by, bz, { color: COL.dust, alpha: 0.55, life: 0.7, size: 0.8, grow: 2.2, drift: 0.3 });
-      if (w === 'strafe' || ci === 1) this.smoke.emit(bx, by, bz, { color: COL.clod, alpha: 0.8, life: 0.5, size: 0.4, gravity: 16, drag: 0.3, vx: (Math.random() - 0.5) * 3, vy: 4 + Math.random() * 3, vz: (Math.random() - 0.5) * 3 });
-    }
+    if (!hit) this.smoke.emit(bx, by, bz, { color: COL.dust, alpha: 0.55, life: 0.7, size: 0.8, grow: 2.2, drift: 0.3 });
   }
 
   /** Burning wreck: flickering flames at the hull and a dark column leaning with the wind. */
@@ -260,9 +249,9 @@ export class Effects {
       });
     }
     if (onGround) this.groundBurst(x, ground, z, r, kind, busy);
-    if (onGround && (kind === 'shell' || kind === 'bomb')) this.arty.impact(x, ground, z, r, busy);
+    if (onGround && kind === 'shell') this.arty.impact(x, ground, z, r, busy);
     else {
-      // Air burst / flak: a dark ragged puff that hangs.
+      // Air burst: a dark ragged puff that hangs.
       this.smoke.emit(x, y, z, { color: COL.smokeAir, alpha: 0.7, life: 5, size: r * 0.8, grow: r * 1.6 * Math.max(0.3, ss), drift: 1, drag: 2 });
     }
     // Initial smoke burst.
@@ -292,7 +281,7 @@ export class Effects {
 
   /** Dirt geyser, flying clods, a low dust ring and the crater left behind. */
   private groundBurst(x: number, gy: number, z: number, r: number, kind: string, busy: boolean): void {
-    const heavy = kind === 'shell' || kind === 'bomb';
+    const heavy = kind === 'shell';
     // Dirt geyser (artillery reads as a tall brown plume, not a fireball).
     const ng = heavy ? 4 : 2;
     for (let k = 0; k < ng; k++) {
@@ -341,12 +330,11 @@ export class Effects {
   }
 
   /**
-   * Draw projectiles (interpolated) as instanced shells/bombs; ballistic shells also get a
+   * Draw projectiles (interpolated) as instanced shells; ballistic shells also get a
    * glowing head and light ribbon (ArtilleryFx), fast rounds a short trail line.
    */
   syncProjectiles(list: readonly Projectile[], alpha: number, dt = 1 / 60): void {
     let ns = 0;
-    let nb = 0;
     this.lines.begin();
     this.arty.trails.begin();
     // Shells stay at least ~3 px across when zoomed out.
@@ -356,13 +344,6 @@ export class Effects {
       const x = p.prev.x + (p.pos.x - p.prev.x) * alpha;
       const y = p.prev.y + (p.pos.y - p.prev.y) * alpha;
       const z = p.prev.z + (p.pos.z - p.prev.z) * alpha;
-      if (p.kind === 'bomb') {
-        if (nb >= this.bombs.instanceMatrix.count) continue;
-        _dir.set(p.vel.x, p.vel.y, p.vel.z).normalize();
-        _q.setFromUnitVectors(_fwd, _dir);
-        this.bombs.setMatrixAt(nb++, _m.compose(_p.set(x, y, z), _q, _one));
-        continue;
-      }
       if (ns >= this.shells.instanceMatrix.count) continue;
       // Artillery rounds are drawn a little fatter than AP shot (howitzer the biggest).
       const k = p.kind !== 'shell' ? sc : p.weapon?.id === 'howitzer_shell' ? sc * 1.6 : sc * 1.25;
@@ -375,9 +356,7 @@ export class Effects {
     }
     this.arty.trails.end(dt, this.viewDir, this.pxPerM);
     this.shells.count = ns;
-    this.bombs.count = nb;
     this.shells.instanceMatrix.needsUpdate = true;
-    this.bombs.instanceMatrix.needsUpdate = true;
   }
 
   update(dt: number): void {

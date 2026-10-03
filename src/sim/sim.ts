@@ -1,5 +1,4 @@
 import type { GameData } from '../data/types';
-import { updateAir } from './air';
 import { thinkUnit } from './behavior';
 import { majorityBleed, hqCaptured, updateHq, updateObjective } from './capture';
 import { personalityWeights, thinkCity } from './cityai';
@@ -14,13 +13,15 @@ import { initSectors, thinkSectors } from './sectors';
 import { supplyTick, type SupplyNode } from './supply';
 import { convoySecond } from './convoy';
 import { createHighCommand, thinkHighCommand } from './command';
-import { buildFrontInfo } from './frontai';
+import { buildFrontInfoFor } from './frontai';
 import type { Faction, MatchConfig, Unit } from './types';
 import { hostileMask } from './spatial';
 import { dist } from './vec';
 import { FACTION_COLORS, ROMAN, World } from './world';
 import { scaledData } from './scale';
 import { sampleStats, STATS_SAMPLE_SECONDS } from './stats';
+import { battleSecond } from './events';
+import { canSpot, observerOf } from './terrainrules';
 import type { V2 } from './vec';
 
 export interface Match {
@@ -45,9 +46,8 @@ function makeFaction(world: World, id: number, isPlayer: boolean): Faction {
     resolve: world.data.rules.victory.initial_resolve, popPresent: 0, popReserved: 0, logistics: 0, supplyDemand: 0,
     weights, caps: { ...world.data.rules.proposed_defaults.production_unit_caps }, paused: {}, unitSector: {},
     spent: [], protectedOrder: null, protectRetryAt: 0, nextRaidAt: 240, command: createHighCommand(), depot: 0, lastWorksAt: -999, orders: [], manualQueue: [], sectors: [], mainSector: 1,
-    air: { missionId: null, phase: 'idle', timer: 0, target: null, paidM: 0, planeId: null, autoBudgetSpent: 0 },
     incomeP: 0, incomeM: 0, overflowWarnAt: -1e9, hqProgress: {}, lostUnits: 0, producedUnits: 0,
-    spentTotalP: 0, spentTotalM: 0, aiThinkAt: id * 0.7,
+    spentTotalP: 0, spentTotalM: 0, aiThinkAt: id * 0.7, trucksUnderFire: [],
   };
 }
 
@@ -71,7 +71,10 @@ export function createMatch(baseData: GameData, config: MatchConfig): Match {
         const side = col * spacing;
         const back = -row * spacing * 0.9;
         const p = { x: center.x + Math.cos(fwd) * back - Math.sin(fwd) * side, z: center.z + Math.sin(fwd) * back + Math.cos(fwd) * side };
-        const safe = world.nav(false, 35).nearestPassable(p, 60) ?? center;
+        // Never deploy into a pocket cut off from the capital (a plateau above the slope limit).
+        const nav = world.nav(false, 35);
+        let safe = nav.nearestPassable(p, 60) ?? center;
+        if (!nav.connected(safe, city.exit)) safe = nav.nearestPassable(center, 60) ?? city.exit;
         world.spawnUnit(f.id, unitId, safe, sector(k)).behavior = 'advance';
       }
     };
@@ -116,11 +119,11 @@ export function updateVisibility(world: World): void {
     // Only hostile units can be added, so the query skips cells holding friendly units only.
     const foes = hostileMask(world, f.id);
     for (const u of byOwner[f.id]) {
-      const elev = Math.min(0.15, Math.max(0, (u.y - 10) / 10) * 0.03);
-      const r = u.def.vision * (1 + elev);
-      for (const t of world.spatial.queryOwners(u.pos.x, u.pos.z, r, foes, near)) {
+      // Height bonus, tower/church perches, forest concealment, window sight (terrainrules.ts).
+      const o = observerOf(world, u);
+      for (const t of world.spatial.queryOwners(u.pos.x, u.pos.z, o.r, foes, near)) {
         if (t.hp <= 0 || vis.has(t.id) || !world.isHostile(f.id, t.owner)) continue;
-        if (world.terrain.los(u.pos.x, u.y + 1.8, u.pos.z, t.pos.x, t.y + 1.2, t.pos.z)) vis.add(t.id);
+        if (canSpot(world, u, o, t)) vis.add(t.id);
       }
     }
     // Owned observation points add an observer with 180 m radius.
@@ -130,10 +133,6 @@ export function updateVisibility(world: World): void {
       for (const t of world.spatial.query(o.pos.x, o.pos.z, 180)) {
         if (t.hp > 0 && world.isHostile(f.id, t.owner) && world.terrain.los(o.pos.x, y, o.pos.z, t.pos.x, t.y + 1.2, t.pos.z)) vis.add(t.id);
       }
-    }
-    for (const p of world.planes) {
-      if (p.owner !== f.id || world.time > p.visionUntil) continue;
-      for (const t of world.spatial.query(p.pos.x, p.pos.z, 110)) if (t.hp > 0 && world.isHostile(f.id, t.owner)) vis.add(t.id);
     }
     const seen = world.lastSeen[f.id];
     for (const id of vis) {
@@ -311,7 +310,8 @@ export function step(match: Match): void {
   const world = match.world;
   if (world.result) return;
   const hz = world.tickHz;
-  world.spatial.rebuild(world.units.values());
+  const units = world.aliveUnits;
+  world.spatial.rebuild(units);
   // City + sector AI at their own cadence.
   for (const f of world.factions) {
     if (!f.alive) continue;
@@ -324,7 +324,8 @@ export function step(match: Match): void {
     if (world.tick % Math.round(AI.sectorThinkSeconds * hz) === f.id % (AI.sectorThinkSeconds * hz)) thinkSectors(world, f);
   }
   // Unit executor, staggered.
-  for (const u of world.units.values()) {
+  for (let i = 0; i < units.length; i++) {
+    const u = units[i];
     if (u.hp <= 0) continue;
     if (u.behavior === 'evacuate' && world.time >= u.evacuateAt) {
       u.hp = 0;
@@ -336,7 +337,8 @@ export function step(match: Match): void {
       u.thinkAt = world.time + slow + ((u.id * 7) % 10) / 50;
     }
   }
-  for (const u of world.units.values()) {
+  for (let i = 0; i < units.length; i++) {
+    const u = units[i];
     if (u.hp <= 0) continue;
     updateMorale(world, u, world.dt);
     updateMovement(world, u);
@@ -346,26 +348,39 @@ export function step(match: Match): void {
   if (world.tick % (2 * hz) === 0) {
     match.supplyNodes = world.factions.map((f) => (f.alive ? convoyNodes(world, f.id) : []));
   }
-  for (const u of world.units.values()) updateWeapons(world, u);
+  for (let i = 0; i < units.length; i++) updateWeapons(world, units[i]);
   for (const apply of world.deferred) apply();
   world.deferred.length = 0;
-  updateAir(world);
   updateProjectiles(world);
   world.removeDead();
   if (world.tick % hz === 0) {
     economySecond(match);
-    if (world.tick % (2 * hz) === 0) {
-      match.front.update(2);
-      match.frontView?.update(2);
-      world.frontInfo = buildFrontInfo(world, match.front);
-    }
+    battleSecond(world);
+  }
+  // Front field every 2 s, then one faction's front info per tick: the ~10 ms burst of doing
+  // it all at once stalled frames at high game speed. Scheduled just before the groups think
+  // (sector AI of faction f runs at tick ≡ f mod 2 s), so they read fresh information.
+  const frontPeriod = 2 * hz;
+  const phase = world.tick % frontPeriod;
+  const frontAt = frontPeriod - world.factions.length - 1;
+  if (phase === frontAt) {
+    match.front.update(2);
+    match.frontView?.update(2);
+  } else if (phase > frontAt) {
+    const f = phase - frontAt - 1;
+    if (f < world.factions.length) world.frontInfo[f] = buildFrontInfoFor(world, match.front, f);
   }
   if (world.tick % (STATS_SAMPLE_SECONDS * hz) === 0) {
     sampleStats(world.stats, world.time, world.units.values(), world.factions, (f) => ({ popCap: populationCap(world, f), held: world.objectives.filter((o) => o.owner === f.id).length }));
   }
-  // Destroyed works (hp 0) are dropped every 10 s so per-unit scans stay short in long wars.
-  if (world.tick % (10 * hz) === 0 && world.forts.some((x) => x.hp <= 0)) {
-    for (let i = world.forts.length - 1; i >= 0; i--) if (world.forts[i].hp <= 0 && world.forts[i].kind !== 'pontoon') world.forts.splice(i, 1);
+  // Destroyed works (hp 0) are dropped every 10 s so per-unit scans stay short in long wars, and
+  // works whose occupant died outside the damage path (evacuation, elimination) are freed.
+  if (world.tick % (10 * hz) === 0) {
+    for (let i = world.forts.length - 1; i >= 0; i--) {
+      const f = world.forts[i];
+      if (f.hp <= 0 && f.kind !== 'pontoon') world.forts.splice(i, 1);
+      else if (f.occupant !== null && !world.unitAlive(f.occupant)) f.occupant = null;
+    }
   }
   checkElimination(match);
   world.tick++;

@@ -1,3 +1,4 @@
+import { noteCapture } from './events';
 import type { Faction, Objective, Unit } from './types';
 import { dist } from './vec';
 import type { World } from './world';
@@ -38,6 +39,7 @@ export function updateObjective(world: World, o: Objective, seconds: number): vo
     if (o.progress[a] >= captureSeconds) {
       const prev = o.owner;
       o.owner = a;
+      noteCapture(world, o, prev, a);
       o.progress = {};
       o.contested = false;
       o.activeAt = world.time + world.data.rules.economy.node_activation_seconds;

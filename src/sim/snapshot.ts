@@ -1,7 +1,7 @@
 import type { SupplyNode } from './supply';
 import type { Match } from './sim';
 import type {
-  Behavior, Faction, Fort, FxEvent, LogEntry, ManualTask, MatchResult, MoraleState, Objective, Plane, Projectile, SetupState, Unit,
+  Behavior, Faction, Fort, FxEvent, LogEntry, ManualTask, MatchResult, MoraleState, Objective, Projectile, SetupState, Unit,
 } from './types';
 import type { V2 } from './vec';
 
@@ -31,9 +31,12 @@ export interface Snapshot {
   readonly statusTable: string[];
   readonly manual: [number, ManualTask | null, number][];
   readonly factions: Faction[];
-  readonly objectives: Objective[];
+  /**
+   * Objectives are static apart from owner / contest / activation / capture progress, so only
+   * those travel, as flat arrays in map order (no 150 object clones per snapshot).
+   */
+  readonly objectives: { owner: Int8Array; contested: Uint8Array; activeAt: Float32Array; leader: Int8Array; progress: Float32Array };
   readonly projectiles: Projectile[];
-  readonly planes: Plane[];
   readonly forts: Fort[];
   readonly fx: FxEvent[];
   readonly log: LogEntry[];
@@ -52,15 +55,37 @@ export interface SnapshotCursor {
   viewVersion: number;
   statusIndex: Map<string, number>;
   statusSent: number;
+  /** Unit type id → index in `unitOrder` (built once, not per snapshot). */
+  defIndex: Map<string, number> | null;
 }
 
-export const newCursor = (): SnapshotCursor => ({ lastLog: null, frontVersion: -1, viewVersion: -1, statusIndex: new Map(), statusSent: 0 });
+export const newCursor = (): SnapshotCursor => ({ lastLog: null, frontVersion: -1, viewVersion: -1, statusIndex: new Map(), statusSent: 0, defIndex: null });
+
+function packObjectives(objectives: readonly Objective[]): Snapshot['objectives'] {
+  const n = objectives.length;
+  const out = { owner: new Int8Array(n), contested: new Uint8Array(n), activeAt: new Float32Array(n), leader: new Int8Array(n), progress: new Float32Array(n) };
+  for (let i = 0; i < n; i++) {
+    const o = objectives[i];
+    out.owner[i] = o.owner;
+    out.contested[i] = o.contested ? 1 : 0;
+    out.activeAt[i] = o.activeAt;
+    let leader = -1;
+    let best = 0;
+    for (const k in o.progress) {
+      const v = o.progress[k as unknown as number];
+      if (v > best) { best = v; leader = Number(k); }
+    }
+    out.leader[i] = leader;
+    out.progress[i] = best;
+  }
+  return out;
+}
 
 export function makeSnapshot(match: Match, cur: SnapshotCursor, observer: number): Snapshot {
   const w = match.world;
-  const list = [...w.units.values()].filter((u) => u.hp > 0);
+  const list = w.aliveUnits.filter((u) => u.hp > 0);
   const buf = new Float64Array(list.length * STRIDE);
-  const defIndex = new Map(w.data.unitOrder.map((id, i) => [id, i]));
+  const defIndex = (cur.defIndex ??= new Map(w.data.unitOrder.map((id, i) => [id, i])));
   const manual: [number, ManualTask | null, number][] = [];
   list.forEach((u, k) => {
     const o = k * STRIDE;
@@ -103,9 +128,8 @@ export function makeSnapshot(match: Match, cur: SnapshotCursor, observer: number
     statusTable,
     manual,
     factions: w.factions.map((f) => ({ ...f, command: { ...f.command, attackBias: {}, threatAt: {} }, spent: [], sectors: f.sectors.map((s) => ({ ...s, slots: {}, segment: [], bridgeSite: null })) })),
-    objectives: w.objectives,
+    objectives: packObjectives(w.objectives),
     projectiles: w.projectiles,
-    planes: w.planes,
     forts: w.forts,
     fx,
     log,
@@ -158,12 +182,26 @@ export function applySnapshot(match: Match, snap: Snapshot, observer: number): v
       u.queue = new Array(q).fill(m);
     }
   }
-  for (const [id, u] of w.units) if (!seen.has(id)) { u.hp = 0; w.units.delete(id); }
+  for (const u of w.units.values()) if (!seen.has(u.id)) u.hp = 0;
+  w.removeDead();
   w.tick = snap.tick;
   snap.factions.forEach((f, i) => Object.assign(w.factions[i], f));
-  replace(w.objectives, snap.objectives);
+  {
+    const so = snap.objectives;
+    for (let i = 0; i < w.objectives.length && i < so.owner.length; i++) {
+      const o = w.objectives[i];
+      o.owner = so.owner[i];
+      o.contested = so.contested[i] === 1;
+      o.activeAt = so.activeAt[i];
+      const leader = so.leader[i];
+      // Reuse the progress record when the leader is unchanged (no allocation per snapshot).
+      if (leader < 0) {
+        if (Object.keys(o.progress).length) o.progress = {};
+      } else if (o.progress[leader] === undefined || Object.keys(o.progress).length !== 1) o.progress = { [leader]: so.progress[i] };
+      else o.progress[leader] = so.progress[i];
+    }
+  }
   replace(w.projectiles, snap.projectiles);
-  replace(w.planes, snap.planes);
   replace(w.forts, snap.forts);
   for (const e of snap.fx) w.fx.push(e);
   if (w.fx.length > 4000) w.fx.splice(0, w.fx.length - 4000);

@@ -88,8 +88,7 @@ export class Hud {
     if (this.root.style.getPropertyValue('--mini-h') !== miniH) this.root.style.setProperty('--mini-h', miniH);
     const m = this.ctx.mode;
     const hint = m.kind === 'attackMove' ? t('cmd.pickAttack')
-      : m.kind === 'sectorTarget' ? t('sector.setTarget')
-      : m.kind === 'air' ? t('air.pick', { mission: t(`air.${m.missionId}`) }) : '';
+      : m.kind === 'sectorTarget' ? t('sector.setTarget') : '';
     this.modeHint.textContent = hint;
     this.modeHint.style.display = hint ? '' : 'none';
   }

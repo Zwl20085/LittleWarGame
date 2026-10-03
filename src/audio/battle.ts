@@ -4,7 +4,7 @@ import { newReq, PRIO, type Mixer, type PlayReq } from './mixer';
 import type { SoundId } from './recipes';
 
 /** Sound categories. Each aggregates its events per frame and fires at most one voice per cooldown. */
-const C = { Rifle: 0, Mg: 1, Cannon: 2, At: 3, Mortar: 4, How: 5, Flak: 6, ExpS: 7, ExpB: 8, ApHit: 9, Rico: 10, VDeath: 11, Whistle: 12, Strafe: 13, Distant: 14, Count: 15 } as const;
+const C = { Rifle: 0, Mg: 1, Cannon: 2, At: 3, Mortar: 4, How: 5, ExpS: 6, ExpB: 7, ApHit: 8, Rico: 9, VDeath: 10, Whistle: 11, Distant: 12, Count: 13 } as const;
 
 interface CatDef {
   readonly name: string;
@@ -27,24 +27,21 @@ const CATS: readonly CatDef[] = [
   { name: 'at', sound: 'at', cd: [0.2, 0.4], max: 3, base: 0.5, cull: 3.5, prio: PRIO.near, energy: 0.04, rate: 1 },
   { name: 'mortar', sound: 'mortar', cd: [0.25, 0.45], max: 2, base: 0.35, cull: 2.5, prio: PRIO.near, energy: 0.02, rate: 1 },
   { name: 'howitzer', sound: 'howitzer', cd: [0.25, 0.5], max: 2, base: 0.55, cull: 4.5, prio: PRIO.near, energy: 0.06, rate: 1 },
-  { name: 'flak', sound: 'flak', cd: [0.2, 0.35], max: 2, base: 0.28, cull: 3, prio: PRIO.near, energy: 0.01, rate: 1 },
   { name: 'expSmall', sound: 'expSmall', cd: [0.12, 0.25], max: 4, base: 0.5, cull: 3, prio: PRIO.near, energy: 0.05, rate: 1 },
   { name: 'expBig', sound: 'expBig', cd: [0.25, 0.45], max: 3, base: 0.75, cull: 4.5, prio: PRIO.near, energy: 0.12, rate: 1 },
   { name: 'apHit', sound: 'apHit', cd: [0.2, 0.4], max: 2, base: 0.32, cull: 2, prio: PRIO.near, energy: 0.03, rate: 1 },
   { name: 'ricochet', sound: 'ricochet', cd: [0.18, 0.4], max: 2, base: 0.22, cull: 1.6, prio: PRIO.near, energy: 0, rate: 1 },
   { name: 'vehicleDeath', sound: 'vehicleDeath', cd: [0.2, 0.4], max: 2, base: 0.75, cull: 4, prio: PRIO.own, energy: 0.15, rate: 1 },
   { name: 'whistle', sound: 'whistle', cd: [0.9, 1.6], max: 1, base: 0.3, cull: 1.3, prio: PRIO.own, energy: 0, rate: 1 },
-  { name: 'strafe', sound: 'mg', cd: [0.15, 0.3], max: 2, base: 0.38, cull: 3, prio: PRIO.near, energy: 0.02, rate: 1.3 },
   { name: 'distant', sound: 'expBig', cd: [0.45, 0.9], max: 2, base: 0.22, cull: 99, prio: PRIO.distant, energy: 0, rate: 0.8 },
 ];
 
 const N = C.Count;
-const PLANE_LOOPS = 3;
 
 type Loop = NonNullable<ReturnType<Mixer['loop']>>;
 
 /**
- * Listens to the battle: reads `world.fx` (without consuming it), projectiles and planes,
+ * Listens to the battle: reads `world.fx` (without consuming it) and projectiles,
  * positions everything relative to the screen centre, aggregates per category and enforces
  * per-category cooldowns so hundreds of firing units never become white noise.
  */
@@ -75,9 +72,6 @@ export class BattleListener {
   private readonly req: PlayReq = newReq();
   private readonly whistled = new Int32Array(64).fill(-1);
   private whistleHead = 0;
-  private readonly planeLoops: (Loop | null)[] = new Array(PLANE_LOOPS).fill(null);
-  private readonly planeN = new Float64Array(PLANE_LOOPS);
-  private readonly planeIdx = new Int32Array(PLANE_LOOPS);
   private rumble: Loop | null = null;
   private loopT = 0;
   // Listener frame for this update.
@@ -106,12 +100,10 @@ export class BattleListener {
     let c: number;
     if (weapon.includes('rifle')) c = C.Rifle;
     else if (weapon === 'mg' || weapon.endsWith('_mg')) c = C.Mg;
-    else if (weapon === 'aa_shell') c = C.Flak;
     else if (weapon === 'at_cannon') c = C.At;
     else if (weapon.includes('cannon')) c = C.Cannon;
     else if (weapon.startsWith('mortar')) c = C.Mortar;
     else if (weapon.startsWith('howitzer')) c = C.How;
-    else if (weapon === 'strafe') c = C.Strafe;
     else c = big ? C.Cannon : C.Rifle;
     this.weaponCat.set(weapon, c);
     return c;
@@ -176,12 +168,8 @@ export class BattleListener {
             this.fireAcc++;
             this.add(this.catOf(e.weapon, e.big), e.pos.x, e.pos.z, 1);
             break;
-          case 'tracer':
-            if (e.weapon === 'strafe') this.add(C.Strafe, e.from.x, e.from.z, 1);
-            break;
           case 'explosion':
             if (e.kind === 'ap') this.add(C.ApHit, e.pos.x, e.pos.z, 1);
-            else if (e.kind === 'bomb') this.add(C.ExpB, e.pos.x, e.pos.z, 1.3);
             else if (e.kind === 'shell') this.add(e.radius >= 8 ? C.ExpB : C.ExpS, e.pos.x, e.pos.z, 1);
             else if (e.kind === 'he') this.add(e.radius >= 4 ? C.ExpB : C.ExpS, e.pos.x, e.pos.z, e.radius >= 4 ? 1 : 0.45);
             break;
@@ -190,9 +178,6 @@ export class BattleListener {
             break;
           case 'ricochet':
             this.add(C.Rico, e.pos.x, e.pos.z, 1);
-            break;
-          case 'planeDown':
-            this.add(C.VDeath, e.pos.x, e.pos.z, 1.2);
             break;
         }
       }
@@ -203,7 +188,7 @@ export class BattleListener {
     this.loopT -= dt;
     if (this.loopT <= 0) {
       this.loopT = 0.06;
-      this.updateLoops(w, paused || !feed);
+      this.updateLoops(paused || !feed);
     }
     this.stats(dt);
   }
@@ -246,12 +231,12 @@ export class BattleListener {
     }
   }
 
-  /** Incoming shells/bombs near the screen centre whistle just before they land. */
+  /** Incoming shells near the screen centre whistle just before they land. */
   private scanWhistles(w: World): void {
     if (this.zoomGain < 0.45) return;
     const g = w.data.rules.simulation.gravity_mps2;
     for (const p of w.projectiles) {
-      if ((p.kind !== 'shell' && p.kind !== 'bomb') || p.vel.y >= 0 || p.done) continue;
+      if (p.kind !== 'shell' || p.vel.y >= 0 || p.done) continue;
       const dx = p.pos.x - this.tx;
       const dz = p.pos.z - this.tz;
       const n = Math.sqrt(dx * dx + dz * dz) / this.radius;
@@ -259,7 +244,7 @@ export class BattleListener {
       const h = p.pos.y - w.terrain.heightAt(p.pos.x, p.pos.z);
       const v = -p.vel.y;
       const tti = (-v + Math.sqrt(v * v + 2 * g * Math.max(0, h))) / g;
-      const dur = p.kind === 'bomb' ? 2.0 : 1.25;
+      const dur = 1.25;
       if (tti > dur * 1.05 || tti < dur * 0.6) continue;
       if (this.whistled.includes(p.id)) continue;
       if (this.cd[C.Whistle] > 0 || this.mix.catCount(C.Whistle) >= CATS[C.Whistle].max) continue;
@@ -268,7 +253,7 @@ export class BattleListener {
       this.cd[C.Whistle] = CATS[C.Whistle].cd[0] + Math.random() * (CATS[C.Whistle].cd[1] - CATS[C.Whistle].cd[0]);
       this.evAcc[C.Whistle]++;
       const q = this.req;
-      q.id = p.kind === 'bomb' ? 'bombWhistle' : 'whistle';
+      q.id = 'whistle';
       q.variant = -1;
       q.gain = CATS[C.Whistle].base * this.zoomGain / (1 + 2.2 * n * n);
       const pn = (dx * this.rx + dz * this.rz) / this.halfW;
@@ -285,44 +270,9 @@ export class BattleListener {
     }
   }
 
-  /** Aircraft engine drones (nearest three planes) and the distant artillery rumble bed. */
-  private updateLoops(w: World, silent: boolean): void {
+  /** The distant artillery rumble bed. */
+  private updateLoops(silent: boolean): void {
     const t = this.mix.ctx.currentTime;
-    // Pick the nearest planes without allocating.
-    this.planeN.fill(1e9);
-    this.planeIdx.fill(-1);
-    const planes = w.planes;
-    if (!silent) {
-      for (let i = 0; i < planes.length; i++) {
-        const p = planes[i];
-        const n = Math.hypot(p.pos.x - this.tx, p.pos.z - this.tz) / this.radius;
-        for (let k = 0; k < PLANE_LOOPS; k++) {
-          if (n < this.planeN[k]) {
-            for (let j = PLANE_LOOPS - 1; j > k; j--) { this.planeN[j] = this.planeN[j - 1]; this.planeIdx[j] = this.planeIdx[j - 1]; }
-            this.planeN[k] = n;
-            this.planeIdx[k] = i;
-            break;
-          }
-        }
-      }
-    }
-    for (let k = 0; k < PLANE_LOOPS; k++) {
-      let L = this.planeLoops[k];
-      const idx = this.planeIdx[k];
-      if (!L && idx >= 0) L = this.planeLoops[k] = this.mix.loop('engine', k);
-      if (!L) continue;
-      if (idx < 0) {
-        L.gain.gain.setTargetAtTime(0, t, 0.4);
-        continue;
-      }
-      const p = planes[idx];
-      const n = this.planeN[k];
-      const pn = ((p.pos.x - this.tx) * this.rx + (p.pos.z - this.tz) * this.rz) / this.halfW;
-      L.gain.gain.setTargetAtTime((0.32 * this.zoomGain) / (1 + 1.2 * n * n), t, 0.25);
-      L.pan.pan.setTargetAtTime(Math.max(-0.85, Math.min(0.85, pn * 0.85)), t, 0.2);
-      L.filter.frequency.setTargetAtTime(350 + 2600 * Math.exp(-1.2 * n) * this.zoomGain, t, 0.2);
-      L.src.playbackRate.setTargetAtTime(0.92 + k * 0.07 + (p.phase === 'attack' ? 0.08 : 0), t, 0.5);
-    }
     if (!this.rumble) this.rumble = this.mix.loop('rumble', 0);
     if (this.rumble) {
       const target = silent ? 0 : Math.min(0.55, this.distantEnergy * 0.5 + this.combat * 0.12);
@@ -364,16 +314,14 @@ export class BattleListener {
   /** Fade loops out (session ended). */
   silence(): void {
     const t = this.mix.ctx.currentTime;
-    for (const L of this.planeLoops) L?.gain.gain.setTargetAtTime(0, t, 0.3);
     this.rumble?.gain.gain.setTargetAtTime(0, t, 0.5);
   }
 
   dispose(): void {
     const t = this.mix.ctx.currentTime;
-    for (const L of [...this.planeLoops, this.rumble]) {
-      if (!L) continue;
-      L.gain.gain.setTargetAtTime(0, t, 0.2);
-      try { L.src.stop(t + 1.2); } catch { /* already stopped */ }
-    }
+    const L = this.rumble;
+    if (!L) return;
+    L.gain.gain.setTargetAtTime(0, t, 0.2);
+    try { L.src.stop(t + 1.2); } catch { /* already stopped */ }
   }
 }

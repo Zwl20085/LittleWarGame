@@ -286,12 +286,6 @@ svg.brass-gauge .needle { transform-origin: 30px 31px; transition: transform 400
 .compass::before { content: '▲'; display: block; text-align: center; font-size: 9px; line-height: 1; }
 .layers { display: grid; grid-template-columns: repeat(auto-fit, minmax(40px, 1fr)); gap: 3px; }
 .layers .btn { padding: 1px 2px; letter-spacing: 0; font-size: var(--fs-s); min-height: 24px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.air { display: flex; flex-direction: column; gap: 3px; }
-.air-head { display: flex; justify-content: space-between; align-items: baseline; }
-.air-btns { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3px; }
-.air-btn { display: flex; flex-direction: column; align-items: flex-start; padding: 2px 5px; min-height: 0; line-height: 1.25; min-width: 0; }
-.air-btn .an { font-size: var(--fs-s); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
-.air-btn .ac { font-size: var(--fs-s); opacity: 0.85; }
 
 .eco { position: absolute; top: calc(78px * var(--ui)); left: 50%; transform: translateX(-50%); width: 440px; padding: 12px 16px; animation: drop var(--t-panel) var(--ease); }
 .alloc { display: grid; grid-template-columns: 70px 1fr 44px 64px 90px; gap: 6px; align-items: center; margin: 4px 0; }

@@ -1,3 +1,4 @@
+import { buildingsNear, extentAlong, isCollapsed, shieldBuilding } from './buildings';
 import type { MapFeature } from './mapdef';
 import { hostileMask } from './spatial';
 import { Ground } from './terrain';
@@ -62,8 +63,27 @@ export function crossesWater(world: World, a: V2, b: V2): boolean {
 }
 
 /**
+ * Terrain value of holding `p` against a threat along (ux, uz): cover, the enemy-facing edge
+ * of a town or forest (cover here, field of fire ahead), a crest (ground falls away within
+ * 30 m), and a penalty for bare open fields.
+ */
+export function holdTerrainScore(world: World, p: V2, ux: number, uz: number): number {
+  const t = world.terrain;
+  const cover = t.coverAt(p.x, p.z);
+  const g = t.groundAt(p.x, p.z);
+  const gAhead = t.groundAt(p.x + ux * 40, p.z + uz * 40);
+  let s = Math.min(2, cover) * 0.35;
+  if ((g === Ground.Town || cover === 3) && gAhead !== Ground.Town) s += 0.35;
+  if (g === Ground.Forest && gAhead !== Ground.Forest) s += 0.3;
+  if (t.heightAt(p.x, p.z) - t.heightAt(p.x + ux * 30, p.z + uz * 30) >= 3) s += 0.25;
+  if (cover === 0 && g === Ground.Open) s -= 0.25;
+  return s;
+}
+
+/**
  * Defensive position near `around` facing a threat from `threat`: rewards height over the
- * approach, cover (town/forest), and a river between us and the enemy; never in water.
+ * approach, cover and edges (holdTerrainScore), and a river between us and the enemy; never
+ * in water or inside a building.
  */
 export function defensivePosition(world: World, around: V2, threat: V2, radius = 220): { pos: V2; score: number; river: boolean; height: number } {
   const t = world.terrain;
@@ -79,17 +99,17 @@ export function defensivePosition(world: World, around: V2, threat: V2, radius =
       const p = { x: around.x + ox, z: around.z + oz };
       if (!t.inBounds(p.x, p.z) || Math.hypot(ox, oz) > radius) continue;
       const g = t.groundAt(p.x, p.z);
-      if (g === Ground.Water || t.slopeAt(p.x, p.z) > 25) continue;
+      if (g === Ground.Water || t.buildingH(p.x, p.z) > 0 || t.slopeAt(p.x, p.z) > 25) continue;
       const h = t.heightAt(p.x, p.z);
       const ahead = { x: p.x + ux * 140, z: p.z + uz * 140 };
       const hAhead = t.heightAt(ahead.x, ahead.z);
       const river = crossesWater(world, p, ahead);
-      const cover = t.coverAt(p.x, p.z);
+      const cover = holdTerrainScore(world, p, ux, uz);
       // Do not drift far from the place we are defending, and stay on our side.
       const forward = ox * ux + oz * uz;
       // Never pick ground that needs a river crossing from where we stand (wrong bank).
       if (crossesWater(world, around, p)) continue;
-      const score = Math.min(25, h - hAhead) * 0.06 + cover * 0.35 + (river ? 1.2 : 0) - Math.hypot(ox, oz) / radius * 0.5 - Math.max(0, forward) / radius * 0.6;
+      const score = Math.min(25, h - hAhead) * 0.06 + cover + (river ? 1.2 : 0) - Math.hypot(ox, oz) / radius * 0.5 - Math.max(0, forward) / radius * 0.6;
       if (score > best.score) best = { pos: p, score, river, height: h - hAhead };
     }
   }
@@ -178,4 +198,67 @@ export function unitDepthRank(u: Unit): number {
     case 'at_gun': case 'mg': return 1;
     default: return 3;
   }
+}
+
+const nearScratch: number[] = [];
+
+/** A spot is taken when two other friendly units already stand within 5 m of it. */
+function crowdedSpot(world: World, u: Unit, p: V2): boolean {
+  let n = 0;
+  for (const o of world.spatial.query(p.x, p.z, 5)) if (o.owner === u.owner && o.id !== u.id && o.hp > 0 && ++n >= 2) return true;
+  return false;
+}
+
+/**
+ * Best cover spot for a foot unit within `r` of `around` against fire from `faceFrom`
+ * (used by behavior.findCover). Priority: stay if already garrisoned; else the nearest free lee
+ * wall of an intact building; else `around` itself if it is in town/forest; else the best grid
+ * point (10 m) by distance, with a crest falling toward the enemy worth 6 m and town 3 m.
+ */
+export function coverSpot(world: World, u: Unit, around: V2, r: number, faceFrom: V2): V2 | null {
+  const t = world.terrain;
+  if (u.def.kind === 'vehicle') return t.coverAt(around.x, around.z) > 0 ? around : null;
+  if (u.cover === 3 && dist(u.pos, around) <= r && shieldBuilding(world, u.pos, faceFrom) >= 0) return u.pos;
+  let best: V2 | null = null;
+  let bd = Infinity;
+  for (const k of buildingsNear(t, around, r, nearScratch)) {
+    if (isCollapsed(world, k)) continue;
+    const b = t.buildings[k];
+    if (Math.abs(b.x - around.x) > r + 12 || Math.abs(b.z - around.z) > r + 12) continue;
+    const dx = b.x - faceFrom.x;
+    const dz = b.z - faceFrom.z;
+    const L = Math.hypot(dx, dz);
+    if (L < 1) continue;
+    const e = extentAlong(b, dx / L, dz / L) + 1.0;
+    const p = { x: b.x + (dx / L) * e, z: b.z + (dz / L) * e };
+    const d = dist(p, around);
+    if (d > r || d - 12 >= bd || !t.inBounds(p.x, p.z) || t.buildingH(p.x, p.z) > 0) continue;
+    if (shieldBuilding(world, p, faceFrom) < 0 || crowdedSpot(world, u, p)) continue;
+    bd = d - 12;
+    best = p;
+  }
+  // A garrison spot wins outright; otherwise standing in town/forest is good enough (cheap).
+  if (best) return best;
+  if (t.coverAt(around.x, around.z) > 0) return around;
+  const step = 10;
+  const fx = faceFrom.x - around.x;
+  const fz = faceFrom.z - around.z;
+  const fl = Math.hypot(fx, fz) || 1;
+  for (let dx = -r; dx <= r; dx += step) {
+    for (let dz = -r; dz <= r; dz += step) {
+      if (dx * dx + dz * dz > r * r) continue;
+      const p = { x: around.x + dx, z: around.z + dz };
+      const d0 = Math.hypot(dx, dz) + dist(p, faceFrom) * 0.05;
+      if (d0 - 9 >= bd || !t.inBounds(p.x, p.z) || t.buildingH(p.x, p.z) > 0) continue;
+      const cover = t.coverAt(p.x, p.z);
+      const crest = t.heightAt(p.x, p.z) - t.heightAt(p.x + (fx / fl) * 25, p.z + (fz / fl) * 25) >= 3;
+      if (cover === 0 && !crest) continue;
+      const d = d0 - (crest ? 6 : 0) - (cover >= 2 ? 3 : 0);
+      if (d < bd) {
+        bd = d;
+        best = p;
+      }
+    }
+  }
+  return best;
 }

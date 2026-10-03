@@ -5,11 +5,14 @@ import { FORT } from './config';
 import { moveTo, stop } from './movement';
 import { lerpV } from './sectors';
 import { trySpend } from './economy';
+import { ESCORT_REACT_S } from './damage';
 import { availableM } from './production';
 import { thinkConvoyTruck } from './convoy';
 import { thinkBridgeBuilder } from './engineering';
 import { enemyDistance, safeRear } from './frontai';
 import { enemyConvoyTargets } from './operations';
+import { EAGER, eagerOn } from './strategyai';
+import { coverSpot, threatCentre } from './terrainai';
 import type { Sector, Unit } from './types';
 import { dist, headingTo, type V2 } from './vec';
 import type { World } from './world';
@@ -39,22 +42,10 @@ function findCover(world: World, u: Unit, around: V2, r: number, faceFrom: V2): 
     if (world.isHostile(u.owner, f.owner)) continue;
     if (dist(f.pos, around) < r) return f.pos;
   }
-  if (world.terrain.coverAt(around.x, around.z) > 0) return around;
-  let best: V2 | null = null;
-  let bd = Infinity;
-  const step = 10;
-  for (let dx = -r; dx <= r; dx += step) {
-    for (let dz = -r; dz <= r; dz += step) {
-      const p = { x: around.x + dx, z: around.z + dz };
-      if (!world.terrain.inBounds(p.x, p.z) || world.terrain.coverAt(p.x, p.z) === 0) continue;
-      const d = dist(p, around) + dist(p, faceFrom) * 0.05;
-      if (d < bd) {
-        bd = d;
-        best = p;
-      }
-    }
-  }
-  return best;
+  // Holding a point (faceFrom = the point itself): face the known threat instead.
+  const from = dist(faceFrom, around) < 5 ? threatCentre(world, u.owner, around, 400) ?? faceFrom : faceFrom;
+  // Buildings (lee wall = garrison), crests, town/forest ground: terrainai.coverSpot (§7.1).
+  return coverSpot(world, u, around, r, from);
 }
 
 /** Next to a connected supply truck with an engineer (field repair point, §6.4). */
@@ -151,12 +142,21 @@ export function thinkUnit(world: World, u: Unit): void {
     // Support units do not wait for the infantry gate.
     if (u.def.kind !== 'infantry' && s.posture !== 'withdraw' && dist(u.pos, s.rally) < 70) u.behavior = 'advance';
     if (u.def.id === 'recon' && s.posture !== 'withdraw') u.behavior = 'advance';
+    // Round 2: slow guns (0.7–1 m/s) spent 60–72 % of their life walking to rally points; they go
+    // straight to their firing position instead.
+    if (eagerOn() && (u.def.id === 'howitzer' || u.def.id === 'mortar') && s.posture !== 'withdraw') u.behavior = 'advance';
+    // Round 2: the rally point is laid out from the capital, but units spawn at the forward town
+    // nearest the front — they walked back to it, waited, and walked forward again. Units already
+    // nearer the objective than the rally point, and reinforcements of a group in contact, join the
+    // line directly (the frontal-massing gate in sectors.eagerPush keeps attacks from trickling).
+    if (eagerOn() && s.posture !== 'withdraw' && s.reason !== 'reason.outmatched'
+      && (s.mode === 'hold' || s.mode === 'push' || dist(u.pos, s.targetPos) < dist(s.rally, s.targetPos) - 50)) u.behavior = 'advance';
     return;
   }
   u.behavior = 'advance';
   switch (u.def.id) {
     case 'mortar': case 'howitzer': return thinkArtillery(world, u, s);
-    case 'mg': case 'at_gun': case 'aa': return thinkCrewWeapon(world, u, s);
+    case 'mg': case 'at_gun': return thinkCrewWeapon(world, u, s);
     case 'recon': return thinkRecon(world, u, s);
     case 'engineer': if (thinkEngineer(world, u, s)) return; break;
     default: break;
@@ -193,6 +193,29 @@ function thinkAssault(world: World, u: Unit, s: Sector): void {
       if (t.moraleState !== 'normal' || t.routing) moveTo(world, u, objectivePoint(u, s));
       return;
     }
+    // Round 2: assaulting foot squads in range bound from cover to cover toward the enemy
+    // (buildings' lee walls, forest edges, crests) and shoot on the move, instead of crossing open ground.
+    if (eagerOn() && assault && !tanks && d < w.range) {
+      // One bound at a time: no new cover search (and path) until the current bound is done.
+      if (u.status === 'status.engaging' && u.path.length > 0) return;
+      const ahead = lerpV(u.pos, t.pos, 0.35);
+      const c = findCover(world, u, ahead, 25, t.pos);
+      if (c && dist(c, t.pos) < d - 5 && dist(c, u.pos) > 3) {
+        moveTo(world, u, c);
+        u.status = 'status.engaging';
+        return;
+      }
+    }
+  }
+  // Round 2: a group holding its line takes its slots in cover near them (the slot's cover spot is
+  // cached per unit until the slot moves, so this costs one cover search per re-slot).
+  if (eagerOn() && s.mode === 'hold' && !tanks && !t) {
+    const slot = objectivePoint(u, s);
+    if (dist(u.pos, slot) < 60) {
+      moveTo(world, u, slotCover(world, u, slot, s.targetPos));
+      u.status = 'status.holding';
+      return;
+    }
   }
   if (holdish && atObjective) {
     const c = findCover(world, u, s.targetPos, 30, s.targetPos);
@@ -201,8 +224,30 @@ function thinkAssault(world: World, u: Unit, s: Sector): void {
     return;
   }
   u.status = s.targetCity !== null ? 'status.assaultCity' : 'status.advancing';
-  moveTo(world, u, objectivePoint(u, s));
+  moveTo(world, u, approachPoint(u, s, objectivePoint(u, s)));
   void hq;
+}
+
+/**
+ * Round 2: units far from their slot march on the group's shared front point first, so the long
+ * leg reuses one cached flow field per group instead of one per slot (units now join the line
+ * directly instead of gathering at the shared rally point).
+ */
+function approachPoint(u: Unit, s: Sector, p: V2): V2 {
+  return eagerOn() && dist(u.pos, p) > APPROACH_M && dist(u.pos, s.front) > APPROACH_M ? s.front : p;
+}
+
+const APPROACH_M = 350;
+
+const slotCovers = new WeakMap<Unit, { slot: V2; at: V2 }>();
+
+/** Cover spot within 25 m of a line slot (buildings, forest, crests), cached until the slot moves > 8 m. */
+function slotCover(world: World, u: Unit, slot: V2, faceFrom: V2): V2 {
+  const c = slotCovers.get(u);
+  if (c && dist(c.slot, slot) < 8) return c.at;
+  const at = findCover(world, u, slot, 25, faceFrom) ?? slot;
+  slotCovers.set(u, { slot: { ...slot }, at });
+  return at;
 }
 
 /** The unit's place on its group's battle line (falls back to a spread around the target). */
@@ -219,10 +264,14 @@ function homeFor(world: World, u: Unit): V2 {
 
 function thinkArtillery(world: World, u: Unit, s: Sector): void {
   const w = u.primary!;
-  const ratio = u.def.id === 'howitzer' ? 0.55 : 0.6;
+  const how = u.def.id === 'howitzer';
+  // Round 2: guns sat 0.55–0.6 × range behind the line and ≥300 / 180 m from enemy ground, so the
+  // nearest enemy was out of range 40–80 % of the time; deploy closer (still inside our ground).
+  const ratio = eagerOn() ? (how ? EAGER.howitzerBack : EAGER.mortarBack) : how ? 0.55 : 0.6;
+  const safe = eagerOn() ? (how ? EAGER.howitzerSafe : EAGER.mortarSafe) : how ? 300 : 180;
   const want0 = behind(world, u, s.front, homeFor(world, u), w.range * ratio);
   // Guns stay inside friendly territory, well clear of enemy-held ground.
-  const want = safeRear(world, u.owner, want0, homeFor(world, u), u.def.id === 'howitzer' ? 300 : 180);
+  const want = safeRear(world, u.owner, want0, homeFor(world, u), safe);
   const off = spread(u, 20);
   const pos = { x: want.x + off.x, z: want.z + off.z };
   selectTarget(world, u, s.targetPos);
@@ -235,8 +284,10 @@ function thinkArtillery(world: World, u: Unit, s: Sector): void {
     u.status = 'status.relocating';
     return;
   }
-  // Stay put while we have a legal target; otherwise reposition.
-  if (t && dist(u.pos, pos) < 140) {
+  // Stay put while we have a legal target; otherwise reposition. Round 2: a gun that has a target
+  // where it stands fires from there unless enemy ground is too close (it used to keep walking).
+  const fireHere = eagerOn() && !!t && enemyDistance(world, u.owner, u.pos) >= safe * 0.6;
+  if (t && (dist(u.pos, pos) < 140 || fireHere)) {
     if (u.setup !== 'set' && !u.moving) stop(u);
     if (!hasIndirectSolution(world, u, w, t.pos)) u.status = 'status.noArc';
     else u.status = 'status.firing';
@@ -385,13 +436,17 @@ function thinkRaid(world: World, u: Unit): boolean {
 function thinkEscort(world: World, u: Unit): boolean {
   if (u.manual || u.behavior !== 'advance' || u.routing || u.def.id === 'supply_truck' || !u.primary) return false;
   if (world.unitAlive(u.targetId)) return false;
-  for (const o of world.spatial.queryOwners(u.pos.x, u.pos.z, 300, 1 << u.owner)) {
-    if (o.owner === u.owner && o.def.id === 'supply_truck' && o.hp > 0 && world.time - o.lastDamagedAt < 6) {
-      moveTo(world, u, o.pos);
-      selectTarget(world, u, o.pos);
-      u.status = 'status.escort';
-      return true;
-    }
+  // Trucks under fire are listed by the damage code; no 300 m scan of all friendlies per unit.
+  const hits = world.factions[u.owner].trucksUnderFire;
+  for (let i = hits.length - 1; i >= 0; i--) {
+    const h = hits[i];
+    if (world.time - h.at > ESCORT_REACT_S) continue; // retained longer for the rear-guard alert
+    const o = world.unitAlive(h.id);
+    if (!o || dist(o.pos, u.pos) > 300) continue;
+    moveTo(world, u, o.pos);
+    selectTarget(world, u, o.pos);
+    u.status = 'status.escort';
+    return true;
   }
   return false;
 }

@@ -9,11 +9,13 @@ import { Haze, LIGHT, roomBackground } from './atmosphere';
 import { CameraRig } from './camera';
 import { Effects } from './effects';
 import { MapLabels } from './mapLabels';
+import { ObjectiveMarkers } from './objectiveMarkers';
+import { QualityGovernor, type QualityLevel, type QualityMode } from './quality';
 import { OpArrows } from './opArrows';
 import { clothFlag, FLAG_TIME } from './flags';
 import { FieldWorks, isLineWork } from './fieldWorks';
 import { FrontLines } from './frontLines';
-import { fortModel, planeModel } from './models';
+import { fortModel } from './models';
 import { PontoonView } from './pontoon';
 import { ScreenOverlay } from './screenOverlay';
 import { TerrainView } from './terrainView';
@@ -34,7 +36,7 @@ export interface TerrainInfo {
   readonly height: number;
   readonly slopeDeg: number;
   readonly ground: Ground;
-  readonly cover: 0 | 1 | 2;
+  readonly cover: 0 | 1 | 2 | 3;
   /** Vehicles cannot climb slopes above this (VISUAL terrain layer marks them). */
   readonly steep: boolean;
   readonly feature?: MapFeature;
@@ -44,12 +46,6 @@ export interface TerrainInfo {
 export const STEEP_SLOPE_DEG = 18;
 
 const ORDER_RING = new THREE.RingGeometry(2.5, 4, 24).rotateX(-Math.PI / 2);
-
-interface ObjectiveView {
-  flag: THREE.Mesh;
-  ring: THREE.Mesh;
-  progress: THREE.Mesh;
-}
 
 /** Owns the Three.js scene for one match. Reads sim state; never mutates it. */
 export class GameRenderer {
@@ -66,8 +62,7 @@ export class GameRenderer {
   /** Unit vector toward the sun (afternoon light from the north-west). */
   private readonly sunDir = LIGHT.sunDir.clone();
   private readonly haze: Haze;
-  private readonly objViews = new Map<string, ObjectiveView>();
-  private readonly planeViews = new Map<number, THREE.Group>();
+  private readonly objectiveMarkers: ObjectiveMarkers;
   private readonly fortViews = new Map<number, THREE.Group>();
   private readonly pontoonViews = new Map<number, PontoonView>();
   private readonly fieldWorks: FieldWorks;
@@ -85,6 +80,10 @@ export class GameRenderer {
   private lastFrameAt = performance.now();
   private shadowTick = 0;
   fog = false;
+  /** Render quality tier (auto mode steps down when the frame rate drops). */
+  private readonly quality = new QualityGovernor();
+  /** Called when auto mode lowers the tier (the HUD shows a notice). */
+  onQualityChange: ((level: QualityLevel) => void) | null = null;
 
   constructor(private readonly canvas: HTMLCanvasElement, private readonly match: Match) {
     const w = match.world;
@@ -132,29 +131,24 @@ export class GameRenderer {
     this.scene.add(this.fieldWorks.group);
     this.opArrows = new OpArrows((x, z) => w.terrain.heightAt(x, z));
     this.scene.add(this.opArrows.mesh);
-    this.buildObjectives();
+    this.objectiveMarkers = new ObjectiveMarkers(w.objectives, w.terrain);
+    this.scene.add(this.objectiveMarkers.group);
     this.buildCities();
+    this.freezeStatic();
   }
 
-  private buildObjectives(): void {
-    const w = this.match.world;
-    for (const o of w.objectives) {
-      const y = w.terrain.heightAt(o.pos.x, o.pos.z);
-      const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.25, 14, 6), new THREE.MeshStandardMaterial({ color: '#4a4236' }));
-      pole.position.set(o.pos.x, y + 7, o.pos.z);
-      pole.castShadow = true;
-      const flag = clothFlag('#d8cfb8');
-      flag.position.set(o.pos.x, y + 12, o.pos.z);
-      const ringGeo = new THREE.RingGeometry(28.5, 30, 48).rotateX(-Math.PI / 2);
-      const ring = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ color: '#f4ecd9', transparent: true, opacity: 0.65, depthWrite: false }));
-      ring.position.set(o.pos.x, y + 1.2, o.pos.z);
-      ring.renderOrder = 2;
-      const progress = new THREE.Mesh(new THREE.RingGeometry(26, 28.4, 48, 1, Math.PI / 2, -Math.PI * 2).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.85, depthWrite: false }));
-      progress.position.copy(ring.position);
-      progress.renderOrder = 3;
-      this.scene.add(pole, flag, ring, progress);
-      this.objViews.set(o.id, { flag, ring, progress });
+  /**
+   * Everything built once (terrain chunks, buildings, trees, markers, city blocks) never moves:
+   * mark it static so Three.js skips recomposing ~1 000 matrices every frame.
+   */
+  private freezeStatic(): void {
+    for (const root of [this.terrainView.group, this.objectiveMarkers.group]) {
+      root.traverse((o) => {
+        o.updateMatrix();
+        o.matrixAutoUpdate = false;
+      });
     }
+    this.scene.updateMatrixWorld(true);
   }
 
   private buildCities(): void {
@@ -257,39 +251,9 @@ export class GameRenderer {
 
   private syncObjectives(): void {
     const w = this.match.world;
-    for (const o of w.objectives) {
-      const v = this.objViews.get(o.id)!;
-      const color = o.owner >= 0 ? w.factions[o.owner].color : '#d8cfb8';
-      (v.flag.material as THREE.MeshStandardMaterial).color.set(color);
-      (v.ring.material as THREE.MeshBasicMaterial).color.set(o.contested ? '#e0b050' : color);
-      let best = -1;
-      let bp = 0;
-      for (const [k, p] of Object.entries(o.progress)) if (p > bp) { bp = p; best = Number(k); }
-      if (best >= 0) {
-        const frac = Math.min(1, bp / w.data.rules.victory.point_capture_seconds);
-        v.progress.visible = true;
-        v.progress.geometry.setDrawRange(0, 6 * Math.max(1, Math.round(48 * frac)));
-        (v.progress.material as THREE.MeshBasicMaterial).color.set(w.factions[best].color);
-      } else v.progress.visible = false;
-    }
-  }
-
-  private syncPlanes(alpha: number): void {
-    const w = this.match.world;
-    const seen = new Set<number>();
-    for (const p of w.planes) {
-      seen.add(p.id);
-      let v = this.planeViews.get(p.id);
-      if (!v) {
-        v = planeModel(w.factions[p.owner].color, p.mission.id === 'air_bomb');
-        this.scene.add(v);
-        this.planeViews.set(p.id, v);
-      }
-      v.position.set(p.prev.x + (p.pos.x - p.prev.x) * alpha, p.pos.y, p.prev.z + (p.pos.z - p.prev.z) * alpha);
-      v.rotation.y = -p.heading;
-      v.rotation.x = Math.sin(w.time * 2 + p.id) * 0.05;
-    }
-    for (const [id, v] of this.planeViews) if (!seen.has(id)) { this.scene.remove(v); this.planeViews.delete(id); }
+    const rules = w.data.rules;
+    // Capture time depends on the settlement kind (the arc used to assume the point rule).
+    this.objectiveMarkers.sync(w.objectives, w.factions, (o) => rules.territory?.capture_seconds[o.kind] ?? rules.victory.point_capture_seconds);
   }
 
   private syncForts(dt: number): void {
@@ -461,7 +425,12 @@ export class GameRenderer {
     // Camera eases in real time so it still responds while the sim is paused.
     const now = performance.now();
     const realDt = Math.min(0.1, (now - this.lastFrameAt) / 1000);
+    const stepped = this.quality.update((now - this.lastFrameAt) / 1000);
     this.lastFrameAt = now;
+    if (stepped !== null) {
+      this.applyQuality();
+      this.onQualityChange?.(stepped);
+    }
     this.rig.update(realDt, (x, z) => w.terrain.heightAt(x, z));
     // Shadow camera follows the view target.
     const t = this.rig.target;
@@ -476,14 +445,15 @@ export class GameRenderer {
     const ppm = this.pixelsPerMetre();
     this.effects.pxPerM = ppm;
     this.haze.update(ppm);
-    this.terrainView.scatter.visible = ppm > 1;
+    const q = this.quality.profile;
+    this.terrainView.scatter.visible = ppm > 1 && q.scatter;
     this.frontLines.update(realDt, ppm);
     this.opArrows.sync(w, this.playerId, this.spectator, this.layers.sectors);
     this.opArrows.update(ppm);
     FLAG_TIME.value += realDt;
     this.terrainView.uniforms.uOverlayK.value = ppm > 4 ? 0.5 : ppm > 1.5 ? 0.8 : 1;
     this.units.showSoldiers = ppm > 0.7;
-    this.units.setSoldierShadows(ppm > 3.5);
+    this.units.setSoldierShadows(ppm > 3.5 && q.soldierShadows);
     // Far zoom: the shadow map barely changes on screen — refresh it a few times a second.
     this.shadowTick++;
     const far = ppm < 1;
@@ -494,7 +464,6 @@ export class GameRenderer {
     this.effects.syncProjectiles(w.projectiles, alpha, dt);
     this.effects.update(dt);
     this.syncObjectives();
-    this.syncPlanes(alpha);
     this.syncForts(dt);
     this.paintFront(this.match.frontView ?? this.match.front);
     this.drawOverlays(realDt);
@@ -518,6 +487,34 @@ export class GameRenderer {
     this.counters.draw(this.overlay, ppm, this.playerId, this.fog);
   }
 
+  /** Player setting: fixed tier, or auto (start high, step down on slow frames). */
+  setQualityMode(mode: QualityMode): void {
+    this.quality.setMode(mode);
+    this.applyQuality();
+  }
+
+  private applyQuality(): void {
+    const q = this.quality.profile;
+    this.renderer.setPixelRatio(Math.min(q.maxPixelRatio, window.devicePixelRatio));
+    const shadows = q.shadowMap > 0;
+    if (this.renderer.shadowMap.enabled !== shadows) {
+      this.renderer.shadowMap.enabled = shadows;
+      // Materials bake the shadow-map define: force a recompile.
+      this.scene.traverse((o) => {
+        const m = (o as THREE.Mesh).material as THREE.Material | THREE.Material[] | undefined;
+        if (!m) return;
+        for (const mat of Array.isArray(m) ? m : [m]) mat.needsUpdate = true;
+      });
+    }
+    this.sun.castShadow = shadows;
+    if (shadows && this.sun.shadow.mapSize.x !== q.shadowMap) {
+      this.sun.shadow.mapSize.set(q.shadowMap, q.shadowMap);
+      this.sun.shadow.map?.dispose();
+      this.sun.shadow.map = null;
+    }
+    this.resize();
+  }
+
   /** CSS pixels per metre at the current zoom. */
   pixelsPerMetre(): number {
     const cam = this.rig.camera;
@@ -529,6 +526,7 @@ export class GameRenderer {
   }
 
   dispose(): void {
+    this.objectiveMarkers.dispose();
     this.overlay.dispose();
     this.renderer.dispose();
   }

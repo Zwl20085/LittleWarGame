@@ -1,11 +1,13 @@
 import type { WeaponDef } from '../data/types';
 import { arcClear, solveArc } from './ballistics';
-import { COMBAT, DISPERSION } from './config';
+import { COMBAT, DISPERSION, TERRAIN_COMBAT } from './config';
 import { addSuppression, coverAgainst, resolveBlast, resolveDirectHit } from './damage';
 import { firepowerScale, hitProbability } from './formulas';
-import type { Plane, Projectile, Unit, V3 } from './types';
+import type { Projectile, Unit, V3 } from './types';
 import { revealBattery } from './operations';
 import { recordShot } from './stats';
+import { sightLine } from './buildings';
+import { forestConcealed, hasHighObserver, shotTerrainMul } from './terrainrules';
 import { hostileMask } from './spatial';
 import { angleDiff, DEG, dist, headingTo, turnToward, type V2 } from './vec';
 import type { World } from './world';
@@ -35,7 +37,9 @@ export function canEngage(world: World, u: Unit, w: WeaponDef, t: Unit): FireBlo
   if (!isIndirect(w)) {
     // Small arms cannot hurt real armour (pen ≤15 vs armour >20) — don't waste time.
     if (w.penetration <= COMBAT.smallArmsPenCutoff && t.def.armorSide > COMBAT.smallArmsArmorCutoff) return 'NO_DAMAGE';
-    if (!world.terrain.los(u.pos.x, u.y + muzzleHeight(u), u.pos.z, t.pos.x, t.y + centerHeight(t), t.pos.z)) return 'NO_LOS';
+    // Forest hides units that hold fire; garrisons fire through windows (BALANCE_SPEC §7.1).
+    if (forestConcealed(world, u.pos, t)) return 'NO_LOS';
+    if (!sightLine(world, u, muzzleHeight(u), t, centerHeight(t))) return 'NO_LOS';
   }
   return null;
 }
@@ -58,8 +62,6 @@ function suitability(w: WeaponDef, t: Unit): number {
       return armored ? 1 : t.def.kind === 'crew' ? 0.85 : 0.6;
     case 'mortar_shell': case 'howitzer_shell':
       return veh ? 0.25 : t.setup === 'set' || t.fixed || t.fortId !== null ? 1 : 0.8;
-    case 'aa_shell':
-      return armored ? 0 : 0.5;
     default:
       return 0.5;
   }
@@ -169,26 +171,23 @@ export function updateWeapons(world: World, u: Unit): void {
   if (u.routing) return;
   const w = u.primary;
   if (w) {
-    if (w.airRange > 0 && engageAir(world, u, w)) {
-      // AA busy with aircraft.
-    } else {
-      const t = world.unitAlive(u.targetId);
-      if (t) {
-        const aligned = aim(world, u, t.pos);
-        if (aligned && u.cooldown1 <= 0 && canEngage(world, u, w, t) === null && fire(world, u, w, t)) {
-          u.cooldown1 = w.interval * intervalMul(world, u);
-        }
-      } else if (needsSetup(u) && !u.moving && u.def.kind === 'crew') {
-        // idle crew keeps facing its mount direction
-      } else if (u.def.kind === 'vehicle') {
-        u.turret = turnToward(u.turret, u.heading, u.def.turretTurnDegps * DEG * world.dt);
+    const t = world.unitAlive(u.targetId);
+    if (t) {
+      const aligned = aim(world, u, t.pos);
+      if (aligned && u.cooldown1 <= 0 && canEngage(world, u, w, t) === null && fire(world, u, w, t)) {
+        u.cooldown1 = w.interval * intervalMul(world, u);
       }
+    } else if (needsSetup(u) && !u.moving && u.def.kind === 'crew') {
+      // idle crew keeps facing its mount direction
+    } else if (u.def.kind === 'vehicle') {
+      u.turret = turnToward(u.turret, u.heading, u.def.turretTurnDegps * DEG * world.dt);
     }
   }
   const w2 = u.secondary;
   if (w2 && u.cooldown2 <= 0) {
     const t2 = pickSecondaryTarget(world, u, w2);
     if (t2 && fire(world, u, w2, t2)) u.cooldown2 = w2.interval * intervalMul(world, u);
+    else u.cooldown2 = COMBAT.secondaryRetrySeconds; // nothing in range: don't rescan every tick
   }
 }
 
@@ -237,6 +236,7 @@ function fireHitscan(world: World, u: Unit, w: WeaponDef, t: Unit, m: V3): void 
   const p = hitProbability({
     baseAccuracy: w.accuracy, distance: d, maxRange: w.range, shooterMoving: u.moving,
     shooterSuppressed: u.moraleState !== 'normal', targetMoving: t.moving, cover,
+    terrainMul: shotTerrainMul(world, u, t, u.y + muzzleHeight(u)),
   });
   const hit = world.rngCombat.chance(p);
   const fp = firepowerScale(u.def, u.hp, u.fixed ? 1400 : u.def.maxHp);
@@ -260,6 +260,7 @@ function fireDirect(world: World, u: Unit, w: WeaponDef, t: Unit, m: V3): void {
   const p = hitProbability({
     baseAccuracy: w.accuracy, distance: d, maxRange: w.range, shooterMoving: u.moving,
     shooterSuppressed: u.moraleState !== 'normal', targetMoving: t.moving, cover: coverAgainst(world, t, u.pos),
+    terrainMul: shotTerrainMul(world, u, t, u.y + muzzleHeight(u)),
   });
   const hit = world.rngCombat.chance(p);
   const aimPt: V3 = { x: t.pos.x, y: t.y + centerHeight(t), z: t.pos.z };
@@ -290,6 +291,8 @@ export function indirectSigma(world: World, u: Unit, w: WeaponDef, t: Unit, rang
   const observed = world.visibleTo[u.owner].has(t.id) || observedByAny(world, u.owner, t);
   if (!observed) sigma *= recentlySeen(world, u.owner, t.id) ? DISPERSION.staleIntelMul : DISPERSION.noObserverMul;
   if (hasReconSpotter(world, u.owner, t)) sigma *= DISPERSION.reconMul;
+  // Observer on a crest (≥ 8 m above the target) or a church or tower: tighter fall of shot.
+  if (observed && hasHighObserver(world, u.owner, t)) sigma *= TERRAIN_COMBAT.highObserverSigmaMul;
   return sigma;
 }
 
@@ -354,9 +357,10 @@ export function updateProjectiles(world: World): void {
   const dt = world.dt;
   for (const pr of world.projectiles) {
     if (pr.done) continue;
-    pr.prev = { ...pr.pos };
+    // In place: no two object allocations per projectile per tick.
+    pr.prev.x = pr.pos.x; pr.prev.y = pr.pos.y; pr.prev.z = pr.pos.z;
     pr.vel.y -= g * dt;
-    pr.pos = { x: pr.pos.x + pr.vel.x * dt, y: pr.pos.y + pr.vel.y * dt, z: pr.pos.z + pr.vel.z * dt };
+    pr.pos.x += pr.vel.x * dt; pr.pos.y += pr.vel.y * dt; pr.pos.z += pr.vel.z * dt;
     pr.age += dt;
     const segLen = Math.hypot(pr.pos.x - pr.prev.x, pr.pos.y - pr.prev.y, pr.pos.z - pr.prev.z);
     const steps = Math.max(1, Math.ceil(segLen / 1.5));
@@ -406,40 +410,6 @@ function apCollision(world: World, pr: Projectile, x: number, y: number, z: numb
     if (Math.hypot(u.pos.x - x, u.pos.z - z) <= r && Math.abs(dy) < 3.5) return u;
   }
   return null;
-}
-
-/** AA engagement of aircraft; returns true if the weapon is busy with a plane. */
-function engageAir(world: World, u: Unit, w: WeaponDef): boolean {
-  if (u.setup !== 'set') return false;
-  let best: Plane | null = null;
-  let bd = Infinity;
-  for (const p of world.planes) {
-    if (p.hp <= 0 || !world.isHostile(u.owner, p.owner)) continue;
-    const d = Math.hypot(p.pos.x - u.pos.x, p.pos.y - u.y, p.pos.z - u.pos.z);
-    if (d <= w.airRange && d < bd) {
-      bd = d;
-      best = p;
-    }
-  }
-  if (!best) return false;
-  const aligned = aim(world, u, { x: best.pos.x, z: best.pos.z });
-  if (!aligned || u.cooldown1 > 0 || u.ammo < w.ammoCost) return true;
-  u.ammo -= w.ammoCost;
-  u.cooldown1 = w.interval * intervalMul(world, u);
-  const p = hitProbability({ baseAccuracy: w.accuracy, distance: bd, maxRange: w.airRange, shooterMoving: false,
-    shooterSuppressed: u.moraleState !== 'normal', targetMoving: true, cover: 0 });
-  const hit = world.rngCombat.chance(p);
-  const m = muzzlePos(u);
-  world.emit({ t: 'muzzle', pos: m, dir: u.turret, big: false, weapon: w.id });
-  const burst: V3 = { x: best.pos.x + world.rngScatter.range(-8, 8), y: best.pos.y + world.rngScatter.range(-6, 6), z: best.pos.z + world.rngScatter.range(-8, 8) };
-  world.emit({ t: 'tracer', from: m, to: hit ? best.pos : burst, hit, weapon: w.id });
-  if (hit) {
-    best.hp -= w.airDamage * firepowerScale(u.def, u.hp, u.def.maxHp);
-    world.emit({ t: 'explosion', pos: { ...best.pos }, radius: 2, kind: 'he' });
-  } else {
-    world.emit({ t: 'explosion', pos: burst, radius: 1.5, kind: 'he' });
-  }
-  return true;
 }
 
 /** Enemy guns located by sound ranging are priority targets for our artillery. */

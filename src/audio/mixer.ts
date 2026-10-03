@@ -302,7 +302,7 @@ export class Mixer {
     return true;
   }
 
-  /** Long-lived looping voice (aircraft engines, rumble bed); caller owns the nodes. */
+  /** Long-lived looping voice (rumble bed); caller owns the nodes. */
   loop(id: SoundId, variant: number): { src: AudioBufferSourceNode; gain: GainNode; pan: StereoPannerNode; filter: BiquadFilterNode } | null {
     const buf = this.buffer(id, variant);
     if (!buf) return null;

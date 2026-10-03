@@ -9,7 +9,7 @@ export const LOD = { far: 0.9, close: 3.0 } as const;
 
 /** Priority when one counter stands for an aggregated cell (heavier kit wins). */
 const TYPE_RANK: Record<string, number> = {
-  heavy_tank: 9, medium_tank: 8, light_tank: 7, howitzer: 6, at_gun: 5, aa: 4, mortar: 4, mg: 3, motor_inf: 3, infantry: 2, engineer: 2, recon: 1, supply_truck: 0,
+  heavy_tank: 9, medium_tank: 8, light_tank: 7, howitzer: 6, at_gun: 5, mortar: 4, mg: 3, motor_inf: 3, infantry: 2, engineer: 2, recon: 1, supply_truck: 0,
 };
 
 interface Cell {

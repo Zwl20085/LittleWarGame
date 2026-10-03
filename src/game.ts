@@ -75,6 +75,7 @@ export class Game {
     this.renderer.fog = config.infoMode === 'fog' && !spectator;
     this.applySettings(settings());
     this.offSettings = onSettingsChange((s) => this.applySettings(s));
+    this.renderer.onQualityChange = () => this.hud?.toast(t('hud.qualityLowered'), 'warn');
     const self = this;
     this.ctx = {
       match: this.match, bus: this.bus, renderer: this.renderer, playerId: config.playerSlot, spectator,
@@ -117,7 +118,15 @@ export class Game {
     const fx = this.renderer.effects;
     fx.smokeScale = s.smoke;
     fx.reducedMotion = !s.shake || prefersReducedMotion();
+    // Quality re-application resizes render buffers: only when the tier actually changed
+    // (settings fire for every slider tick).
+    if (s.quality !== this.qualityApplied) {
+      this.qualityApplied = s.quality;
+      this.renderer.setQualityMode(s.quality);
+    }
   }
+
+  private qualityApplied: Settings['quality'] | null = null;
 
   private togglePauseMenu(): void {
     if (this.pauseMenu) {

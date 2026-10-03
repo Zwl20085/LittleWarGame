@@ -15,8 +15,12 @@ import { Ground } from '../src/sim/terrain';
 let lastBuilds = 0;
 // Report every 60 s of game time: mean ms/tick and flow-field builds/s over the window.
 const WINDOW = 1200;
+// Per-tick cost distribution: the worst ticks are what stall frames at 8x, not the mean.
+const tickMs = new Float64Array(20 * secs);
 for (let i = 0; i < 20 * secs; i++) {
+  const ts = performance.now();
   step(m); w.fx.length = 0;
+  tickMs[i] = performance.now() - ts;
   if (i % WINDOW === WINDOW - 1) {
     const now = performance.now();
     const held = w.factions.map((f) => w.objectives.filter((o) => o.owner === f.id).length).join('/');
@@ -49,10 +53,20 @@ for (let i = 0; i < 20 * secs; i++) {
   }
 }
 console.log(`units ${w.units.size} perTick ${((performance.now() - t0) / (20 * secs)).toFixed(1)}ms`);
+{
+  // Skip the first minute (warm-up / JIT) for the distribution.
+  const sorted = Array.from(tickMs.subarray(Math.min(tickMs.length, 1200))).sort((a, b) => a - b);
+  const q = (p: number): string => (sorted[Math.min(sorted.length - 1, Math.floor(p * sorted.length))] ?? 0).toFixed(1);
+  console.log(`tick ms p50 ${q(0.5)} p90 ${q(0.9)} p99 ${q(0.99)} max ${(sorted[sorted.length - 1] ?? 0).toFixed(1)} (over ${sorted.length} ticks after warm-up)`);
+  // The slowest ticks with their phase in the 2 s / 1 s schedules (which periodic job spiked).
+  const worst = Array.from(tickMs).map((ms, i) => ({ ms, i })).filter((x) => x.i >= 1200).sort((a, b) => b.ms - a.ms).slice(0, 10);
+  console.log('slowest ticks:', worst.map((x) => `#${x.i} ${x.ms.toFixed(1)}ms (t%40=${x.i % 40} t%20=${x.i % 20})`).join(', '));
+  console.log('field cache: builds', NavGrid.builds, 'evictions', NavGrid.evictions, 'distinct goals', NavGrid.goalCells.size);
+}
 const trucks = [...w.units.values()].filter((u) => u.def.id === 'supply_truck');
 const states: Record<string, number> = {};
 for (const t of trucks) states[t.truckState] = (states[t.truckState] ?? 0) + 1;
 const nonTruck = [...w.units.values()].filter((u) => !u.fixed && u.def.id !== 'supply_truck');
 console.log('trucks', trucks.length, JSON.stringify(states), 'avgAmmo', (nonTruck.reduce((a, u) => a + u.ammo, 0) / nonTruck.length).toFixed(2), 'supplied', (nonTruck.filter((u) => u.supplied).length / nonTruck.length).toFixed(2), 'depot', w.factions.map((f) => Math.round(f.depot)).join('/'));
 console.log('raids', w.log.filter((l) => l.key === 'log.raid').length, 'convoyThreat', w.log.filter((l) => l.key === 'log.convoyThreat').length, 'trucksLost', w.log.filter((l) => l.key === 'log.unitLost' && l.params.unit === 'supply_truck').length);
-console.log('fieldBuilds', NavGrid.builds, 'perSec', (NavGrid.builds / secs).toFixed(2));
+console.log('fieldBuilds', NavGrid.builds, 'perSec', (NavGrid.builds / secs).toFixed(2), 'hits', NavGrid.fieldHits, 'expanded', NavGrid.expanded);
