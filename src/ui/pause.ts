@@ -25,6 +25,9 @@ export function settingsFields(onLang?: () => void): HTMLElement {
     h('label', { class: 'field check' },
       h('input', { type: 'checkbox', checked: s.shake, onchange: (e: Event) => updateSettings({ shake: (e.target as HTMLInputElement).checked }) }),
       h('span', {}, t('set.shake'))),
+    h('div', { class: 'field' }, h('span', { class: 'lbl' }, t('set.quality')),
+      h('div', { class: 'seg-group' }, ...(['auto', 'high', 'medium', 'low'] as const).map((q) =>
+        h('button', { class: `btn seg ${s.quality === q ? 'on' : ''}`, 'aria-pressed': String(s.quality === q), onclick: () => { updateSettings({ quality: q }); onLang?.(); } }, t(`quality.${q}`))))),
     volumeField('set.volMaster', 'volMaster'),
     volumeField('set.volMusic', 'volMusic'),
     volumeField('set.volSfx', 'volSfx'),

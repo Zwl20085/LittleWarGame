@@ -19,7 +19,6 @@ const NATO: Record<string, string> = {
   medium_tank: '<ellipse cx="18" cy="12" rx="11" ry="5"/><ellipse cx="18" cy="12" rx="6" ry="2"/>',
   heavy_tank: '<ellipse cx="18" cy="12" rx="11" ry="5"/><ellipse cx="18" cy="12" rx="6" ry="2"/><ellipse cx="18" cy="12" rx="2" ry="1" class="f"/>',
   howitzer: '<circle cx="18" cy="12" r="4" class="f"/>',
-  aa: '<path d="M7 19Q18 3 29 19M18 18V6"/>',
   supply_truck: '<path d="M3 12H33"/><circle cx="11" cy="18" r="2.5"/><circle cx="25" cy="18" r="2.5"/>',
 };
 
@@ -54,9 +53,6 @@ const SIL: Record<string, string> = {
     + '<g class="w"><circle cx="10" cy="19" r="2.4"/><circle cx="18" cy="19" r="2.4"/><circle cx="26" cy="19" r="2.4"/><circle cx="34" cy="19" r="2.4"/><circle cx="42" cy="19" r="2.4"/><circle cx="50" cy="19" r="2.4"/></g>',
   howitzer:
     '<path d="M20 18l30-14 1 2.2-30 14z"/><path d="M14 14h18v6H14z"/><path d="M16 18L4 25l1 1.4L18 20z"/><path d="M24 18l12 7-1 1.4-12-7z"/><circle cx="20" cy="21" r="4.5"/>',
-  aa:
-    '<path d="M10 20h34v3H10z"/><path d="M22 12h10v8H22z"/><path d="M28 14l20-12 1.2 1.8-20 12z"/><path d="M26 16l20-12 1.2 1.8-20 12z"/>'
-    + '<circle cx="14" cy="23" r="2.5"/><circle cx="40" cy="23" r="2.5"/><path d="M6 22h6M42 22h8" stroke="currentColor" stroke-width="1.5"/>',
   supply_truck:
     '<path d="M4 7h34v13H4z"/><path d="M38 11h10l6 5v4H38z"/><path d="M41 12h6l3 3h-9z" class="cut"/>'
     + '<path d="M4 20h50v2H4z"/><g class="w"><circle cx="12" cy="22" r="3.2"/><circle cx="22" cy="22" r="3.2"/><circle cx="47" cy="22" r="3.2"/></g>',

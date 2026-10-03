@@ -1,20 +1,16 @@
 import { CONTESTED, NEUTRAL } from '../sim/frontline';
-import { missionDef } from '../sim/air';
 import { Ground } from '../sim/terrain';
 import type { GameContext } from './context';
 import { h, setText } from './dom';
 import { t } from './i18n';
 
-/** Bottom-right: minimap, layer toggles and the air-mission panel. */
+/** Bottom-right: minimap and layer toggles. */
 export class MinimapPanel {
   readonly el: HTMLElement;
   private readonly canvas: HTMLCanvasElement;
   private readonly base: HTMLCanvasElement;
   private readonly layerBtns: { key: string; el: HTMLButtonElement }[] = [];
   private readonly layerState: Record<string, boolean>;
-  private readonly airBtns = new Map<string, HTMLButtonElement>();
-  private readonly airState: HTMLElement;
-  private readonly airTitle: HTMLElement;
   private readonly scale: number;
 
   constructor(private readonly ctx: GameContext) {
@@ -40,26 +36,11 @@ export class MinimapPanel {
       this.layerBtns.push({ key, el });
       layers.append(el);
     }
-    this.airTitle = h('span', { class: 'lbl' }, t('air.title'));
-    this.airState = h('span', { class: 'small' });
-    const airBtns = h('div', { class: 'air-btns' });
-    const air = h('div', { class: 'air' }, h('div', { class: 'air-head' }, this.airTitle, this.airState), airBtns);
-    for (const m of w.data.rules.air.missions) {
-      const b = h('button', { class: 'btn air-btn', onclick: () => {
-        const f = w.factions[ctx.playerId];
-        if (f?.air.phase === 'preparing') ctx.issue({ type: 'cancelAir' });
-        else ctx.mode = { kind: 'air', missionId: m.id };
-      } }, h('span', { class: 'an' }), h('span', { class: 'ac num' }));
-      this.airBtns.set(m.id, b);
-      airBtns.append(b);
-    }
-    if (ctx.spectator) air.style.display = 'none';
-    this.el = h('div', { class: 'minipanel panel paper-stack' }, h('div', { class: 'map-frame' }, this.canvas, h('span', { class: 'compass', 'aria-hidden': 'true' }, 'N')), layers, air);
+    this.el = h('div', { class: 'minipanel panel paper-stack' }, h('div', { class: 'map-frame' }, this.canvas, h('span', { class: 'compass', 'aria-hidden': 'true' }, 'N')), layers);
   }
 
   relabel(): void {
     for (const l of this.layerBtns) setText(l.el, t(`layer.${l.key}`));
-    setText(this.airTitle, t('air.title'));
   }
 
   private paintBase(): void {
@@ -133,10 +114,6 @@ export class MinimapPanel {
       const s = u.def.kind === 'vehicle' ? 3 : 2;
       g.fillRect(u.pos.x * this.scale - s / 2, u.pos.z * this.scale - s / 2, s, s);
     }
-    for (const p of w.planes) {
-      g.fillStyle = '#fff';
-      g.fillRect(p.pos.x * this.scale - 2, p.pos.z * this.scale - 2, 4, 4);
-    }
     const corners = this.ctx.renderer.rig.viewCorners();
     if (corners.length === 4) {
       g.strokeStyle = '#f4ecd9';
@@ -150,20 +127,6 @@ export class MinimapPanel {
       const on = !!this.layerState[l.key];
       l.el.classList.toggle('on', on);
       l.el.setAttribute('aria-pressed', String(on));
-    }
-    const f = w.factions[this.ctx.playerId];
-    if (!f) return;
-    const a = f.air;
-    setText(this.airState, a.phase === 'preparing' ? t('air.preparing', { s: Math.ceil(a.timer) }) : a.phase === 'cooldown' ? t('air.cooldown', { s: Math.ceil(a.timer) }) : a.phase === 'flying' ? t('air.flying') : t('air.idle'));
-    for (const [id, b] of this.airBtns) {
-      const m = missionDef(w, id)!;
-      const locked = w.time < m.unlock_seconds;
-      const cancel = a.phase === 'preparing' && a.missionId === id;
-      setText(b.firstElementChild as HTMLElement, cancel ? '✕' : t(`air.short.${id}`));
-      setText(b.lastElementChild as HTMLElement, `${m.cost_m}M${locked ? ` ${Math.ceil(m.unlock_seconds - w.time)}s` : ''}`);
-      b.title = cancel ? t('air.cancel') : t(`air.${id}`);
-      b.disabled = (locked || (a.phase !== 'idle' && !(a.phase === 'preparing' && a.missionId === id)));
-      b.classList.toggle('on', this.ctx.mode.kind === 'air' && this.ctx.mode.missionId === id);
     }
   }
 }

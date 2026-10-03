@@ -517,14 +517,12 @@ export function generateMap(opt: GenOptions): MapDef {
     const fx = Math.cos(toward);
     const fz = Math.sin(toward);
     const at = (d: number, side = 0): V2 => ({ x: c.x + fx * d - fz * side, z: c.z + fz * d + fx * side });
-    // Air entry: the map edge behind the capital.
-    const back = { x: clamp(c.x - fx * 2000, 0, W), z: clamp(c.z - fz * 2000, 0, D) };
     features.push({ kind: 'city', name: cityNames[k], pos: c, radius: 150 });
     return {
       name: cityNames[k], hq: c, exit: at(70), truck: at(190),
       vanguard: [at(330, -70), at(330, 0), at(330, 70)], recon: at(300, -120),
       strongpoints: [{ pos: at(110, -60), facingDeg: (toward * 180) / Math.PI }, { pos: at(110, 60), facingDeg: (toward * 180) / Math.PI }],
-      forwardDeg: (toward * 180) / Math.PI, airEntry: back,
+      forwardDeg: (toward * 180) / Math.PI,
     };
   });
   const capitalTowns = capitals.map((c) => ({ x: c.x, z: c.z, r: 190, buildings: 320, kind: 'capital' as const }));

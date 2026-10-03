@@ -1,4 +1,5 @@
 import type { MapDef, TownDef } from './mapdef';
+import { nearWall } from './buildings';
 import { ValueNoise } from './noise';
 import { Rng } from './rng';
 import { clamp, type V2 } from './vec';
@@ -746,8 +747,12 @@ export class Terrain {
     return true;
   }
 
-  /** Cover level an infantry/crew unit standing here gets from terrain (0 none, 1 light, 2 heavy). */
-  coverAt(x: number, z: number): 0 | 1 | 2 {
+  /**
+   * Cover an infantry/crew unit standing here gets from terrain: 0 none, 1 light (forest),
+   * 2 heavy (town), 3 = within 3 m of a building wall (garrison; directional, see buildings.ts).
+   */
+  coverAt(x: number, z: number): 0 | 1 | 2 | 3 {
+    if (nearWall(this, x, z)) return 3;
     const g = this.groundAt(x, z);
     if (g === Ground.Town) return 2;
     if (g === Ground.Forest) return 1;

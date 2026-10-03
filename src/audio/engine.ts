@@ -3,8 +3,9 @@ import type { World } from '../sim/world';
 import { onSettingsChange, settings, type Settings } from '../ui/settings';
 import { AlertWatcher } from './alerts';
 import { BattleListener } from './battle';
+import { FortuneWatch } from './fortune';
 import { Mixer, newReq, PRIO } from './mixer';
-import { Music, type MusicMode } from './music';
+import { Music, type MusicMode, type MusicMood } from './music';
 import { RECIPES, SOUND_IDS } from './recipes';
 
 export interface SessionOptions {
@@ -23,6 +24,7 @@ const TOTAL_BUFFERS = SOUND_IDS.reduce((n, id) => n + RECIPES[id].variants, 0);
 export class AudioSession {
   private battle: BattleListener | null = null;
   private alerts: AlertWatcher | null = null;
+  private fortune: FortuneWatch | null = null;
   private smooth = 0;
   private wasPaused = false;
   private costAcc = 0;
@@ -42,6 +44,7 @@ export class AudioSession {
     if (!this.battle) {
       this.battle = new BattleListener(mix);
       this.alerts = new AlertWatcher(mix, this.opts.playerId, this.opts.spectator, !this.opts.attract, w);
+      this.fortune = new FortuneWatch(this.opts.playerId, this.opts.spectator, this.opts.attract);
     }
     const battle = this.battle;
     battle.update(dt, w, rig, paused, feed);
@@ -53,7 +56,8 @@ export class AudioSession {
     const me = w.factions[this.opts.playerId];
     const over = !!w.result || (!this.opts.spectator && !this.opts.attract && !!me && !me.alive);
     const mode: MusicMode = this.opts.attract ? 'title' : over ? 'aftermath' : 'battle';
-    this.engine.drive(this.smooth, mode);
+    this.fortune!.update(dt, w, paused);
+    this.engine.drive(this.smooth, mode, this.fortune!);
     if (paused !== this.wasPaused) {
       this.wasPaused = paused;
       this.engine.setPaused(paused);
@@ -149,9 +153,10 @@ export class AudioEngine {
     if (this.paused) this.setPaused(false);
   }
 
-  drive(intensity: number, mode: MusicMode): void {
+  drive(intensity: number, mode: MusicMode, mood?: MusicMood): void {
     if (!this.music) return;
     this.music.setMode(mode);
+    if (mood) this.music.setMood(mood);
     this.music.update(intensity);
   }
 
@@ -211,6 +216,8 @@ export class AudioEngine {
       zoomGain: L ? Math.round(L.zoomGain * 100) / 100 : 0,
       musicMode: this.music?.modeNow ?? null,
       musicLevel: this.music?.level ?? 0,
+      musicSamples: this.music?.samplesReady ?? 0,
+      musicNotesPerSec: this.music ? Math.round(this.music.notesPerSec * 10) / 10 : 0,
       paused: this.paused,
       alertCues: s?.alertCues ?? 0,
       updateMs: s ? Math.round(s.costMs * 1000) / 1000 : 0,

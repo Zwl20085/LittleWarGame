@@ -1,4 +1,3 @@
-import { cancelAir, requestAir } from './air';
 import { cancelOrder } from './production';
 import type { Match } from './sim';
 import { resetOperation } from './doctrine';
@@ -26,13 +25,11 @@ export type Command =
   | { type: 'setShares'; shares: [number, number, number] }
   | { type: 'regroupSector'; sectorId: number }
   | { type: 'unitOrder'; unitIds: number[]; order: 'move' | 'moveHold' | 'attackMove' | 'retreat' | 'hold' | 'resume'; pos?: V2; queue?: boolean }
-  | { type: 'focus'; unitIds: number[]; targetId: number }
-  | { type: 'air'; missionId: string; pos: V2 }
-  | { type: 'cancelAir' };
+  | { type: 'focus'; unitIds: number[]; targetId: number };
 
 export type CommandFail =
   | 'FACTION_DEAD' | 'NOT_OWNER' | 'STALE_TARGET' | 'UNREACHABLE' | 'BAD_VALUE' | 'ROUTING'
-  | 'LOCKED' | 'BUSY' | 'INSUFFICIENT_M' | 'UNKNOWN_MISSION' | 'OUT_OF_BOUNDS' | 'NO_ORDER';
+  | 'LOCKED' | 'INSUFFICIENT_M' | 'OUT_OF_BOUNDS' | 'NO_ORDER';
 
 export interface CommandEnvelope {
   readonly commandId: number;
@@ -234,12 +231,6 @@ function apply(match: Match, env: CommandEnvelope): CommandOutcome {
       }
       return OK;
     }
-    case 'air': {
-      const r = requestAir(w, f, c.missionId, c.pos);
-      return r === null ? OK : fail(r);
-    }
-    case 'cancelAir':
-      return cancelAir(w, f) ? OK : fail('NO_ORDER');
   }
 }
 

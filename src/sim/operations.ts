@@ -1,6 +1,7 @@
 import type { Faction, Unit } from './types';
 import { dist, headingTo, type V2 } from './vec';
 import { enemyDistance } from './frontai';
+import { EAGER, eagerOn } from './strategyai';
 import type { World } from './world';
 
 /**
@@ -117,7 +118,7 @@ export function crowding(world: World, u: Unit): number {
 }
 
 const isRaider = (u: Unit): boolean => u.def.id === 'light_tank' || u.def.id === 'recon' || u.def.id === 'infantry' || u.def.id === 'motor_inf';
-const isGuard = (u: Unit): boolean => u.def.id === 'infantry' || u.def.id === 'motor_inf' || u.def.id === 'mg' || u.def.id === 'light_tank' || u.def.id === 'aa';
+const isGuard = (u: Unit): boolean => u.def.id === 'infantry' || u.def.id === 'motor_inf' || u.def.id === 'mg' || u.def.id === 'light_tank';
 
 /**
  * Faction-level operations (every sector think, cheap): keep a rear guard on our convoy routes
@@ -131,7 +132,10 @@ export function planOperations(world: World, f: Faction): void {
   // Rear guard: posts along our own convoy routes, filled from units far from the front.
   const route = ownConvoyRoute(world, f);
   const guards = mine.filter((u) => u.opRole === 'rearguard');
-  const wantGuards = contact && route.length ? Math.round(mine.length * OPS.rearGuardShare) : 0;
+  // Round 2: guards fired 1–2 % of the time; keep a small guard until our convoys are actually hit.
+  const raided = f.trucksUnderFire.some((h) => world.time - h.at < EAGER.rearGuardAlertS);
+  const share = eagerOn() && !raided ? EAGER.rearGuardQuiet : OPS.rearGuardShare;
+  const wantGuards = contact && route.length ? Math.round(mine.length * share) : 0;
   if (guards.length < wantGuards) {
     const pool = mine.filter((u) => u.opRole === 'line' && !u.spearhead && !u.manual && isGuard(u) && u.behavior === 'advance')
       .sort((a, b) => enemyDistance(world, f.id, b.pos) - enemyDistance(world, f.id, a.pos));

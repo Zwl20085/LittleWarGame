@@ -79,9 +79,6 @@ export class InputController {
     } else if (m.kind === 'sectorTarget') {
       this.ctx.issue({ type: 'setSectorTarget', sectorId: m.sectorId, pos: p });
       this.ctx.renderer.orderMarker(p, '#f4ecd9');
-    } else if (m.kind === 'air') {
-      this.ctx.issue({ type: 'air', missionId: m.missionId, pos: p });
-      this.ctx.renderer.orderMarker(p, '#e0c070');
     }
   }
 

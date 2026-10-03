@@ -5,8 +5,7 @@ import type { Match } from '../sim/sim';
 export type InputMode =
   | { kind: 'normal' }
   | { kind: 'attackMove' }
-  | { kind: 'sectorTarget'; sectorId: number }
-  | { kind: 'air'; missionId: string };
+  | { kind: 'sectorTarget'; sectorId: number };
 
 /** Shared state between the loop, input handling and HUD panels. */
 export interface GameContext {

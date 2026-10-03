@@ -46,26 +46,6 @@ export interface WeaponDef {
   readonly muzzleSpeed: number;
   readonly minElevationDeg: number;
   readonly maxElevationDeg: number;
-  readonly airRange: number;
-  readonly airDamage: number;
-}
-
-export interface AirMissionDef {
-  readonly id: string;
-  readonly cost_p: number;
-  readonly cost_m: number;
-  readonly prepare_seconds: number;
-  readonly unlock_seconds: number;
-  readonly hp: number;
-  readonly speed_mps: number;
-  readonly vision_duration_seconds?: number;
-  readonly vision_strip_width_m?: number;
-  readonly shots?: number;
-  readonly shot_interval_seconds?: number;
-  readonly damage?: number;
-  readonly blast_radius_m?: number;
-  readonly suppression?: number;
-  readonly lateral_scatter_sigma_m?: number;
 }
 
 /** Shape of docs/data/rules.json (only the fields the sim reads are typed strictly). */
@@ -146,6 +126,8 @@ export interface Rules {
     readonly command_empty_decay_progress_seconds_per_second: number;
     readonly eligible_capture_hp_ratio: number;
     readonly eliminated_evacuation_seconds: number;
+    /** Enemy combat units within this distance of the capital stop its roll-outs (besieged). */
+    readonly siege_blocks_production_radius_m?: number;
   };
   readonly supply: {
     readonly city_local_radius_m: number;
@@ -180,11 +162,6 @@ export interface Rules {
     readonly safe_morale_regen_per_second: number;
     readonly city_morale_regen_per_second: number;
     readonly auto_retreat_hp_ratio: number;
-  };
-  readonly air: {
-    readonly cooldown_seconds: number;
-    readonly cruise_above_map_max_m: number;
-    readonly missions: AirMissionDef[];
   };
   readonly information: { readonly enemy_memory_seconds: number };
   readonly manual_control: {

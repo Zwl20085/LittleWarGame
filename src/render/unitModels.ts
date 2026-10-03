@@ -9,7 +9,7 @@ import { PAL } from './palette';
  */
 export const SOLDIER_SCALE = 2.9;
 export const VEHICLE_SCALE = 1.75;
-/** Crew-served guns (mg, at_gun, mortar, howitzer, aa); crew slots scale with the gun. */
+/** Crew-served guns (mg, at_gun, mortar, howitzer); crew slots scale with the gun. */
 export const GUN_SCALE = 1.4;
 
 const PAINT_K = 0.28;
@@ -77,8 +77,14 @@ function soldierGeo(kneel: boolean, recon: boolean): THREE.BufferGeometry {
   const [bodyC, bodyT] = uniform(1, recon);
   const [helC, helT] = uniform(0.75, recon);
   const y = kneel ? -0.3 : 0;
+  // Every soldier geometry carries leg swing weights (the soldier material reads them).
+  k.b.withSwing();
   if (kneel) k.box(0.28, 0.44, 0.34, 0, 0.22, 0, legC, legT);
-  else k.box(0.28, 0.8, 0.34, 0, 0.4, 0, legC, legT);
+  else {
+    // Two legs that the soldier shader swings in opposition (swing ±1) while walking.
+    k.b.add(BOX, trs(0, 0.4, -0.09, 0, 0, 0, 0.26, 0.8, 0.15), legC, legT, 1);
+    k.b.add(BOX, trs(0, 0.4, 0.09, 0, 0, 0, 0.26, 0.8, 0.15), legC, legT, -1);
+  }
   k.box(0.32, 0.62, 0.46, 0, 1.1 + y, 0, bodyC, bodyT);
   k.geo(HEAD, trs(0, 1.55 + y, 0), PAL.skin);
   k.geo(HELMET, trs(0, 1.58 + y, 0), helC, helT);
@@ -214,11 +220,6 @@ function crewGunGeo(id: string): THREE.BufferGeometry {
   } else if (id === 'mortar') {
     k.box(0.8, 0.1, 0.8, 0, 0.05, 0, steel);
     barrel(k.child(trs(-0.2, 0.15, 0, 0, 0, 1.0)), 1.4, 0.09, steel, 0);
-  } else if (id === 'aa') {
-    k.cyl(1.0, 1.2, 0.4, 10, 0, 0, 0, pc, pt);
-    k.box(0.9, 0.7, 1.2, 0, 0.9, 0, pc, pt);
-    barrel(k.child(trs(0, 0.9, 0, 0, 0, 0.7)), 3.0, 0.08, steel, 0, true);
-    k.box(0.5, 0.15, 1.25, 0, 1.15, 0, ZERO, 1);
   } else {
     const big = id === 'howitzer';
     const len = big ? 3.6 : 3.0;
@@ -292,7 +293,20 @@ export interface ModelSpec {
 
 const CREW_SPOTS: [number, number, boolean][] = [[-1.4, 1.2, true], [-1.6, -1.1, false], [-2.6, 0.4, true], [-0.6, -1.8, false], [-2.8, -1.4, true]];
 
+const specCache = new Map<string, ModelSpec>();
+
+/** Model spec per unit type (shared, read-only: views of one type share one object). */
 export function modelSpec(unitType: string, fixed: boolean): ModelSpec {
+  const key = fixed ? `fixed:${unitType}` : unitType;
+  let spec = specCache.get(key);
+  if (!spec) {
+    spec = buildSpec(unitType, fixed);
+    specCache.set(key, spec);
+  }
+  return spec;
+}
+
+function buildSpec(unitType: string, fixed: boolean): ModelSpec {
   const base = { pivot: [0, 0, 0] as [number, number, number], scale: 1, vehicle: false, crew: [], soldier: 'soldier' as const, wreck: false, top: 7 };
   if (fixed) return { ...base, body: 'bunker', turret: null, wreck: true, top: 8 };
   switch (unitType) {
@@ -302,7 +316,7 @@ export function modelSpec(unitType: string, fixed: boolean): ModelSpec {
     }
     case 'supply_truck':
       return { ...base, body: 'truck', turret: null, scale: VEHICLE_SCALE, vehicle: true, wreck: true, top: 9 };
-    case 'mg': case 'at_gun': case 'mortar': case 'howitzer': case 'aa':
+    case 'mg': case 'at_gun': case 'mortar': case 'howitzer':
       return { ...base, body: null, turret: `gun:${unitType}`, scale: GUN_SCALE, crew: CREW_SPOTS.slice(0, unitType === 'howitzer' ? 5 : 4), wreck: true, top: 8 };
     default:
       return { ...base, body: null, turret: null, soldier: unitType === 'recon' ? 'soldierRecon' : 'soldier' };

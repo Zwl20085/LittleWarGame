@@ -31,8 +31,6 @@ function parseWeapon(row: CsvRow): WeaponDef {
     muzzleSpeed: num(row, 'muzzle_speed_mps'),
     minElevationDeg: num(row, 'min_elevation_deg'),
     maxElevationDeg: num(row, 'max_elevation_deg'),
-    airRange: num(row, 'air_range_m'),
-    airDamage: num(row, 'air_damage'),
   };
   if (w.range < w.minRange) throw new Error(`weapons line ${row.__line}: range_m < min_range_m`);
   if (w.interval <= 0) throw new Error(`weapons line ${row.__line}: interval_seconds must be > 0`);

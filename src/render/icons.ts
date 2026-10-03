@@ -107,8 +107,6 @@ export function unitIconCanvas(unitType: string, color: string, roman: string, g
       g.beginPath(); g.arc(cx, B - 10, 6, 0, Math.PI * 2); g.stroke(); line(g, cx, B - 16, cx, T + 2); line(g, cx - 7, T + 9, cx, T + 2); line(g, cx + 7, T + 9, cx, T + 2); break;
     case 'howitzer':
       g.beginPath(); g.arc(cx, cy, 9, 0, Math.PI * 2); g.fill(); break;
-    case 'aa':
-      g.beginPath(); g.arc(cx, B + 4, 26, Math.PI * 1.15, Math.PI * 1.85); g.stroke(); line(g, cx, B - 4, cx, T + 4); break;
     case 'light_tank': case 'medium_tank': case 'heavy_tank': {
       g.beginPath(); g.ellipse(cx, cy, 26, 11, 0, 0, Math.PI * 2); g.stroke();
       if (unitType !== 'light_tank') { g.beginPath(); g.ellipse(cx, cy, 16, 5, 0, 0, Math.PI * 2); g.stroke(); }

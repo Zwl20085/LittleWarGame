@@ -66,7 +66,7 @@ export function recordShot(s: MatchStats, u: Unit): void {
   row(s, u.owner, u.def.id).shots++;
 }
 
-/** `src` = attacker unit type ('air' for aircraft); `srcOwner` = attacking faction. */
+/** `src` = attacker unit type; `srcOwner` = attacking faction. */
 export function recordDamage(s: MatchStats, srcOwner: number, src: string, victim: Unit, hp: number, killed: boolean): void {
   const vt = victim.fixed ? 'fixed' : victim.def.id;
   const a = row(s, srcOwner, src);

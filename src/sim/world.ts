@@ -9,13 +9,26 @@ import { generateMap } from './mapgen';
 import type { FrontInfo } from './frontai';
 import type { BatteryReveal } from './operations';
 import { createStats, type MatchStats } from './stats';
+import { createBattleLog, type BattleLog } from './events';
 import type {
-  Faction, Fort, FxEvent, LogEntry, MatchConfig, MatchResult, Objective, Plane, Projectile, Unit, Personality,
+  Faction, Fort, FxEvent, LogEntry, MatchConfig, MatchResult, Objective, Projectile, Unit, Personality,
 } from './types';
 import type { V2 } from './vec';
 import { DEG } from './vec';
 
-export const FACTION_COLORS = ['#3D78A8', '#BA7D34', '#856DA8', '#3F8B83', '#A8457A', '#5FA8B8'];
+/** Shallow equality of two flat note-parameter records (no JSON round trip). */
+function sameParams(a: Record<string, string | number>, b: Record<string, string | number>): boolean {
+  let na = 0;
+  for (const k in a) {
+    na++;
+    if (a[k] !== b[k]) return false;
+  }
+  let nb = 0;
+  for (const _ in b) nb++;
+  return na === nb;
+}
+
+export const FACTION_COLORS =['#3D78A8', '#BA7D34', '#856DA8', '#3F8B83', '#A8457A', '#5FA8B8'];
 export const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI'];
 const PERSONALITIES: Personality[] = ['balanced', 'armor', 'infantry', 'mechanized', 'artillery'];
 
@@ -32,10 +45,14 @@ export class World {
   readonly map: MapDef;
   readonly terrain: Terrain;
   readonly units = new Map<number, Unit>();
+  /**
+   * Units as a flat array for the per-tick loops (Map iteration is several times slower).
+   * Spawned units are appended; `removeDead()` compacts it. May contain hp ≤ 0 units until then.
+   */
+  readonly aliveUnits: Unit[] = [];
   readonly factions: Faction[] = [];
   readonly objectives: Objective[] = [];
   readonly projectiles: Projectile[] = [];
-  readonly planes: Plane[] = [];
   readonly forts: Fort[] = [];
   readonly fx: FxEvent[] = [];
   readonly log: LogEntry[] = [];
@@ -66,6 +83,8 @@ export class World {
   result: MatchResult | null = null;
   /** Numeric analysis ledger (never read by the AI). */
   stats: MatchStats = createStats(0);
+  /** Battle-event log: decisions, engagements, captures (never read by the AI; see events.ts). */
+  readonly battle: BattleLog = createBattleLog();
   private nextId = 1;
   private readonly navCache = new Map<number, NavGrid>();
 
@@ -135,7 +154,7 @@ export class World {
     const since = this.tick - 5 * this.tickHz;
     for (let i = this.log.length - 1; i >= 0 && this.log[i].tick >= since; i--) {
       const l = this.log[i];
-      if (l.faction === faction && l.key === key && JSON.stringify(l.params) === JSON.stringify(params)) return;
+      if (l.faction === faction && l.key === key && sameParams(l.params, params)) return;
     }
     this.log.push({ tick: this.tick, key, params, faction, severity });
     if (this.log.length > 400) this.log.splice(0, this.log.length - 400);
@@ -234,13 +253,25 @@ export class World {
       opTarget: null,
       opUntil: 0,
       salvos: 0,
+      pathPartial: false,
+      terrainMul: 1,
+      terrainMulAt: -1,
+      legCheckIdx: -1,
+      legClear: false,
+      progressPos: { ...pos },
+      progressAt: this.time,
     };
     this.units.set(u.id, u);
+    this.aliveUnits.push(u);
     return u;
   }
 
   removeDead(): void {
     for (const [id, u] of this.units) if (u.hp <= 0) this.units.delete(id);
+    const list = this.aliveUnits;
+    let n = 0;
+    for (let i = 0; i < list.length; i++) if (list[i].hp > 0) list[n++] = list[i];
+    list.length = n;
   }
 
   /** Point of a faction's city HQ. */

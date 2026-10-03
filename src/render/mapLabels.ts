@@ -39,6 +39,8 @@ const P = { x: 0, y: 0 };
 export class MapLabels {
   private readonly features: MapFeature[];
   private readonly declutter = new Declutter();
+  /** Measured text widths by font/spacing/text (perf: no measureText per label per frame). */
+  private readonly widths = new Map<string, number>();
 
   constructor(map: MapDef, private readonly terrain: Terrain) {
     const list = [...(map.features ?? [])];
@@ -71,8 +73,16 @@ export class MapLabels {
       const raw = f.name[lang] ?? f.name.en;
       const text = st.caps && lang === 'en' ? raw.toUpperCase() : raw;
       g.font = st.font(px);
-      (g as CanvasRenderingContext2D & { letterSpacing?: string }).letterSpacing = `${(st.spacing * px).toFixed(1)}px`;
-      const tw = g.measureText(text).width;
+      const spacing = `${(st.spacing * px).toFixed(1)}px`;
+      (g as CanvasRenderingContext2D & { letterSpacing?: string }).letterSpacing = spacing;
+      // measureText is the most expensive call per label: widths only depend on font, spacing, text.
+      const wk = `${g.font}|${spacing}|${text}`;
+      let tw = this.widths.get(wk);
+      if (tw === undefined) {
+        tw = g.measureText(text).width;
+        if (this.widths.size > 4000) this.widths.clear();
+        this.widths.set(wk, tw);
+      }
       // Settlements: label above the centre; relief: under the peak symbol.
       const ly = st.symbol === 'peak' ? P.y + px * 0.9 : st.symbol === 'city' || st.symbol === 'town' ? P.y - px * 1.2 : P.y;
       const x0 = P.x - tw / 2 - 4;

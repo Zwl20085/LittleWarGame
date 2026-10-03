@@ -8,10 +8,13 @@ export interface Settings {
   readonly volMusic: number;
   readonly volSfx: number;
   readonly muted: boolean;
+  /** Render quality: 'auto' lowers shadows/resolution when frames are slow (src/render/quality). */
+  readonly quality: 'auto' | 'high' | 'medium' | 'low';
 }
 
 const KEY = 'lwg.settings';
-const DEFAULTS: Settings = { uiScale: 1, smoke: 1, shake: true, volMaster: 0.8, volMusic: 0.55, volSfx: 0.8, muted: false };
+const DEFAULTS: Settings = { uiScale: 1, smoke: 1, shake: true, volMaster: 0.8, volMusic: 0.55, volSfx: 0.8, muted: false, quality: 'auto' };
+const QUALITIES: readonly Settings['quality'][] = ['auto', 'high', 'medium', 'low'];
 
 const clamp = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v));
 const vol = (v: unknown, d: number): number => (Number.isFinite(Number(v ?? d)) ? clamp(Number(v ?? d), 0, 1) : d);
@@ -29,6 +32,7 @@ function load(): Settings {
       volMusic: vol(v.volMusic, DEFAULTS.volMusic),
       volSfx: vol(v.volSfx, DEFAULTS.volSfx),
       muted: typeof v.muted === 'boolean' ? v.muted : DEFAULTS.muted,
+      quality: QUALITIES.includes(v.quality as Settings['quality']) ? (v.quality as Settings['quality']) : DEFAULTS.quality,
     };
   } catch {
     return DEFAULTS;

@@ -78,6 +78,8 @@ const LIFT = 3;
 const STEP = 6;
 /** Arrows keep at least this many screen pixels of body width at far zoom. */
 const MIN_PX = 9;
+/** Minimum real time between arrow geometry rebuilds. */
+const REBUILD_MIN_MS = 400;
 
 class Buf {
   readonly pos: number[] = [];
@@ -145,9 +147,16 @@ export class OpArrows {
       }
     }
     if (h === this.sig) return;
+    // Routes shift a little on every group think; rebuilding the geometry more than a few times
+    // a second is wasted work the eye cannot see.
+    const now = performance.now();
+    if (now - this.rebuiltAt < REBUILD_MIN_MS) return;
+    this.rebuiltAt = now;
     this.sig = h;
     this.rebuild(w, playerId, spectator);
   }
+
+  private rebuiltAt = -1e9;
 
   private rebuild(w: World, playerId: number, spectator: boolean): void {
     const b = new Buf();

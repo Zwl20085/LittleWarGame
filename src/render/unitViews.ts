@@ -3,10 +3,11 @@ import { aliveMembers } from '../sim/formulas';
 import { Ground } from '../sim/terrain';
 import type { Unit } from '../sim/types';
 import type { World } from '../sim/world';
-import { InstanceBatch, tintedMaterial } from './instancing';
+import { InstanceBatch, soldierMaterial, tintedMaterial } from './instancing';
 import { PAL } from './palette';
 import { choosePattern, crewSlot, slot, vhash, type Situation } from './formations';
 import { modelSpec, SOLDIER_SCALE, unitGeometry, VEHICLE_SCALE, type ModelSpec } from './unitModels';
+import { SC, snapSoldier, SOL_STRIDE, sortSlots, SS, step, stepSoldier, STRIDE_AMP, SV, SX, SZ, Trail, walkCap, wrapAngle } from './soldierMotion';
 
 /** Per-unit render state (no Three.js objects — everything is drawn through shared batches). */
 export interface UnitView {
@@ -14,11 +15,17 @@ export interface UnitView {
   readonly spec: ModelSpec;
   readonly color: THREE.Color;
   members: number;
-  bob: number;
   x: number;
   y: number;
   z: number;
+  /** Rendered hull/squad heading, interpolated from hFrom to the latest sim heading. */
   heading: number;
+  hFrom: number;
+  /** Rendered turret world yaw and where its interpolation started. */
+  turretYaw: number;
+  tFrom: number;
+  /** Sim tick of the last heading sample (a new tick restarts the interpolation). */
+  tick: number;
   turretRel: number;
   pitch: number;
   /** Gun recoil 0..1 (kicked by a big muzzle flash, springs back). */
@@ -28,10 +35,23 @@ export interface UnitView {
   /** Inside the camera frustum this frame. */
   onScreen: boolean;
   seen: number;
-  /** Soldier offsets from the unit centre in world axes (x,z pairs), eased between patterns. */
+  /** Crew: personal yaw jitter (x of each pair). */
   readonly offs: Float32Array;
   laidOut: boolean;
+  /** Squad: local formation slots (forward, right); crew: turret-space slots. */
   readonly goal: Float32Array;
+  /** Per-soldier locomotion state (soldierMotion SOL_STRIDE floats each). */
+  readonly sol: Float32Array;
+  /** Squad slots ordered front to back (one pass along the trail). */
+  readonly order: Uint8Array;
+  /** Squad marching path (slots behind the leader follow it). */
+  readonly trail: Trail | null;
+  /** Soldiers were drawn last frame (otherwise they snap to their slots on sight). */
+  drawn: boolean;
+  /** Seconds since the squad last moved (debounces one-tick stops at waypoints). */
+  still: number;
+  /** Smoothed squad ground speed (m/s). */
+  spd: number;
   pattern: string;
   patternN: number;
   patternFace: number;
@@ -83,6 +103,25 @@ const RING_COLOR = new THREE.Color('#f4ecd9');
 const CONVOY_LEAD = 6;
 const CONVOY_GAP = 12.5;
 const TRUCK_HALF = 2.4 * VEHICLE_SCALE;
+/** `?perf`: log the average unit-view update cost (ms) every PERF_WINDOW frames. */
+const PERF = typeof location !== 'undefined' && new URLSearchParams(location.search).has('perf');
+const PERF_WINDOW = 300;
+let perfAcc = 0;
+let perfFrames = 0;
+
+/**
+ * T(x,y,z)·Ry(a)·Rz(b)·S(s) into 16 floats of `te` at `o`, with the yaw given as (cos a, sin a)
+ * (soldiers keep their facing as a vector); small tilts use a Taylor expansion.
+ */
+function writeYZcs(te: Float32Array, o: number, x: number, y: number, z: number, c: number, sn: number, b: number, s: number): void {
+  const small = b > -0.2 && b < 0.2;
+  const cb = small ? 1 - b * b * 0.5 : Math.cos(b);
+  const sb = small ? b - (b * b * b) / 6 : Math.sin(b);
+  te[o] = c * cb * s; te[o + 1] = sb * s; te[o + 2] = -sn * cb * s; te[o + 3] = 0;
+  te[o + 4] = -c * sb * s; te[o + 5] = cb * s; te[o + 6] = sn * sb * s; te[o + 7] = 0;
+  te[o + 8] = sn * s; te[o + 9] = 0; te[o + 10] = c * s; te[o + 11] = 0;
+  te[o + 12] = x; te[o + 13] = y; te[o + 14] = z; te[o + 15] = 1;
+}
 
 /** Write T(x,y,z)·Ry(a)·Rz(b)·S(s) straight into a matrix. */
 function setYZ(m: THREE.Matrix4, x: number, y: number, z: number, a: number, b: number, s: number): THREE.Matrix4 {
@@ -98,6 +137,22 @@ function setYZ(m: THREE.Matrix4, x: number, y: number, z: number, a: number, b: 
   return m;
 }
 
+/** Interpolate angle a → b by t along the short way. */
+function lerpAngle(a: number, b: number, t: number): number {
+  return a + wrapAngle(b - a) * t;
+}
+
+/** Crew-served guns are manhandled: rendered traverse is capped (rad/s). */
+const GUN_TRAVERSE = 100 * (Math.PI / 180);
+/** A squad counts as halted only after this long without moving (s). */
+const HALT_AFTER = 0.4;
+/** A squad halted this long starts a fresh marching trail when it moves off (s). */
+const TRAIL_RESTART = 1.5;
+/** Smoothed speed (m/s) above which a soldier is drawn walking rather than standing/kneeling. */
+const WALKING = 0.3;
+/** Scratch: per-soldier slot targets (x, z pairs; squads of up to 128). */
+const _tgt = new Float32Array(256);
+
 /**
  * Draws every unit through a handful of InstancedMeshes (one per merged part geometry), with
  * interpolation, squad layout, crews around guns, brief casualties and burning wrecks.
@@ -109,6 +164,7 @@ export class UnitViews {
   private readonly batches = new Map<string, InstanceBatch>();
   private readonly wreckBatches = new Map<string, InstanceBatch>();
   private readonly material = tintedMaterial(0.9, 0.06);
+  private readonly soldierMaterial = soldierMaterial(0.9, 0.06);
   private readonly wreckMaterial = new THREE.MeshStandardMaterial({ color: PAL.wreck, roughness: 1 });
   private readonly rings: InstanceBatch;
   private readonly frustum = new THREE.Frustum();
@@ -136,7 +192,8 @@ export class UnitViews {
     let b = map.get(key);
     if (!b) {
       const soldier = key.startsWith('soldier');
-      b = new InstanceBatch(this.group, unitGeometry(key), wreck ? this.wreckMaterial : this.material, soldier ? 512 : 64);
+      const mat = wreck ? this.wreckMaterial : soldier ? this.soldierMaterial : this.material;
+      b = new InstanceBatch(this.group, unitGeometry(key), mat, soldier ? 512 : 64, true, soldier && !wreck);
       map.set(key, b);
     }
     return b;
@@ -152,12 +209,17 @@ export class UnitViews {
   }
 
   private create(u: Unit): UnitView {
+    const spec = modelSpec(u.def.id, u.fixed);
+    const n = Math.max(1, u.def.memberCount);
     const v: UnitView = {
-      id: u.id, spec: modelSpec(u.def.id, u.fixed), color: this.factionColor(u.owner),
-      members: u.def.kind === 'vehicle' ? 0 : u.def.memberCount, bob: Math.random() * 10,
-      x: u.pos.x, y: u.y, z: u.pos.z, heading: u.heading, turretRel: 0, pitch: 0, recoil: 0, visible: true, onScreen: true, seen: 0,
-      offs: new Float32Array(Math.max(1, u.def.memberCount) * 2), laidOut: false,
-      goal: new Float32Array(Math.max(1, u.def.memberCount) * 2), pattern: '', patternN: -1, patternFace: 0, settled: false,
+      id: u.id, spec, color: this.factionColor(u.owner),
+      members: u.def.kind === 'vehicle' ? 0 : u.def.memberCount,
+      x: u.pos.x, y: u.y, z: u.pos.z, heading: u.heading, hFrom: u.heading, turretYaw: u.turret, tFrom: u.turret, tick: -1,
+      turretRel: 0, pitch: 0, recoil: 0, visible: true, onScreen: true, seen: 0,
+      offs: new Float32Array(n * 2), laidOut: false,
+      goal: new Float32Array(n * 2), sol: new Float32Array(n * SOL_STRIDE), order: new Uint8Array(n),
+      trail: spec.body || spec.turret ? null : new Trail(), drawn: false, still: 0, spd: 0,
+      pattern: '', patternN: -1, patternFace: 0, settled: false,
       cache: new Float32Array(Math.max(1, u.def.memberCount) * 16), cacheKneel: new Uint8Array(Math.max(1, u.def.memberCount)),
       cacheN: -1, cacheSit: '', cacheX: 0, cacheZ: 0, cacheFace: 0, mounted: false, convoy: null,
     };
@@ -172,96 +234,129 @@ export class UnitViews {
 
   /**
    * Squad soldiers in a situation-dependent pattern (file on roads, wedge/teams/cluster when
-   * advancing, skirmish line facing the enemy when engaged) with stable personal jitter; slots
-   * ease toward their new place so pattern changes are smooth. Casualties stay briefly.
+   * advancing, skirmish line facing the enemy when engaged) with stable personal jitter. Each
+   * soldier walks to his own slot (soldierMotion): on the march, slots behind the leader follow
+   * the leader's path, so the squad wheels through turns instead of spinning rigidly.
    */
   private drawSquad(v: UnitView, u: Unit, dt: number, draw: boolean): void {
     const w = this.world;
     const alive = aliveMembers(u.def, u.hp, u.def.maxHp);
-    const offs = v.offs;
+    const sol = v.sol;
     while (v.members > alive && v.members > 0) {
       v.members--;
-      const wx = v.x + offs[v.members * 2];
-      const wz = v.z + offs[v.members * 2 + 1];
+      const o = v.members * SOL_STRIDE;
+      const wx = v.drawn ? sol[o + SX] : v.x;
+      const wz = v.drawn ? sol[o + SZ] : v.z;
       const y = w.terrain.heightAt(wx, wz) + CORPSE_LIFT;
       this.addCorpse({
         key: v.spec.soldier, m: setYZ(new THREE.Matrix4(), wx, y, wz, Math.random() * 6, Math.PI / 2, SOLDIER_SCALE),
         color: v.color, wreck: false, maxLife: 25, smoke: false, pos: new THREE.Vector3(wx, y, wz),
       });
     }
+    // The sim reports a single still tick at every waypoint: only a sustained stop is a halt.
+    const wasStill = v.still;
+    v.still = u.moving ? 0 : v.still + dt;
+    const moving = v.still < HALT_AFTER;
+    v.spd += (u.speedNow - v.spd) * Math.min(1, dt * 3);
+    // Unseen squads cost nothing more; soldiers snap into place when they come into view.
+    if (!draw) {
+      v.drawn = false;
+      return;
+    }
+    const trail = v.trail!;
+    if (!v.drawn || (u.moving && wasStill > TRAIL_RESTART)) trail.reset(v.x, v.z);
+    else if (u.moving) trail.push(v.x, v.z);
     const target = u.targetId !== null ? w.unitAlive(u.targetId) : null;
     const sit: Situation = u.moraleState === 'pinned' ? 'pinned'
-      : (target && !u.moving) || u.moraleState === 'suppressed' ? 'engaged'
-        : u.moving ? (w.terrain.groundAt(v.x, v.z) === Ground.Road ? 'road' : 'moving') : 'idle';
+      : (target && !moving) || u.moraleState === 'suppressed' ? 'engaged'
+        : moving ? (w.terrain.groundAt(v.x, v.z) === Ground.Road ? 'road' : 'moving') : 'idle';
     const face = target && (sit === 'engaged' || sit === 'pinned') ? Math.atan2(target.pos.z - v.z, target.pos.x - v.x) : v.heading;
+    // Halted squads re-face only on a real change (keeps the static matrix cache valid).
+    if (moving || !v.drawn || Math.abs(wrapAngle(face - v.patternFace)) > 0.04) v.patternFace = face;
     const pattern = choosePattern(u.vseed, sit);
-    if (v.laidOut && !draw) return;
-    const ease = v.laidOut ? 1 - Math.exp(-dt * 2.2) : 1;
-    v.laidOut = true;
     const n = v.members;
-    // Slot targets only change with pattern / facing / strength; easing is cheap.
-    if (pattern !== v.pattern || n !== v.patternN || Math.abs(face - v.patternFace) > 0.04) {
+    if (pattern !== v.pattern || n !== v.patternN) {
       v.pattern = pattern;
       v.patternN = n;
-      v.patternFace = face;
       v.settled = false;
-      const ca = Math.cos(face);
-      const sa = Math.sin(face);
       for (let k = 0; k < n; k++) {
         slot(pattern, k, n, u.vseed, _slot);
-        v.goal[k * 2] = ca * _slot[0] - sa * _slot[1];
-        v.goal[k * 2 + 1] = sa * _slot[0] + ca * _slot[1];
+        v.goal[k * 2] = _slot[0];
+        v.goal[k * 2 + 1] = _slot[1];
+        // Per-soldier constants: facing jitter and pose roll.
+        v.offs[k * 2] = vhash(u.vseed, k, 32) - 0.5;
+        v.offs[k * 2 + 1] = vhash(u.vseed, k, 31);
       }
+      sortSlots(v.goal, n, v.order);
     }
-    if (!v.settled) {
-      let err = 0;
-      for (let k = 0; k < n * 2; k++) {
-        const d = v.goal[k] - offs[k];
-        offs[k] += d * ease;
-        err = Math.max(err, Math.abs(d));
-      }
-      v.settled = err < 0.02;
-    }
-    v.bob += dt * (u.moving ? 9 : 0);
-    if (!draw) return;
-    const kneelKey = 'soldierKneel';
+    const restFace = v.patternFace;
     const standB = this.batch(v.spec.soldier);
-    const kneelB = this.batch(kneelKey);
-    // Static squads (settled, not moving) reuse last frame's matrices.
-    const fresh = v.settled && !u.moving && v.cacheN === n && v.cacheSit === sit && v.cacheX === v.x && v.cacheZ === v.z && v.cacheFace === face;
-    if (fresh) {
+    const kneelB = this.batch('soldierKneel');
+    // Static squads (everyone in place, nothing changed) reuse last frame's matrices.
+    if (v.settled && v.drawn && !moving && v.cacheN === n && v.cacheSit === sit && v.cacheX === v.x && v.cacheZ === v.z && v.cacheFace === restFace) {
       for (let k = 0; k < n; k++) (v.cacheKneel[k] ? kneelB : standB).pushArray(v.cache, k * 16, v.color);
       return;
     }
+    const snap = !v.drawn;
+    v.drawn = true;
     const terrain = w.terrain;
-    const jitterAmp = sit === 'engaged' || sit === 'pinned' ? 0.35 : u.moving ? 0.2 : 0.9;
+    const jitterAmp = sit === 'engaged' || sit === 'pinned' ? 0.35 : moving ? 0.2 : 0.9;
+    const ca = Math.cos(moving ? v.heading : restFace);
+    const sa = Math.sin(moving ? v.heading : restFace);
+    const cap = walkCap(v.spd);
+    let settled = !moving;
+    if (moving) trail.placeAll(v.x, v.z, ca, sa, v.goal, v.order, n, _tgt);
+    else {
+      for (let k = 0; k < n; k++) {
+        const fwd = v.goal[k * 2];
+        const right = v.goal[k * 2 + 1];
+        _tgt[k * 2] = v.x + ca * fwd - sa * right;
+        _tgt[k * 2 + 1] = v.z + sa * fwd + ca * right;
+      }
+    }
     for (let k = 0; k < n; k++) {
-      const wx = v.x + offs[k * 2];
-      const wz = v.z + offs[k * 2 + 1];
-      const r = vhash(u.vseed, k, 31);
+      const tx = _tgt[k * 2];
+      const tz = _tgt[k * 2 + 1];
+      const rest = restFace - v.offs[k * 2] * jitterAmp;
+      if (snap) snapSoldier(sol, k, tx, tz, rest);
+      stepSoldier(sol, k, tx, tz, rest, cap, dt);
+      const stride = step.stride;
+      if (!step.settled) settled = false;
+      const o = k * SOL_STRIDE;
+      const sx = sol[o + SX];
+      const sz = sol[o + SZ];
+      const sv = sol[o + SV];
+      const r = v.offs[k * 2 + 1];
       let kneel = false;
       let tilt = 0;
       let lift = 0;
-      if (sit === 'pinned' || (sit === 'engaged' && r > 0.6 && r < 0.85)) {
+      if (sv > WALKING) {
+        // Walking: lean into the stride, rise as the legs pass.
+        const amp = Math.min(1, sv / 1.2);
+        tilt = -0.12 * amp;
+        lift = (amp * STRIDE_AMP - Math.abs(stride)) * 0.12 * SOLDIER_SCALE;
+      } else if (sit === 'pinned' || (sit === 'engaged' && r > 0.6 && r < 0.85)) {
         tilt = -1.25;
         lift = 0.2 * SOLDIER_SCALE;
       } else if ((sit === 'engaged' && r <= 0.6) || (sit === 'idle' && r < 0.3)) kneel = true;
-      else if (u.moving) {
-        tilt = -0.12;
-        lift = Math.abs(Math.sin(v.bob + k * 1.7)) * 0.09 * SOLDIER_SCALE;
-      }
-      const yawJ = (vhash(u.vseed, k, 32) - 0.5) * jitterAmp;
-      const y = terrain.heightAt(wx, wz) + lift;
-      setYZ(_m, wx, y, wz, -face + yawJ, tilt, SOLDIER_SCALE);
-      v.cache.set(_m.elements, k * 16);
+      const y = terrain.heightAt(sx, sz) + lift;
       v.cacheKneel[k] = kneel ? 1 : 0;
-      (kneel ? kneelB : standB).push(_m, v.color);
+      if (moving) {
+        // Marching squads never use the cache: write straight into the batch.
+        const b = kneel ? kneelB : standB;
+        const at = b.next(v.color, kneel ? 0 : stride); // may grow the batch: read matrices after
+        writeYZcs(b.matrices, at, sx, y, sz, sol[o + SC], -sol[o + SS], tilt, SOLDIER_SCALE);
+      } else {
+        writeYZcs(v.cache, k * 16, sx, y, sz, sol[o + SC], -sol[o + SS], tilt, SOLDIER_SCALE);
+        (kneel ? kneelB : standB).pushArray(v.cache, k * 16, v.color, kneel ? 0 : stride);
+      }
     }
+    v.settled = settled;
     v.cacheN = n;
     v.cacheSit = sit;
     v.cacheX = v.x;
     v.cacheZ = v.z;
-    v.cacheFace = face;
+    v.cacheFace = restFace;
   }
 
   /** A truck on the ground at (x, z), pitched to the slope along its heading. */
@@ -319,9 +414,10 @@ export class UnitViews {
     for (let k = 0; k < v.members; k++) {
       const jx = (vhash(v.id, k, 61) - 0.5) * 4;
       const jz = (vhash(v.id, k, 62) - 0.5) * 4;
-      v.offs[k * 2] = (k < half ? lx : c[0] - v.x) + jx;
-      v.offs[k * 2 + 1] = (k < half ? lz : c[1] - v.z) + jz;
+      snapSoldier(v.sol, k, (k < half ? v.x + lx : c[0]) + jx, (k < half ? v.z + lz : c[1]) + jz, v.heading);
     }
+    v.trail?.reset(v.x, v.z);
+    v.drawn = true;
     v.laidOut = true;
     v.settled = false;
     v.pattern = '';
@@ -348,7 +444,7 @@ export class UnitViews {
     return out.multiplyMatrices(body, _t);
   }
 
-  private drawHardware(v: UnitView, u: Unit, draw: boolean): void {
+  private drawHardware(v: UnitView, u: Unit, dt: number, draw: boolean): void {
     const spec = v.spec;
     // Crew casualties (guns keep their crew in turret space; losses fall where they stood).
     const alive = spec.crew.length ? Math.min(spec.crew.length, aliveMembers(u.def, u.hp, u.def.maxHp)) : 0;
@@ -365,12 +461,18 @@ export class UnitViews {
         color: v.color, wreck: false, maxLife: 25, smoke: false, pos: p,
       });
     }
+    if (!draw || !this.showSoldiers) v.drawn = false;
     if (!draw) return;
     if (spec.body) this.batch(spec.body).push(body, v.color);
     if (spec.turret) this.batch(spec.turret).push(turret, v.color);
-    if (!this.showSoldiers) return;
+    if (!this.showSoldiers || spec.crew.length === 0) return;
     const kneelCrew = this.batch('soldierKneel');
     const standCrew = this.batch('soldier');
+    const snap = !v.drawn;
+    v.drawn = true;
+    v.spd += (u.speedNow - v.spd) * Math.min(1, dt * 3);
+    const cap = walkCap(v.spd);
+    const sol = v.sol;
     for (let k = 0; k < v.members && k < spec.crew.length; k++) {
       // Crew slots are fixed per gun (computed once into goal/cacheKneel).
       if (!v.laidOut) {
@@ -383,19 +485,30 @@ export class UnitViews {
         }
         v.laidOut = true;
       }
+      // Slot in turret space around the gun's (unrecoiled) pivot at the unit origin, so the
+      // crew walk around with the gun as it traverses instead of being carried rigidly.
       const te = turret.elements;
       const cx = v.goal[k * 2];
       const cz = v.goal[k * 2 + 1];
-      const px = te[0] * cx + te[8] * cz + te[12];
-      const pz = te[2] * cx + te[10] * cz + te[14];
-      // Crew stand upright and face the gun's line of fire.
-      setYZ(_m, px, this.world.terrain.heightAt(px, pz), pz, -v.heading + v.turretRel + v.offs[k * 2], 0, SOLDIER_SCALE);
-      (v.cacheKneel[k] ? kneelCrew : standCrew).push(_m, v.color);
+      const px = te[0] * cx + te[8] * cz + v.x;
+      const pz = te[2] * cx + te[10] * cz + v.z;
+      // At their posts the crew face the gun's line of fire.
+      const rest = v.turretYaw - v.offs[k * 2];
+      if (snap) snapSoldier(sol, k, px, pz, rest);
+      stepSoldier(sol, k, px, pz, rest, cap, dt);
+      const o = k * SOL_STRIDE;
+      const sx = sol[o + SX];
+      const sz = sol[o + SZ];
+      const kneel = v.cacheKneel[k] === 1 && sol[o + SV] <= WALKING;
+      const b = kneel ? kneelCrew : standCrew;
+      const at = b.next(v.color, kneel ? 0 : step.stride);
+      writeYZcs(b.matrices, at, sx, this.world.terrain.heightAt(sx, sz), sz, sol[o + SC], -sol[o + SS], 0, SOLDIER_SCALE);
     }
   }
 
   private toWreck(v: UnitView): void {
     const spec = v.spec;
+    if (!v.onScreen) v.y = this.world.terrain.heightAt(v.x, v.z);
     if (v.mounted && v.convoy) {
       // Shot up on the road: both trucks burn out.
       const c = v.convoy;
@@ -411,8 +524,8 @@ export class UnitViews {
     if (!spec.wreck) {
       // Remaining squad members fall where they stood.
       for (let k = 0; k < v.members; k++) {
-        const x = v.x + v.offs[k * 2];
-        const z = v.z + v.offs[k * 2 + 1];
+        const x = v.drawn ? v.sol[k * SOL_STRIDE + SX] : v.x;
+        const z = v.drawn ? v.sol[k * SOL_STRIDE + SZ] : v.z;
         const y = this.world.terrain.heightAt(x, z) + CORPSE_LIFT;
         this.addCorpse({ key: spec.soldier, m: setYZ(new THREE.Matrix4(), x, y, z, Math.random() * 6, Math.PI / 2, SOLDIER_SCALE), color: v.color, wreck: false, maxLife: 25, smoke: false, pos: new THREE.Vector3(x, y, z) });
       }
@@ -429,7 +542,52 @@ export class UnitViews {
     }
   }
 
+  /**
+   * Hull/squad heading and turret yaw interpolated across the sim tick (the sim turns in
+   * 20 Hz steps, up to 18° per tick for infantry). Crew-served guns are manhandled: their
+   * rendered traverse is additionally rate-capped.
+   */
+  private interpolateFacing(v: UnitView, u: Unit, alpha: number, dt: number, tick: number): void {
+    if (v.tick !== tick) {
+      v.tick = tick;
+      v.hFrom = v.heading;
+      v.tFrom = v.turretYaw;
+    }
+    const turret = v.spec.turret !== null;
+    // Fast path: nothing is turning (most units, most frames).
+    if (v.heading === u.heading && v.hFrom === u.heading && (!turret || (v.turretYaw === u.turret && v.tFrom === u.turret))) return;
+    let h = lerpAngle(v.hFrom, u.heading, alpha);
+    let ty = turret ? lerpAngle(v.tFrom, u.turret, alpha) : u.turret;
+    if (v.spec.crew.length) {
+      const lim = GUN_TRAVERSE * dt;
+      const dh = wrapAngle(h - v.heading);
+      const dtur = wrapAngle(ty - v.turretYaw);
+      h = v.heading + (dh > lim ? lim : dh < -lim ? -lim : dh);
+      ty = v.turretYaw + (dtur > lim ? lim : dtur < -lim ? -lim : dtur);
+    }
+    v.heading = h;
+    v.turretYaw = ty;
+    if (v.spec.turret && !u.fixed) v.turretRel = -(ty - h);
+  }
+
   sync(alpha: number, dt: number, camera: THREE.OrthographicCamera, playerId: number, fog: boolean): void {
+    if (!PERF) {
+      this.syncAll(alpha, dt, camera, playerId, fog);
+      return;
+    }
+    const t0 = performance.now();
+    this.syncAll(alpha, dt, camera, playerId, fog);
+    perfAcc += performance.now() - t0;
+    if (++perfFrames === PERF_WINDOW) {
+      const avg = perfAcc / PERF_WINDOW;
+      console.log(`[perf] unitViews.sync avg ${avg.toFixed(3)} ms over ${PERF_WINDOW} frames (${this.views.size} units)`);
+      (globalThis as { __unitPerf?: number[] }).__unitPerf?.push(avg);
+      perfAcc = 0;
+      perfFrames = 0;
+    }
+  }
+
+  private syncAll(alpha: number, dt: number, camera: THREE.OrthographicCamera, playerId: number, fog: boolean): void {
     const w = this.world;
     const frame = ++this.frameNo;
     _m.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
@@ -446,17 +604,19 @@ export class UnitViews {
       v.visible = !(fogOn && u.owner !== playerId && !w.visibleTo[playerId]?.has(u.id));
       v.x = u.prev.x + (u.pos.x - u.prev.x) * alpha;
       v.z = u.prev.z + (u.pos.z - u.prev.z) * alpha;
-      v.y = w.terrain.heightAt(v.x, v.z);
-      v.heading = u.heading;
-      if (v.spec.turret && !u.fixed) v.turretRel = -(u.turret - u.heading);
+      this.interpolateFacing(v, u, alpha, dt, w.tick);
+      // Cull with last frame's height (the sphere is generous); ground only what is on screen.
       _sphere.center.set(v.x, v.y, v.z);
       v.onScreen = this.frustum.intersectsSphere(_sphere);
+      if (v.onScreen) v.y = w.terrain.heightAt(v.x, v.z);
       const draw = v.visible && v.onScreen;
       if (draw && v.spec.vehicle) {
         // Pitch to the slope along the hull.
         const half = 2.4 * VEHICLE_SCALE;
-        const ahead = w.terrain.heightAt(v.x + Math.cos(u.heading) * half, v.z + Math.sin(u.heading) * half);
-        const behind = w.terrain.heightAt(v.x - Math.cos(u.heading) * half, v.z - Math.sin(u.heading) * half);
+        const ch = Math.cos(v.heading);
+        const sh = Math.sin(v.heading);
+        const ahead = w.terrain.heightAt(v.x + ch * half, v.z + sh * half);
+        const behind = w.terrain.heightAt(v.x - ch * half, v.z - sh * half);
         v.pitch = Math.atan2(ahead - behind, half * 2);
       }
       if (v.recoil > 0) v.recoil = Math.max(0, v.recoil - dt * 2.2);
@@ -464,7 +624,7 @@ export class UnitViews {
         const g = w.terrain.groundAt(v.x, v.z);
         if (g !== Ground.Road && g !== Ground.Water && g !== Ground.Ford) this.onTrackDust(v.x, v.y, v.z, u.heading);
       }
-      if (v.spec.body || v.spec.turret) this.drawHardware(v, u, draw);
+      if (v.spec.body || v.spec.turret) this.drawHardware(v, u, dt, draw);
       else if (u.mounted) this.drawConvoy(v, u, dt, draw);
       else {
         if (v.mounted) this.dismount(v);
@@ -476,11 +636,11 @@ export class UnitViews {
         this.rings.push(_m, RING_COLOR);
       }
     }
-    for (const [id, v] of this.views) {
+    for (const v of this.views.values()) {
       if (v.seen === frame) continue;
       if (v.visible) this.toWreck(v);
-      this.views.delete(id);
-      this.selected.delete(id);
+      this.views.delete(v.id);
+      this.selected.delete(v.id);
     }
     this.syncCorpses(dt);
     for (const b of this.batches.values()) b.end();

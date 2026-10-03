@@ -27,7 +27,8 @@ bus.onResult = (env, out) => post({ t: 'cmdResult', env, out });
 function send(ran: number): void {
   if (!match) return;
   const snap = makeSnapshot(match, cursor, observer);
-  const transfer: Transferable[] = [snap.units.buffer];
+  const o = snap.objectives;
+  const transfer: Transferable[] = [snap.units.buffer, o.owner.buffer, o.contested.buffer, o.activeAt.buffer, o.leader.buffer, o.progress.buffer];
   if (snap.front) transfer.push(snap.front.owner.buffer);
   if (snap.frontView) transfer.push(snap.frontView.owner.buffer);
   post({ t: 'snap', snap, ran }, transfer);

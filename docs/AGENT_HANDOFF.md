@@ -46,7 +46,7 @@ CSV/JSON 需要加载校验：ID 唯一、单位武器引用存在、设施有�
 | UnitState | id、owner、unitType、位置/朝向、HP、Q/S/A、状态/剩余时长、武器冷却、供给、sectorId、手动任务 |
 | ProductionOrder | id、owner、unitType、目标战区、设施位、状态、剩余工时、扣款事务、人口预占、出场状态 |
 | Projectile | id、owner、weaponType、起点/速度/飞行时间、上一位置、碰撞状态、伤害结算标记 |
-| AirMission | id、owner、类型、准备/飞行/冷却、飞机 ID、航路、剩余投放、已付成本 |
+| ~~AirMission~~ | v1.0 已移除空军系统 |
 | Objective | id、类型、位置、owner、争夺状态、各方进度、启用计时、连通性 |
 | Fortification | id、类型、owner、位置/朝向、HP、建设进度、容量/占位、是否可导航障碍 |
 | Intelligence | observerFaction、target/area、lastSeenTick、位置估计、置信度、当前可见 |
@@ -79,8 +79,6 @@ CSV/JSON 需要加载校验：ID 唯一、单位武器引用存在、设施有�
 `LaunchProjectile` 创建真实飞行状态；`ResolveImpact` 是唯一 HP 结算入口。直接命中概率先生成瞄准偏移：成功以合法弹道朝当前目标点；失败以确定的偏移方向飞行，不再在碰撞时二次抽 pHit。目标可以在弹体抵达前移动躲开，未命中弹可以撞到其他目标。
 
 AP 主命中与 HE 邻近列表去重，主要目标不同时承受两份同发伤害。hitscan 命中只结算一个事件，曳光是表现；ballistic accuracy 字段 0 表示不用直射命中概率，并非“无法命中”。弹体 sweep 检测与地形采样使用同一碰撞语义。
-
-AA 的地/空射程和伤害独立读取；空袭投放按真实时刻创建炸弹，不能准备开始时预创建四次无条件伤害。
 
 ### 4.4 目标选择
 
@@ -158,7 +156,7 @@ score = 0.30*threat + 0.25*weaponSuitability + 0.20*objectiveRelevance
 | C05 | 高速炮弹扫掠与近距离地形 | 不穿透薄障碍；唯一结算事件 |
 | S01 | 根连接、断根环、超通量分配 | 断根无效，无量浪费，分配不超过需求与 L |
 | S02 | 缺弹、撤回、补员维修 | 惩罚渐进、资源正确、不免费复活 |
-| A01 | 飞机投弹前/后击毁 | 未投不生成，已投继续飞行 |
+| ~~A01~~ | （v1.0 已移除空军，本项作废） | — |
 | F01 | 三/四方同时占点与炮击 | 每方身份独立、争夺暂停、友伤按同一规则 |
 | F02 | 同 tick 两城市淘汰 | 与迭代顺序无关，结果可复现 |
 | I01 | 迷雾中隐藏敌军调动 | UI/战线/AI 不知精确状态；公开模式双方全知 |

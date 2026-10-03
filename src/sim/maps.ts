@@ -21,7 +21,6 @@ function westCity1v1(): CityDef {
       { pos: p(200, 450), facingDeg: 0 },
     ],
     forwardDeg: 0,
-    airEntry: p(0, 400),
   };
 }
 
@@ -35,7 +34,6 @@ function mirrorCity(c: CityDef, w: number, name: { zh: string; en: string }): Ci
     recon: mirrorX(c.recon, w),
     strongpoints: c.strongpoints.map((s) => ({ pos: mirrorX(s.pos, w), facingDeg: 180 - s.facingDeg })),
     forwardDeg: 180 - c.forwardDeg,
-    airEntry: mirrorX(c.airEntry, w),
   };
 }
 
@@ -124,7 +122,6 @@ export function map4ffa(): MapDef {
       { pos: p(215, 855), facingDeg: 0 },
     ],
     forwardDeg: 0,
-    airEntry: p(0, 800),
   };
   const cities: CityDef[] = [0, 1, 2, 3].map((k) => ({
     name: names[k],
@@ -135,7 +132,6 @@ export function map4ffa(): MapDef {
     recon: rot(base.recon, k, S),
     strongpoints: base.strongpoints.map((s) => ({ pos: rot(s.pos, k, S), facingDeg: s.facingDeg + 90 * k })),
     forwardDeg: base.forwardDeg + 90 * k,
-    airEntry: rot(base.airEntry, k, S),
   }));
   const objectives: ObjectiveDef[] = [
     { id: 'obj_center', type: 'observation', pos: p(800, 800), name: { zh: '中央高地', en: 'Central Heights' } },

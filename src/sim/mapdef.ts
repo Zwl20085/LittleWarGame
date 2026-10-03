@@ -28,8 +28,6 @@ export interface CityDef {
   readonly strongpoints: { pos: V2; facingDeg: number }[];
   /** Direction toward the battlefield (radians), for initial facing. */
   readonly forwardDeg: number;
-  /** Edge of the map where this faction's aircraft enter. */
-  readonly airEntry: V2;
 }
 
 export interface ObjectiveDef {

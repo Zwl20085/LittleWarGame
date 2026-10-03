@@ -21,7 +21,6 @@ export function localizeParams(world: World, params: Record<string, string | num
   if (typeof params.point === 'string') out.point = objectiveLabel(world, params.point);
   if (typeof params.city === 'number') out.city = factionLabel(world, params.city);
   if (typeof params.f === 'number') out.f = factionLabel(world, params.f);
-  if (typeof params.mission === 'string') out.mission = t(`air.${params.mission}`);
   if (typeof params.reason === 'string') out.reason = t(`reason.${params.reason}`);
   if (typeof params.feature === 'number') {
     const feat = (world.map.features ?? [])[params.feature];

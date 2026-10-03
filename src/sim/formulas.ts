@@ -11,6 +11,8 @@ export function hitProbability(args: {
   shooterSuppressed: boolean;
   targetMoving: boolean;
   cover: CoverLevel;
+  /** Terrain modifier (high ground, crest, vehicle in forest; BALANCE_SPEC §7.1). Default 1. */
+  terrainMul?: number;
 }): number {
   const rangeMul = clamp(1 - COMBAT.rangeFalloff * (args.distance / args.maxRange) ** 2, 0.5, 1);
   const p =
@@ -19,7 +21,8 @@ export function hitProbability(args: {
     (args.shooterMoving ? COMBAT.shooterMovingMul : 1) *
     (args.shooterSuppressed ? COMBAT.shooterSuppressedMul : 1) *
     (args.targetMoving ? COMBAT.targetMovingMul : 1) *
-    COVER[args.cover].hit;
+    COVER[args.cover].hit *
+    (args.terrainMul ?? 1);
   return clamp(p, COMBAT.pHitMin, COMBAT.pHitMax);
 }
 

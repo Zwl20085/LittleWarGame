@@ -4,12 +4,19 @@ import { COMBAT, COVER, type CoverLevel } from './config';
 import { crowding, OPS } from './operations';
 import { armorFacing, armorSuppressionMul, armorValue, blastFalloff, heTargetMul, penetrationProbability } from './formulas';
 import { recordDamage } from './stats';
+import { noteHit } from './events';
+import { noteBuildingHit, shieldBuilding } from './buildings';
+import { exposureSuppressionMul } from './terrainrules';
 import type { Fort, ProjectileKind, Unit, V3 } from './types';
 import { angleDiff, DEG, headingTo, type V2 } from './vec';
 import type { World } from './world';
 
-/** Effective cover of `u` against an attack coming from `from` (fort cover is directional, 120° front). */
-export function coverAgainst(world: World, u: Unit, from: V2 | null): CoverLevel {
+/**
+ * Effective cover of `u` against an attack coming from `from` (fort cover is directional, 120° front).
+ * A squad next to an intact building that stands between it and `from` is garrisoned: level 3.
+ * `buildings=false` when the blast ray is already blocked by a building (no double counting, §4.3).
+ */
+export function coverAgainst(world: World, u: Unit, from: V2 | null, buildings = true): CoverLevel {
   if (u.def.kind === 'vehicle') return 0;
   // Trench / sandbag line between us and the attacker: best cover.
   if (worksProtect(u, from)) return 3;
@@ -24,6 +31,7 @@ export function coverAgainst(world: World, u: Unit, from: V2 | null): CoverLevel
       if (!from || Math.abs(angleDiff(f.facing, headingTo(f.pos, from))) <= 60 * DEG) return lvl;
     }
   }
+  if (u.cover === 3 && buildings && from && shieldBuilding(world, u.pos, from) >= 0) return 3;
   return u.cover > 2 ? 2 : u.cover;
 }
 
@@ -46,8 +54,10 @@ export function applyDamage(world: World, u: Unit, dmg: number, attackerOwner: n
   const lost = Math.min(u.hp, dmg);
   u.hp -= lost;
   u.lastDamagedAt = world.time;
+  if (u.def.id === 'supply_truck') noteTruckHit(world, u);
   u.morale = Math.max(0, u.morale - COMBAT.moraleHpLossFactor * (lost / maxHp));
   recordDamage(world.stats, attackerOwner, src, u, lost, u.hp <= 0);
+  noteHit(world, u, attackerOwner, lost, u.hp <= 0);
   if (u.hp > 0) return;
   u.hp = 0;
   const f = world.factions[u.owner];
@@ -68,6 +78,25 @@ export function applyDamage(world: World, u: Unit, dmg: number, attackerOwner: n
       n.lastMoraleWipeAt = world.time;
     }
   }
+}
+
+/** Seconds a hit truck stays on its faction's "under fire" list (the rear-guard alert reads 90 s). */
+export const TRUCK_HIT_MEMORY_S = 90;
+/** Escorts only react to hits this recent. */
+export const ESCORT_REACT_S = 6;
+
+/** Record a convoy truck taking fire so nearby combat units can escort it without scanning. */
+function noteTruckHit(world: World, truck: Unit): void {
+  const list = world.factions[truck.owner]?.trucksUnderFire;
+  if (!list) return;
+  for (let i = list.length - 1; i >= 0; i--) {
+    if (world.time - list[i].at > TRUCK_HIT_MEMORY_S) list.splice(i, 1);
+    else if (list[i].id === truck.id) {
+      list[i].at = world.time;
+      return;
+    }
+  }
+  list.push({ id: truck.id, at: world.time });
 }
 
 /** Direct AP hit on a unit (projectile or hitscan). Returns whether it penetrated. */
@@ -93,7 +122,7 @@ export function resolveDirectHit(
     if (w.id === 'at_cannon') dmg *= COMBAT.atVsInfantryMul;
   }
   const cover = coverAgainst(world, target, from);
-  const supp = w.suppression * COVER[cover].supp * armorSuppressionMul(def);
+  const supp = w.suppression * COVER[cover].supp * armorSuppressionMul(def) * exposureSuppressionMul(world, target);
   if (dmg > 0 || !armored) addSuppression(world, target, supp);
   applyDamage(world, target, dmg, attackerOwner, w.id, src);
   return penetrated;
@@ -106,6 +135,8 @@ export function resolveBlast(
 ): void {
   world.emit({ t: 'explosion', pos: at, radius, kind });
   if (radius <= 0) return;
+  // Structural damage: AP rounds are shaped for armour, not walls (capped and halved).
+  noteBuildingHit(world, at, kind === 'ap' ? Math.min(damage, 150) * 0.5 : damage);
   const hits = world.spatial.query(at.x, at.z, radius + 4);
   for (const u of hits) {
     if (u.id === exclude || u.hp <= 0) continue;
@@ -116,15 +147,16 @@ export function resolveBlast(
     if (!world.terrain.los(at.x, at.y + 1, at.z, u.pos.x, u.y + 1, u.pos.z, 1e9, 1e9, false)) continue;
     const blocked = !world.terrain.los(at.x, at.y + 1, at.z, u.pos.x, u.y + 1, u.pos.z, 1e9);
     const blockMul = blocked ? 0.25 : 1;
-    if (kind === 'shell' || kind === 'bomb') {
+    if (kind === 'shell') {
       const grp = world.factions[u.owner]?.sectors[u.sectorId];
       if (grp) grp.shelledAt = world.time;
     }
     // Crowded troops suffer more under shellfire (shock + no room to go to ground).
-    const crowdMul = (kind === 'shell' || kind === 'bomb') && crowding(world, u) >= OPS.crowdThreshold ? 1.35 : 1;
-    const cover = coverAgainst(world, u, { x: at.x, z: at.z });
+    const crowdMul = kind === 'shell' && crowding(world, u) >= OPS.crowdThreshold ? 1.35 : 1;
+    const cover = coverAgainst(world, u, { x: at.x, z: at.z }, !blocked);
     const dmg = damage * fall * COVER[cover].blast * heTargetMul(u.def) * blockMul;
-    addSuppression(world, u, suppression * fall * COVER[cover].supp * armorSuppressionMul(u.def) * (blocked ? 0.5 : 1) * crowdMul);
+    const supMul = armorSuppressionMul(u.def) * (blocked ? 0.5 : 1) * crowdMul * exposureSuppressionMul(world, u);
+    addSuppression(world, u, suppression * fall * COVER[cover].supp * supMul);
     applyDamage(world, u, dmg, attackerOwner, weaponId, src);
   }
   for (const f of world.forts) damageFort(world, f, at, radius, damage);

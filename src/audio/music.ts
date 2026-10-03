@@ -1,240 +1,269 @@
-import { brass, horn, lowString, mtof, pad, snare, timpani } from './instruments';
 import type { Mixer } from './mixer';
+import type { MusicBankMessage } from './music.worker';
+import { renderSample, sampleId, sampleKeys, sampleRoot, type MusicSample, type SampleKey } from './orchestra';
+import { brightness, Conductor, LAYER_BUS, LAYERS, layerTargets, type Layer, type MusicMode, type NoteEv, type Outcome, type Stinger } from './score';
+
+export type { MusicMode, Outcome, Stinger } from './score';
 
 /**
- * Adaptive procedural score in D minor. A look-ahead sequencer schedules notes on the audio
- * clock (no loops → no seams). Six layers crossfade by battle intensity:
- * drone · string pad · low-string ostinato · brass swells · percussion · horn melody.
+ * Adaptive orchestral score (WWII war-film style) in D minor. The Conductor (score.ts)
+ * composes one bar at a time from the game state; this class plays it on the audio clock
+ * with a sampled orchestra built in a worker (orchestra.ts). Nine section buses
+ * (strings, bass, winds, horns, brass, ostinato, tremolo, percussion, lead) crossfade
+ * smoothly with battle intensity into the music bus; the mixer's master glue compressor
+ * and limiter provide the dynamics control (a second compressor here flattened the
+ * calm-versus-battle contrast through its automatic make-up gain).
  */
-export type MusicMode = 'title' | 'battle' | 'aftermath';
 
-type Chord = readonly [root: number, minor: boolean];
-const PROGS: Record<string, readonly Chord[]> = {
-  battleA: [[38, true], [34, false], [43, true], [45, false]],
-  battleB: [[38, true], [43, true], [39, false], [45, false]],
-  title: [[38, true], [41, false], [36, false], [43, true], [34, false], [41, false], [43, true], [45, false]],
-  aftermath: [[38, true], [34, false], [43, true], [45, false]],
-};
-const BPM: Record<MusicMode, number> = { title: 60, battle: 74, aftermath: 54 };
+/** Game-side musical context beyond intensity (see AudioSession). */
+export interface MusicMood {
+  readonly retreat: boolean;
+  readonly outcome: Outcome;
+  /** One-shot cue to play at the next bar (consumed). */
+  readonly stinger: Stinger | null;
+}
 
-/** Title theme: [beat from phrase start, length in beats, midi]. 16 bars, one per chord pair. */
-const THEME: readonly (readonly [number, number, number])[] = [
-  [0, 1, 62], [1, 1, 65], [2, 2, 69], [4, 1, 67], [5, 1, 65], [6, 2, 64],
-  [8, 2, 65], [10, 1, 69], [11, 1, 72], [12, 3, 72], [15, 1, 69],
-  [16, 2, 67], [18, 1, 64], [19, 1, 67], [20, 4, 72],
-  [24, 2, 70], [26, 1, 69], [27, 1, 67], [28, 3, 74],
-  [32, 1, 74], [33, 1, 72], [34, 2, 70], [36, 4, 65],
-  [40, 1, 69], [41, 1, 72], [42, 2, 77], [44, 2, 76], [46, 2, 72],
-  [48, 2, 74], [50, 1, 70], [51, 1, 67], [52, 2, 70], [54, 2, 69],
-  [56, 2, 69], [58, 1, 73], [59, 1, 76], [60, 3, 69],
-];
-/** Bugle-like call at the head of intense battle phrases: [step, steps, midi]. */
-const CALL: readonly (readonly [number, number, number])[] = [[0, 2, 57], [2, 4, 62], [6, 2, 65], [8, 8, 69]];
-const SNARE: readonly number[] = [0.9, 0, 0, 0, 0.35, 0, 0.5, 0, 0.85, 0, 0.3, 0.4, 0.8, 0, 0.35, 0.45];
+/** Bars are scheduled this far ahead of the audio clock (seconds). */
+const LOOKAHEAD = 0.35;
+/** Overall score trim so the orchestra sits under the battle effects. */
+const SCORE_TRIM = 0.8;
+/** Voice budget: above this many sounding notes, quiet notes are skipped. */
+const MAX_NOTES = 48;
+const QUIET_VEL = 0.12;
 
-const LAYERS = ['drone', 'pad', 'strings', 'brass', 'perc', 'melody'] as const;
-type Layer = (typeof LAYERS)[number];
-/** Layer mix per mode and intensity level 0–3. */
-const MIX: Record<MusicMode, readonly (readonly number[])[]> = {
-  //          drone pad strings brass perc melody
-  battle: [[0.8, 0.8, 0, 0, 0, 0.7], [0.7, 0.8, 0.7, 0, 0.6, 0.45], [0.6, 0.7, 0.85, 0.6, 0.85, 0.3], [0.5, 0.6, 1, 0.85, 1, 0.3]],
-  title: [[0.7, 0.9, 0, 0, 0.35, 1], [0.65, 0.9, 0.45, 0, 0.5, 1], [0.6, 0.85, 0.6, 0.4, 0.6, 0.9], [0.6, 0.85, 0.6, 0.4, 0.6, 0.9]],
-  aftermath: [[0.6, 0.8, 0, 0, 0.2, 0.7], [0.6, 0.8, 0, 0, 0.2, 0.7], [0.6, 0.8, 0, 0, 0.2, 0.7], [0.6, 0.8, 0, 0, 0.2, 0.7]],
-};
-const UP = [0.22, 0.46, 0.72];
-const DOWN = [0.1, 0.32, 0.58];
-/** Reverb send per layer. */
-const SEND: Record<Layer, number> = { drone: 0.3, pad: 0.7, strings: 0.35, brass: 0.6, perc: 0.3, melody: 0.8 };
+interface Played {
+  readonly buf: AudioBuffer;
+  readonly root: number;
+  readonly loopStart: number;
+  readonly loopEnd: number;
+}
+
+interface Bus {
+  readonly gain: GainNode;
+  readonly filter: BiquadFilterNode | null;
+  last: number;
+}
 
 export class Music {
   private readonly c: AudioContext;
-  private readonly bus: Record<Layer, GainNode>;
-  private readonly lastTarget = new Float64Array(LAYERS.length).fill(-1);
+  private readonly bus: Record<Layer, Bus>;
+  private readonly out: GainNode;
+  /** End times of sounding notes (ring buffer for the voice budget). */
+  private readonly ends = new Float64Array(96);
+  private endIdx = 0;
+  skipped = 0;
+  private warned = false;
+  private readonly samples = new Map<string, Played>();
+  private readonly conductor = new Conductor((Math.random() * 2 ** 32) >>> 0);
+  private readonly pending: SampleKey[] = [];
+  private worker: Worker | null = null;
   private mode: MusicMode = 'title';
-  private wanted: MusicMode = 'title';
-  private prog: readonly Chord[] = PROGS.title;
-  private step = 0;
-  private phrase = 0;
-  private next = 0;
-  level = 0;
-  private levelSince = 0;
-  private bright = 0;
-  private readonly droneOsc: OscillatorNode[] = [];
+  private retreat = false;
+  private outcome: Outcome = null;
+  private nextBar = 0;
+  private x = 0;
+  private lastBright = -1;
+  /** Notes started per second, averaged over ~8 s (debug / CPU budget). */
+  notesPerSec = 0;
+  private noteAcc = 0;
+  private noteWindow = 0;
 
-  constructor(private readonly mix: Mixer) {
+  constructor(mix: Mixer) {
     const c = (this.c = mix.ctx);
-    const mk = (l: Layer): GainNode => {
-      const g = c.createGain();
-      g.gain.value = 0;
-      g.connect(mix.musicIn);
-      const s = c.createGain();
-      s.gain.value = SEND[l];
-      g.connect(s).connect(mix.musicVerb);
-      return g;
+    this.out = c.createGain();
+    this.out.gain.value = SCORE_TRIM;
+    this.out.connect(mix.musicIn);
+    const mk = (l: Layer): Bus => {
+      const cfg = LAYER_BUS[l];
+      const gain = c.createGain();
+      gain.gain.value = 0;
+      let head: AudioNode = gain;
+      let filter: BiquadFilterNode | null = null;
+      if (cfg.bright) {
+        filter = c.createBiquadFilter();
+        filter.type = 'lowpass';
+        filter.Q.value = 0.5;
+        filter.frequency.value = brightness(0);
+        head = gain.connect(filter);
+      }
+      const pan = c.createStereoPanner();
+      pan.pan.value = cfg.pan;
+      head.connect(pan).connect(this.out);
+      const send = c.createGain();
+      send.gain.value = cfg.send * SCORE_TRIM;
+      head.connect(send).connect(mix.musicVerb);
+      return { gain, filter, last: -1 };
     };
-    this.bus = { drone: mk('drone'), pad: mk('pad'), strings: mk('strings'), brass: mk('brass'), perc: mk('perc'), melody: mk('melody') };
-    this.buildDrone();
-    this.next = c.currentTime + 0.1;
+    this.bus = Object.fromEntries(LAYERS.map((l) => [l, mk(l)])) as Record<Layer, Bus>;
+    this.nextBar = c.currentTime + 0.15;
+    this.pending.push(...sampleKeys());
+    this.startWorker();
   }
 
-  /** Persistent pedal on D with a slow breathing swell. */
-  private buildDrone(): void {
-    const c = this.c;
-    const breath = c.createGain();
-    breath.gain.value = 0.8;
-    const lfo = c.createOscillator();
-    lfo.frequency.value = 0.055;
-    const lfoAmt = c.createGain();
-    lfoAmt.gain.value = 0.2;
-    lfo.connect(lfoAmt).connect(breath.gain);
-    const lp = c.createBiquadFilter();
-    lp.type = 'lowpass';
-    lp.frequency.value = 240;
-    lp.connect(breath).connect(this.bus.drone);
-    const voices: [OscillatorType, number, number][] = [['sine', 38, 0.16], ['sawtooth', 38, 0.05], ['sine', 45, 0.06], ['sawtooth', 26, 0.04]];
-    for (const [type, note, lvl] of voices) {
-      const o = c.createOscillator();
-      o.type = type;
-      o.frequency.value = mtof(note);
-      o.detune.value = (Math.random() - 0.5) * 6;
-      const g = c.createGain();
-      g.gain.value = lvl;
-      o.connect(g).connect(lp);
-      o.start();
-      this.droneOsc.push(o);
+  private startWorker(): void {
+    if (typeof Worker === 'undefined') return;
+    try {
+      const w = new Worker(new URL('./music.worker.ts', import.meta.url), { type: 'module' });
+      this.worker = w;
+      w.onmessage = (e: MessageEvent<MusicBankMessage>) => {
+        if (e.data.t === 'done') this.stopWorker();
+        else this.store(e.data.s);
+      };
+      w.onerror = (e) => {
+        console.warn('[audio] music worker failed, rendering on main thread:', e.message);
+        this.stopWorker();
+      };
+      w.postMessage(null);
+    } catch (err: unknown) {
+      console.warn('[audio] music worker unavailable:', err instanceof Error ? err.message : err);
+      this.worker = null;
     }
-    lfo.start();
-    this.droneOsc.push(lfo);
+  }
+
+  private stopWorker(): void {
+    this.worker?.terminate();
+    this.worker = null;
+  }
+
+  private store(s: MusicSample): void {
+    const id = sampleId(s.inst, s.root, s.v);
+    if (this.samples.has(id)) return;
+    const buf = this.c.createBuffer(1, s.data.length, s.rate);
+    buf.copyToChannel(s.data, 0);
+    this.samples.set(id, { buf, root: s.root, loopStart: s.loopStart, loopEnd: s.loopEnd });
+    const i = this.pending.findIndex((k) => k.inst === s.inst && k.root === s.root && k.v === s.v);
+    if (i >= 0) this.pending.splice(i, 1);
+  }
+
+  /** Main-thread fallback when workers are unavailable: render a time-boxed slice. */
+  private pump(budgetMs: number): void {
+    if (this.worker || !this.pending.length) return;
+    const t0 = performance.now();
+    while (this.pending.length && performance.now() - t0 < budgetMs) this.store(renderSample(this.pending[0]));
   }
 
   get modeNow(): MusicMode {
     return this.mode;
   }
 
+  /** Current orchestration tier 0–3. */
+  get level(): number {
+    return this.conductor.level;
+  }
+
+  get samplesReady(): number {
+    return this.samples.size;
+  }
+
   setMode(m: MusicMode): void {
-    this.wanted = m;
+    this.mode = m;
+  }
+
+  setMood(m: MusicMood): void {
+    this.retreat = m.retreat;
+    this.outcome = m.outcome;
+    if (m.stinger) this.conductor.stinger(m.stinger);
   }
 
   /** Called every frame with the smoothed battle intensity (0–1). */
   update(intensity: number): void {
     const now = this.c.currentTime;
-    this.updateLevel(intensity, now);
-    this.bright += (intensity - this.bright) * 0.02;
-    const mix = MIX[this.mode][this.level];
-    for (let i = 0; i < LAYERS.length; i++) {
-      const target = mix[i] * 0.95;
-      if (Math.abs(target - this.lastTarget[i]) < 1e-3) continue;
-      this.lastTarget[i] = target;
-      this.bus[LAYERS[i]].gain.setTargetAtTime(target, now, i === 0 ? 3 : 2.2);
-    }
+    this.pump(3);
+    this.x += (intensity - this.x) * 0.02;
+    this.applyBuses(now);
     // Resync after the tab was hidden (rAF stopped): never schedule in the past.
-    if (this.next < now - 0.05) this.next = now + 0.05;
-    const dur = 60 / BPM[this.mode] / 4;
-    while (this.next < now + 0.3) {
-      this.tick(this.next, dur);
-      this.next += dur;
-      this.step++;
-      if (this.step >= this.prog.length * 32) {
-        this.step = 0;
-        this.phrase++;
-        if (this.mode === 'battle') this.prog = this.phrase % 2 ? PROGS.battleB : PROGS.battleA;
+    if (this.nextBar < now - 0.05) this.nextBar = now + 0.05;
+    while (this.nextBar < now + LOOKAHEAD) {
+      const plan = this.conductor.nextBar({ mode: this.mode, intensity, retreat: this.retreat, outcome: this.outcome });
+      const spb = 60 / plan.bpm;
+      for (const e of plan.events) {
+        try {
+          this.play(e, this.nextBar + e.beat * spb, spb);
+        } catch (err: unknown) {
+          // Never let a scheduling error escape into the game loop; report it once.
+          if (!this.warned) console.warn('[audio] music note failed:', err instanceof Error ? err.message : err);
+          this.warned = true;
+        }
       }
+      this.nextBar += plan.beats * spb;
+    }
+    if (now - this.noteWindow >= 8) {
+      this.notesPerSec = this.noteAcc / Math.max(1, now - this.noteWindow);
+      this.noteAcc = 0;
+      this.noteWindow = now;
     }
   }
 
-  private updateLevel(intensity: number, now: number): void {
-    const x = this.mode === 'title' ? intensity * 0.85 : this.mode === 'aftermath' ? 0 : intensity;
-    if (now - this.levelSince < 5) return;
-    const cap = this.mode === 'title' ? 2 : 3;
-    if (this.level < cap && x > UP[this.level]) {
-      this.level++;
-      this.levelSince = now;
-    } else if (this.level > 0 && x < DOWN[this.level - 1]) {
-      this.level--;
-      this.levelSince = now;
+  private applyBuses(now: number): void {
+    const targets = layerTargets(this.x, this.mode, this.retreat);
+    for (const l of LAYERS) {
+      const b = this.bus[l];
+      const g = targets[l];
+      if (Math.abs(g - b.last) < 0.01) continue;
+      b.last = g;
+      b.gain.gain.setTargetAtTime(g, now, 1.6);
     }
-    if (this.level > cap) this.level = cap;
+    const bright = brightness(this.x);
+    if (Math.abs(bright - this.lastBright) > 60) {
+      this.lastBright = bright;
+      for (const l of LAYERS) this.bus[l].filter?.frequency.setTargetAtTime(bright, now, 1.5);
+    }
   }
 
-  /** Schedule everything that starts on this 16th-note step. */
-  private tick(t: number, dur: number): void {
-    const s16 = this.step % 16;
-    // Mode changes land on a bar line and restart the phrase.
-    if (s16 === 0 && this.wanted !== this.mode) {
-      this.mode = this.wanted;
-      this.prog = PROGS[this.mode === 'battle' ? 'battleA' : this.mode];
-      this.step = 0;
-      this.phrase = 0;
-      this.level = Math.min(this.level, this.mode === 'title' ? 2 : 3);
-      this.lastTarget.fill(-1);
-    }
-    const step = this.step;
-    const [root, minor] = this.prog[Math.floor(step / 32) % this.prog.length];
-    const inChord = step % 32;
-    const lv = this.level;
-    const c = this.c;
-    const b = this.bus;
-    if (inChord === 0) {
-      for (const pc of [root, root + (minor ? 3 : 4), root + 7]) {
-        let n = pc;
-        while (n < 50) n += 12;
-        while (n > 61) n -= 12;
-        pad(c, b.pad, t, n, 32 * dur, 0.07, this.bright);
-      }
-      pad(c, b.pad, t, root, 32 * dur, 0.05, 0);
-      if (lv >= 2) {
-        const top = root + 19 > 64 ? root + 7 : root + 19;
-        brass(c, b.brass, t + dur * 2, root + 12, 20 * dur, 0.07);
-        brass(c, b.brass, t + dur * 2, top, 20 * dur, 0.05);
-      }
-    }
-    if (lv >= 1 && this.mode !== 'aftermath' && s16 % 2 === 0) {
-      const off = [0, 0, 12, 0, 7, 0, 12, 7][s16 / 2];
-      lowString(c, b.strings, t, root + off, s16 % 8 === 0 ? 0.16 : 0.1);
-    } else if (lv >= 3 && s16 % 2 === 1) lowString(c, b.strings, t, root + 12, 0.06);
-    this.percussion(t, s16, inChord, root, lv);
-    this.melody(t, dur, step, inChord, root, minor, lv);
-  }
-
-  private percussion(t: number, s16: number, inChord: number, root: number, lv: number): void {
-    const c = this.c;
-    const out = this.bus.perc;
-    const tim = root < 38 ? root + 12 : root;
-    if (s16 === 0 && (lv >= 1 || inChord === 0)) timpani(c, out, t, tim, this.mode === 'battle' ? 0.5 : 0.35);
-    if (lv >= 2 && s16 === 8 && inChord >= 16) timpani(c, out, t, tim + 7 > 50 ? tim - 5 : tim + 7, 0.35);
-    if (lv >= 3 && inChord >= 28) timpani(c, out, t, tim, 0.12 + (inChord - 28) * 0.08);
-    if (lv >= 2 && this.mode === 'battle') {
-      const v = SNARE[s16];
-      if (v > 0) snare(c, out, this.mix.buffer('noise', 0), t, v * 0.16);
-      else if (lv >= 3 && Math.random() < 0.25) snare(c, out, this.mix.buffer('noise', 0), t, 0.03);
-    } else if (lv >= 2 && (s16 === 0 || s16 === 8)) snare(c, out, this.mix.buffer('noise', 0), t, 0.06);
-  }
-
-  private melody(t: number, dur: number, step: number, inChord: number, root: number, minor: boolean, lv: number): void {
-    const c = this.c;
-    const out = this.bus.melody;
-    if (this.mode === 'title') {
-      // Every third pass the horn rests and the strings carry the theme's harmony alone.
-      if (step % 4 !== 0 || this.phrase % 3 === 2) return;
-      const beat = step / 4;
-      for (const [b0, len, note] of THEME) if (b0 === beat) horn(c, out, t, note, len * 4 * dur, 0.11);
+  private play(e: NoteEv, t: number, spb: number): void {
+    const s = this.samples.get(sampleId(e.inst, sampleRoot(e.inst, e.midi), e.v));
+    if (!s || e.vel < 0.004) return;
+    if (e.vel < QUIET_VEL && this.sounding(t) >= MAX_NOTES) {
+      this.skipped++;
       return;
     }
-    if (lv >= 2 && this.phrase % 2 === 0) {
-      for (const [s0, len, note] of CALL) if (s0 === step) horn(c, out, t, note, len * dur, 0.1);
-      return;
+    const c = this.c;
+    const src = c.createBufferSource();
+    src.buffer = s.buf;
+    const rate = Math.pow(2, (e.midi - s.root) / 12);
+    if (rate !== 1) src.playbackRate.value = rate;
+    const g = c.createGain();
+    const p = g.gain;
+    src.connect(g).connect(this.bus[e.layer].gain);
+    src.start(t);
+    src.onended = () => g.disconnect();
+    if (s.loopEnd > 0) {
+      src.loop = true;
+      src.loopStart = s.loopStart;
+      src.loopEnd = s.loopEnd;
+      const dur = Math.max(0.05, e.dur * spb);
+      const atk = Math.min(Math.max(0.005, e.atk), dur * 0.9);
+      const rel = Math.max(0.05, e.rel);
+      p.setValueAtTime(0, t);
+      p.linearRampToValueAtTime(e.vel, t + atk);
+      p.setValueAtTime(e.vel, t + dur);
+      p.setTargetAtTime(0, t + dur, rel / 4);
+      src.stop(t + dur + rel * 1.25);
+      this.track(t + dur + rel * 1.25);
+    } else {
+      p.value = e.vel;
+      this.track(t + s.buf.duration / rate);
     }
-    // A slow lament: one long chord tone per chord on alternate phrases.
-    if (lv <= 1 && this.phrase % 2 === 1 && inChord === 4) {
-      let n = root + (minor ? 3 : 4);
-      while (n < 60) n += 12;
-      horn(c, out, t, n, 22 * dur, this.mode === 'aftermath' ? 0.09 : 0.07);
-    }
+    this.noteAcc++;
+  }
+
+  private sounding(t: number): number {
+    let n = 0;
+    for (let i = 0; i < this.ends.length; i++) if (this.ends[i] > t) n++;
+    return n;
+  }
+
+  private track(end: number): void {
+    // Overwrite the earliest-ending slot so the ring always holds the longest-lived notes.
+    let k = this.endIdx;
+    for (let i = 0; i < this.ends.length; i++) if (this.ends[i] < this.ends[k]) k = i;
+    this.ends[k] = end;
+    this.endIdx = k;
   }
 
   dispose(): void {
     const t = this.c.currentTime;
-    for (const l of LAYERS) this.bus[l].gain.setTargetAtTime(0, t, 0.3);
-    for (const o of this.droneOsc) o.stop(t + 1.5);
+    this.stopWorker();
+    for (const l of LAYERS) this.bus[l].gain.gain.setTargetAtTime(0, t, 0.3);
   }
 }

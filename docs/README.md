@@ -6,6 +6,8 @@
 |---|---|
 | [游戏策划案](./GAME_DESIGN.md) | 产品定位、玩家体验、比赛规则、战场系统、AI、范围与验收 |
 | [数值与公式](./BALANCE_SPEC.md) | 经济、单位、武器、伤害、士气、补给、弹道及调优方法 |
+| [数值实验室](./BALANCE_LAB.md) | 数值调试流程：`scripts/lab.ts` 无头多种子实验、指标、验收带、A/B 规则与实验记录 |
+| [性能预算与工具](./PERFORMANCE.md) | 每 tick / 每帧预算、`scripts/perf.ts`、`profile.mjs`、`perf-browser.mjs`、`perf-probe.mjs` 的用法与 1.0 优化记录 |
 | [视觉与交互规格](./VISUAL_UX.md) | 已确认风格、45° 相机建议、分层 HUD、细操与自动任务衔接 |
 | [开发交接说明](./AGENT_HANDOFF.md) | 模块边界、数据约定、开发顺序和功能验收 |
 | [单位初始数据](./data/units.csv) | 可导入的单位种子表；字段定义见数值文档 |

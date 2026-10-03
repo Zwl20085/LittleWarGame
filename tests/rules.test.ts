@@ -18,18 +18,18 @@ function faction(over: Partial<Faction> = {}): Faction {
 }
 
 describe('data loading (AGENT_HANDOFF §2)', () => {
-  it('loads all 13 units (incl. motorized rifles) and 12 weapons with valid references', () => {
-    expect(data.units.size).toBe(13);
-    expect(data.weapons.size).toBe(12);
+  it('loads all 12 units (incl. motorized rifles) and 11 weapons with valid references', () => {
+    expect(data.units.size).toBe(12);
+    expect(data.weapons.size).toBe(11);
   });
   it('reports the offending field when a value is missing', () => {
     const units = 'id,label_zh,kind,facility,cost_p,cost_m,population,supply_demand,build_seconds,unlock_seconds,max_hp,member_count,speed_mps,vision_m,primary_weapon,secondary_weapon,armor_front,armor_side,armor_rear,max_slope_deg,hull_turn_degps,turret_turn_degps,setup_seconds,pack_seconds\nx,X,infantry,barracks,,1,1,1,1,0,10,1,1,1,,,0,0,0,1,1,0,0,0';
-    const weapons = 'id,label_zh,fire_mode,range_m,min_range_m,interval_seconds,damage,penetration,accuracy,blast_radius_m,suppression,can_fire_moving,ammo_cost,muzzle_speed_mps,min_elevation_deg,max_elevation_deg,air_range_m,air_damage\n';
-    expect(() => buildGameData(units, weapons + 'w,W,hitscan,1,0,1,1,1,1,0,0,true,0,0,0,0,0,0', JSON.stringify(rules))).toThrow(/cost_p/);
+    const weapons = 'id,label_zh,fire_mode,range_m,min_range_m,interval_seconds,damage,penetration,accuracy,blast_radius_m,suppression,can_fire_moving,ammo_cost,muzzle_speed_mps,min_elevation_deg,max_elevation_deg\n';
+    expect(() => buildGameData(units, weapons + 'w,W,hitscan,1,0,1,1,1,1,0,0,true,0,0,0,0', JSON.stringify(rules))).toThrow(/cost_p/);
   });
   it('rejects unknown weapon references', () => {
     const units = 'id,label_zh,kind,facility,cost_p,cost_m,population,supply_demand,build_seconds,unlock_seconds,max_hp,member_count,speed_mps,vision_m,primary_weapon,secondary_weapon,armor_front,armor_side,armor_rear,max_slope_deg,hull_turn_degps,turret_turn_degps,setup_seconds,pack_seconds\nx,X,infantry,barracks,1,1,1,1,1,0,10,1,1,1,nope,,0,0,0,1,1,0,0,0';
-    const weapons = 'id,label_zh,fire_mode,range_m,min_range_m,interval_seconds,damage,penetration,accuracy,blast_radius_m,suppression,can_fire_moving,ammo_cost,muzzle_speed_mps,min_elevation_deg,max_elevation_deg,air_range_m,air_damage\nw,W,hitscan,1,0,1,1,1,1,0,0,true,0,0,0,0,0,0';
+    const weapons = 'id,label_zh,fire_mode,range_m,min_range_m,interval_seconds,damage,penetration,accuracy,blast_radius_m,suppression,can_fire_moving,ammo_cost,muzzle_speed_mps,min_elevation_deg,max_elevation_deg\nw,W,hitscan,1,0,1,1,1,1,0,0,true,0,0,0,0';
     expect(() => buildGameData(units, weapons, JSON.stringify({ ...rules, proposed_defaults: { ...rules.proposed_defaults, production_unit_weights: {} } }))).toThrow(/unknown weapon/);
   });
 });

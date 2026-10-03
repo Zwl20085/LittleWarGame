@@ -1,5 +1,5 @@
 import type { HighCommand } from './command';
-import type { UnitDef, WeaponDef, AirMissionDef } from '../data/types';
+import type { UnitDef, WeaponDef } from '../data/types';
 import type { ObjectiveType } from './mapdef';
 import type { V2 } from './vec';
 
@@ -110,6 +110,17 @@ export interface Unit {
   opUntil: number;
   /** Indirect-fire salvos since the battery last moved (shoot-and-scoot). */
   salvos: number;
+  /** Current path stops at the navigation horizon (ask for the next stretch on arrival). */
+  pathPartial: boolean;
+  /** Cached terrain speed factor (ground × grade) and the tick it was sampled (perf). */
+  terrainMul: number;
+  terrainMulAt: number;
+  /** Waypoint index whose "next leg is wall-free" test has been evaluated, and its result (perf). */
+  legCheckIdx: number;
+  legClear: boolean;
+  /** Stuck watchdog: where/when the unit last made a metre of progress while moving. */
+  progressPos: V2;
+  progressAt: number;
 }
 
 /** 正面推进 / 侧面迂回 / 钳形攻势 / 武装渗透 / 筑垒围攻. */
@@ -140,7 +151,7 @@ export interface Sector {
   crossing: { pos: V2; kind: 'bridge' | 'ford' | 'pass'; staging: V2; key: string } | null;
   stagedSince: number;
   lastSpearhead: number;
-  /** Last time shells/bombs landed among this group (spacing doctrine). */
+  /** Last time shells landed among this group (spacing doctrine). */
   shelledAt: number;
   /** River span this group's engineers should bridge (null = not needed). */
   bridgeSite: { a: V2; b: V2; mid: V2 } | null;
@@ -178,16 +189,6 @@ export interface SpendRecord {
   readonly tick: number;
   readonly unitId: string;
   readonly value: number;
-}
-
-export interface AirState {
-  missionId: string | null;
-  phase: 'idle' | 'preparing' | 'flying' | 'cooldown';
-  timer: number;
-  target: V2 | null;
-  paidM: number;
-  planeId: number | null;
-  autoBudgetSpent: number;
 }
 
 export interface Faction {
@@ -232,7 +233,6 @@ export interface Faction {
   manualQueue: { unitId: string; sectorId: number }[];
   sectors: Sector[];
   mainSector: number;
-  air: AirState;
   incomeP: number;
   incomeM: number;
   overflowWarnAt: number;
@@ -242,6 +242,8 @@ export interface Faction {
   spentTotalP: number;
   spentTotalM: number;
   aiThinkAt: number;
+  /** Supply trucks of this faction hit recently (id, time); escorts read this short list (perf). */
+  trucksUnderFire: { id: number; at: number }[];
 }
 
 export interface Objective {
@@ -259,7 +261,7 @@ export interface Objective {
   activeAt: number;
 }
 
-export type ProjectileKind = 'ap' | 'shell' | 'bomb' | 'strafe';
+export type ProjectileKind = 'ap' | 'shell';
 
 export interface Projectile {
   readonly id: number;
@@ -272,7 +274,7 @@ export interface Projectile {
   readonly targetId: number | null;
   readonly intendedHit: boolean;
   readonly sourceId: number;
-  /** Attacker unit type for the stats ledger ('air' for aircraft). */
+  /** Attacker unit type for the stats ledger. */
   readonly srcType: string;
   readonly damage: number;
   readonly blastRadius: number;
@@ -280,23 +282,6 @@ export interface Projectile {
   readonly penetration: number;
   age: number;
   done: boolean;
-}
-
-export interface Plane {
-  readonly id: number;
-  readonly owner: number;
-  readonly mission: AirMissionDef;
-  pos: V3;
-  prev: V3;
-  heading: number;
-  hp: number;
-  dropsLeft: number;
-  nextDropAt: number;
-  readonly target: V2;
-  phase: 'inbound' | 'attack' | 'outbound';
-  readonly exit: V2;
-  readonly entry: V2;
-  visionUntil: number;
 }
 
 export type FortKind = 'field_cover' | 'mg_bunker' | 'trench' | 'sandbag' | 'pontoon';
@@ -328,8 +313,7 @@ export type FxEvent =
   | { t: 'tracer'; from: V3; to: V3; hit: boolean; weapon: string }
   | { t: 'explosion'; pos: V3; radius: number; kind: ProjectileKind | 'he' }
   | { t: 'death'; pos: V3; vehicle: boolean; unitType: string }
-  | { t: 'ricochet'; pos: V3 }
-  | { t: 'planeDown'; pos: V3 };
+  | { t: 'ricochet'; pos: V3 };
 
 export interface LogEntry {
   readonly tick: number;
