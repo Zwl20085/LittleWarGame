@@ -1,7 +1,9 @@
 import * as THREE from 'three';
 import type { FxEvent, Projectile } from '../sim/types';
+import type { Terrain } from '../sim/terrain';
 import { craterTexture, radialTexture, smokeTexture } from './fxTextures';
 import { ArtilleryFx } from './artilleryFx';
+import { ImpactFx } from './impactFx';
 import { LinePool, ParticleSystem } from './particles';
 import { TownFires, type TownSite } from './townFires';
 import { muzzleShift, VEHICLE_SCALE } from './unitModels';
@@ -12,7 +14,7 @@ const COL = {
   dust: C('#b8a888'), dustPale: C('#cfc2a4'), smokeLight: C('#d8d0c0'), smokeGround: C('#9a8d74'), smokeAir: C('#5a5650'),
   smokeLinger: C('#a39f97'), smokeDark: C('#3b3833'), smokeWreck: C('#6a655c'), clod: C('#5e4c36'), clodDark: C('#3f3326'),
   ricochet: C('#ffe0a0'), mg: C('#ffb050'), shell: C('#ffe0a0'),
-  trail: C('#f3e3b8'), splash: C('#dfe6dc'),
+  trail: C('#f3e3b8'), splash: C('#dfe6dc'), apHead: C('#ffd8a0'),
 };
 const TRACER_COLORS = [COL.shell, COL.mg] as const;
 const TRACER_GLOW = [C('#ffb060'), C('#ff9a40')] as const;
@@ -44,6 +46,7 @@ export class Effects {
   private readonly smoke: ParticleSystem;
   private readonly lines = new LinePool(8000);
   private readonly arty: ArtilleryFx;
+  private readonly impact: ImpactFx;
   private readonly towns: TownFires;
   // Tracers as struct-of-arrays (no per-shot allocation).
   private readonly tr = new Float32Array(MAX_TRACERS * 6);
@@ -58,6 +61,9 @@ export class Effects {
   private decalN = 0;
   private decalHead = 0;
   private smokeK = 1;
+  private detailK = 0;
+  /** Terrain for water / roof tests (set by the renderer; null = treat everything as open ground). */
+  terrain: Terrain | null = null;
   reducedMotion = false;
   shake = 0;
   /** CSS pixels per metre (set by the renderer) — keeps shells visible when zoomed out. */
@@ -73,6 +79,7 @@ export class Effects {
     this.smoke.wind.copy(WIND);
     this.glow.wind.copy(WIND);
     this.arty = new ArtilleryFx(this.glow, this.smoke, this.lines, heightAt);
+    this.impact = new ImpactFx(this.glow, this.smoke);
     this.towns = new TownFires(this.smoke, this.glow);
     this.shells = new THREE.InstancedMesh(new THREE.SphereGeometry(0.16, 6, 4), new THREE.MeshBasicMaterial({ color: '#f6e7b8' }), 2000);
     const crater = new THREE.PlaneGeometry(2, 2).rotateX(-Math.PI / 2);
@@ -94,6 +101,17 @@ export class Effects {
   set smokeScale(v: number) {
     this.smokeK = v;
     this.arty.smokeScale = v;
+    this.impact.smokeScale = v;
+  }
+
+  /** Render quality tier (0 high, 1 medium, 2 low): the lower tiers drop the optional layers. */
+  get detail(): number {
+    return this.detailK;
+  }
+
+  set detail(v: number) {
+    this.detailK = v;
+    this.impact.detail = v;
   }
 
   /** Settlements whose buildings smoulder after nearby shelling. */
@@ -105,7 +123,7 @@ export class Effects {
     switch (e.t) {
       case 'muzzle': {
         if (!e.big) {
-          this.glow.emit(e.pos.x, e.pos.y, e.pos.z, { life: 0.05, size: 1.0, grow: 1.2, color: COL.flash });
+          this.smallMuzzle(e.pos.x, e.pos.y, e.pos.z, e.dir, e.weapon);
           break;
         }
         // Flash at the visible (scaled-up) barrel tip; recoil is keyed to the unit's sim position.
@@ -125,16 +143,16 @@ export class Effects {
         this.explosion(e.pos.x, e.pos.y, e.pos.z, e.radius, e.kind);
         break;
       case 'ricochet':
+        // Glancing hit on armour: a hard white flash and a fan of sparks, no fireball.
         this.glow.emit(e.pos.x, e.pos.y, e.pos.z, { life: 0.1, size: 1.5, grow: 6, color: COL.ricochet });
-        for (let k = 0; k < 3; k++) {
-          this.glow.emit(e.pos.x, e.pos.y, e.pos.z, { life: 0.25, size: 0.35, color: COL.fireCore, gravity: 14, drag: 0.5, vx: (Math.random() - 0.5) * 14, vy: 3 + Math.random() * 6, vz: (Math.random() - 0.5) * 14 });
-        }
+        this.impact.apSparks(e.pos.x, e.pos.y, e.pos.z, 7);
         break;
       case 'death':
         if (e.vehicle) {
           this.explosion(e.pos.x, e.pos.y + 1, e.pos.z, 6, 'he');
+          this.impact.cookOff(e.pos.x, e.pos.y, e.pos.z);
           this.shake = Math.max(this.shake, 0.3);
-        }
+        } else this.impact.infantryDown(e.pos.x, this.heightAt(e.pos.x, e.pos.z), e.pos.z);
         break;
     }
   }
@@ -144,9 +162,24 @@ export class Effects {
     const cx = Math.cos(dir);
     const cz = Math.sin(dir);
     this.glow.emit(x, y, z, { life: 0.12, size: 4.5, grow: 10, color: COL.flash });
-    this.glow.emit(x + cx * 1.5, y, z + cz * 1.5, { life: 0.09, size: 3, grow: 6, color: COL.fire });
+    // Flame cone: a short bright tongue tapering forward out of the barrel.
+    for (let k = 1; k <= 3; k++) {
+      this.glow.emit(x + cx * 1.3 * k, y, z + cz * 1.3 * k, { life: 0.07 + 0.01 * k, size: 3.6 - 0.8 * k, grow: 5 - k, color: k === 1 ? COL.fireCore : COL.fire });
+    }
     const ss = this.smokeScale;
     if (ss <= 0) return;
+    if (this.detailK < 2) {
+      // Smoke ring blown off the muzzle, opening up square to the barrel.
+      for (let k = 0; k < 8; k++) {
+        const a = (k / 8) * Math.PI * 2;
+        const ca = Math.cos(a) * 4;
+        const sa = Math.sin(a) * 4;
+        this.smoke.emit(x + cx * 1.2, y, z + cz * 1.2, {
+          color: COL.smokeLight, alpha: 0.45 * Math.min(1, ss), life: 1.6 + Math.random() * 0.5, size: 0.9, grow: 3.2 * ss, drag: 2.6, drift: 0.6, fadeIn: 0.04,
+          vx: cx * 3.5 - cz * ca, vy: sa, vz: cz * 3.5 + cx * ca,
+        });
+      }
+    }
     for (let k = 0; k < 4; k++) {
       const sp = 5 + Math.random() * 6;
       const side = (Math.random() - 0.5) * 3;
@@ -169,6 +202,22 @@ export class Effects {
     }
   }
 
+  /** Small arms: rifles a quick pinpoint flicker, machine guns a bigger double flicker. */
+  private smallMuzzle(x: number, y: number, z: number, dir: number, w: string): void {
+    const mg = w === 'mg' || w === 'coax_mg';
+    if (!mg) {
+      this.glow.emit(x, y, z, { life: 0.05, size: 0.9, grow: 1.2, color: COL.flash });
+      return;
+    }
+    const cx = Math.cos(dir);
+    const cz = Math.sin(dir);
+    this.glow.emit(x, y, z, { life: 0.06, size: 1.7, grow: 1.6, color: COL.flash, flicker: 0.5 });
+    this.glow.emit(x + cx * 0.9, y, z + cz * 0.9, { life: 0.045, size: 1.1, grow: 0.8, color: COL.fire });
+    if (this.detailK === 0 && this.smokeScale > 0 && this.smoke.free > 2500 && Math.random() < 0.5) {
+      this.smoke.emit(x + cx, y, z + cz, { color: COL.smokeLight, alpha: 0.22, life: 1.1, size: 0.5, grow: 1.6, drag: 1.5, drift: 0.6, vx: cx * 1.5, vy: 0.4, vz: cz * 1.5 });
+    }
+  }
+
   private tracer(ax: number, ay: number, az: number, bx: number, by: number, bz: number, w: string, hit: boolean): void {
     const rifle = w.includes('rifle');
     const ci = w === 'mg' || w === 'coax_mg' ? 1 : 0;
@@ -187,7 +236,7 @@ export class Effects {
     if (!rifle) {
       // A hot glowing slug that actually travels the path (reads on bright ground, unlike a 1 px line).
       const life = this.trMax[i] * 0.8;
-      this.glow.emit(ax, ay, az, { life, size: 1.0, color: TRACER_GLOW[ci], vx: (bx - ax) / life * 0.8, vy: (by - ay) / life * 0.8, vz: (bz - az) / life * 0.8, drag: 0, fade: 0.3 });
+      this.glow.emit(ax, ay, az, { life, size: ci ? 1.35 : 1.0, color: TRACER_GLOW[ci], vx: (bx - ax) / life * 0.8, vy: (by - ay) / life * 0.8, vz: (bz - az) / life * 0.8, drag: 0, fade: 0.3 });
     }
     if (!hit) this.smoke.emit(bx, by, bz, { color: COL.dust, alpha: 0.55, life: 0.7, size: 0.8, grow: 2.2, drift: 0.3 });
   }
@@ -197,17 +246,25 @@ export class Effects {
     const ss = this.smokeScale;
     const k = Math.max(0.15, intensity);
     if (ss > 0) {
-      this.smoke.emit(x + (Math.random() - 0.5) * 1.5, y, z + (Math.random() - 0.5) * 1.5, {
-        color: intensity > 0.6 ? COL.smokeDark : COL.smokeWreck, alpha: 0.36 * Math.min(1, ss) * (0.5 + 0.5 * k), life: 4 + Math.random() * 2.5,
-        size: 1.6, grow: 7 * ss * (0.6 + 0.4 * k), drift: 1, fadeIn: 0.08, fade: 1.6,
-        vx: (Math.random() - 0.5) * 0.8, vy: 2.6 + k * 1.2, vz: (Math.random() - 0.5) * 0.8,
-      });
+      // A dense dark core plus a lighter puff a little higher, so the column reads as continuous.
+      const a = Math.min(1, ss) * (0.55 + 0.45 * k);
+      for (let p = 0; p < 2; p++) {
+        this.smoke.emit(x + (Math.random() - 0.5) * 1.5, y + p * 1.5, z + (Math.random() - 0.5) * 1.5, {
+          color: p === 0 && intensity > 0.4 ? COL.smokeDark : COL.smokeWreck, alpha: (p ? 0.4 : 0.6) * a, life: 5.5 + Math.random() * 3,
+          size: 2.4, grow: 11 * ss * (0.6 + 0.4 * k), drift: 1, drag: 0.4, fadeIn: 0.05, fade: 1.4,
+          vx: (Math.random() - 0.5) * 0.8, vy: 2.6 + k * 1.6, vz: (Math.random() - 0.5) * 0.8,
+        });
+      }
     }
-    if (Math.random() < 0.35 + 0.6 * k) {
+    // Flame tongues licking up from the hull: two while it burns hard, one as it dies down.
+    const nf = intensity > 0.3 ? 2 : 1;
+    for (let f = 0; f < nf; f++) {
+      if (Math.random() >= 0.45 + 0.55 * k) continue;
       this.glow.emit(x + (Math.random() - 0.5) * 2.2, y - 1.8 + Math.random() * 0.8, z + (Math.random() - 0.5) * 2.2, {
-        life: 0.35 + Math.random() * 0.3, size: 1.2 + k * 1.6, grow: 0.8, color: Math.random() < 0.5 ? COL.fire : COL.fireDeep, flicker: 0.45, vy: 1.6, drift: 0.2,
+        life: 0.5 + Math.random() * 0.4, size: 1.6 + k * 2.2, grow: 1.2, color: Math.random() < 0.5 ? COL.fire : COL.fireDeep, flicker: 0.55, vy: 2 + k, drift: 0.25, drag: 1,
       });
     }
+    this.impact.wreckEmbers(x, y, z, k);
   }
 
   /** Engineer work site: splashes and sawdust where the next pontoon is being floated in. */
@@ -231,15 +288,52 @@ export class Effects {
     });
   }
 
+  /** Water surface under (x, z), or NaN on dry ground. */
+  private waterAt(x: number, z: number): number {
+    const t = this.terrain;
+    if (!t) return NaN;
+    const i = Math.min(t.nx - 1, Math.max(0, Math.round(x / t.cell)));
+    const j = Math.min(t.nz - 1, Math.max(0, Math.round(z / t.cell)));
+    return t.waterSurface[j * t.nx + i];
+  }
+
+  /** Route an explosion to the right look: water splash, building collapse, roof hit, AP strike or ground burst. */
   private explosion(x: number, y: number, z: number, radius: number, kind: string): void {
-    const r = Math.max(1.5, radius);
+    let r = Math.max(1.5, radius);
     const ground = this.heightAt(x, z);
-    const onGround = y - ground < 3;
+    const lift = y - ground;
+    const surf = this.waterAt(x, z);
+    if (!Number.isNaN(surf) && y <= surf + 1.5 && (this.terrain?.buildingH(x, z) ?? 0) <= 0) {
+      this.impact.splash(x, surf, z, r);
+      return;
+    }
+    if (kind === 'he' && lift > 2) {
+      // The sim's building-collapse event (kind 'he' at the building's centre).
+      this.impact.collapse(x, y, z, ground, r);
+      this.addCrater(x, ground, z, r * 0.55);
+      this.towns.heat(x, z, r * 1.5);
+      if (!this.reducedMotion) this.shake = Math.max(this.shake, Math.min(0.6, r / 25));
+      return;
+    }
+    if (lift >= 2.5 && (this.terrain?.buildingH(x, z) ?? 0) > 0) {
+      // Shell or AP round bursting on a roof / wall.
+      this.impact.masonryHit(x, y, z, r);
+      this.impact.note(x, z, r);
+      this.towns.heat(x, z, r);
+      return;
+    }
+    this.impact.note(x, z, r);
+    if (kind === 'ap') {
+      // Tank / AT round: sparks and a compact burst rather than a big fireball.
+      this.impact.apSparks(x, y + 0.3, z, 6);
+      r = r * 0.8;
+    }
+    const onGround = lift < 3;
     const ss = this.smokeScale;
     const busy = this.smoke.free < 2000;
     // Flash and fireball.
     this.glow.emit(x, y + 0.5, z, { life: 0.09, size: r * 1.2, grow: r * 2.2, color: COL.flash });
-    const nf = Math.min(7, Math.round(2 + r * 0.45));
+    const nf = kind === 'ap' ? 2 : Math.min(7, Math.round(2 + r * 0.45));
     for (let k = 0; k < nf; k++) {
       const a = Math.random() * Math.PI * 2;
       const sp = r * (0.3 + Math.random() * 0.5);
@@ -351,7 +445,9 @@ export class Effects {
       if (p.kind === 'shell') this.arty.shell(p, x, y, z, sc);
       else {
         const len = 0.05;
-        this.lines.push(x, y, z, x - p.vel.x * len, y - p.vel.y * len, z - p.vel.z * len, COL.trail, 0.8, 0);
+        this.lines.push(x, y, z, x - p.vel.x * len, y - p.vel.y * len, z - p.vel.z * len, COL.trail, 0.95, 0);
+        // AT / tank round: a hot dot at the head so the shot reads against bright ground.
+        if (this.glow.free > 400) this.glow.emit(x, y, z, { life: 0.035, size: 1.1 * sc, color: COL.apHead, fade: 0.5 });
       }
     }
     this.arty.trails.end(dt, this.viewDir, this.pxPerM);
@@ -361,6 +457,7 @@ export class Effects {
 
   update(dt: number): void {
     this.towns.update(dt, this.smokeScale);
+    this.impact.update(dt, this.heightAt);
     this.arty.update(dt);
     this.glow.update(dt);
     this.smoke.update(dt);

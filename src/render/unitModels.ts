@@ -250,9 +250,83 @@ function bunkerGeo(): THREE.BufferGeometry {
   return k.b.build();
 }
 
+/** Two-sided triangular pennant in the XY plane: hoist edge x = 0 (y 0..1), tip at (1, 0.5). */
+function pennantGeo(): THREE.BufferGeometry {
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0, 1, 0.5, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0.5, 0], 3));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute([0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, -1, 0, 0, -1, 0, 0, -1], 3));
+  return g;
+}
+
+const PEAKED_CAP = new THREE.CylinderGeometry(0.19, 0.15, 0.1, 10);
+
+/** One standing figure of the staff group (soldier units, local +x forward). */
+function staffFigure(k: Kit, cap: boolean, shade = 1): void {
+  const [legC, legT] = uniform(0.8 * shade);
+  const [bodyC, bodyT] = uniform(shade);
+  for (const z of [-0.09, 0.09]) k.box(0.26, 0.8, 0.15, 0, 0.4, z, legC, legT);
+  k.box(0.32, 0.62, 0.46, 0, 1.1, 0, bodyC, bodyT);
+  k.geo(HEAD, trs(0, 1.55, 0), PAL.skin);
+  if (cap) {
+    // Officer's peaked service cap: crown in the faction tint, dark band and visor.
+    const [cc, ct] = uniform(1.15);
+    k.geo(PEAKED_CAP, trs(0, 1.69, 0), cc, ct);
+    k.box(0.12, 0.03, 0.26, 0.15, 1.64, 0, new THREE.Color('#2b2925'));
+  } else {
+    const [hc, ht] = uniform(0.75);
+    k.geo(HELMET, trs(0, 1.58, 0), hc, ht);
+  }
+}
+
+/**
+ * Front commander's staff group (VISUAL_UX §2.1, 2.0): the officer with peaked cap, map case
+ * and an open map; a kneeling radio operator with a backpack set and whip antenna; two guards
+ * with slung rifles; a small HQ pennant on a pole in the faction colour. Soldier-sized units:
+ * the spec scales it by SOLDIER_SCALE. Static figures (the group is drawn as one part).
+ */
+function staffGeo(): THREE.BufferGeometry {
+  const k = new Kit();
+  const leather = new THREE.Color('#5a4330');
+  const paper = new THREE.Color('#e6dcc0');
+  const radio = new THREE.Color('#4d5040');
+  const wood = new THREE.Color('#6b5639');
+  // Officer, a little forward, looking over the map in his hands.
+  const off = k.child(trs(0.45, 0, 0.1));
+  staffFigure(off, true, 1.05);
+  const [armC, armT] = uniform(1.05);
+  off.box(0.06, 0.24, 0.3, 0.02, 0.92, 0.27, leather);
+  off.box(0.36, 0.025, 0.46, 0.32, 1.22, 0, paper, 0, 0, 0, -0.5);
+  off.box(0.28, 0.08, 0.08, 0.2, 1.18, -0.2, armC, armT);
+  off.box(0.28, 0.08, 0.08, 0.2, 1.18, 0.2, armC, armT);
+  // Radio operator, kneeling at the officer's side with the set on his back.
+  const rad = k.child(trs(-0.35, 0, 0.75, 0, 0.5, 0));
+  const [legC, legT] = uniform(0.8);
+  const [bodyC, bodyT] = uniform(1);
+  const [hc, ht] = uniform(0.75);
+  rad.box(0.28, 0.44, 0.34, 0, 0.22, 0, legC, legT);
+  rad.box(0.32, 0.62, 0.46, 0, 0.8, 0, bodyC, bodyT);
+  rad.geo(HEAD, trs(0.02, 1.25, 0), PAL.skin);
+  rad.geo(HELMET, trs(0.02, 1.28, 0), hc, ht);
+  rad.box(0.24, 0.5, 0.38, -0.3, 0.85, 0, radio);
+  rad.box(0.06, 0.08, 0.3, -0.18, 1.12, 0, PAL.steel);
+  rad.cyl(0.012, 0.018, 2.4, 4, -0.42, 2.25, 0.12, PAL.steel, 0, 0, 0, 0.12);
+  rad.box(0.06, 0.16, 0.06, 0.12, 1.18, 0.16, new THREE.Color('#222220'));
+  // Two guards on either flank, rifles slung across the chest.
+  for (const [x, z, yaw] of [[1.5, -1.0, -0.5], [-1.3, -1.15, 2.6]] as const) {
+    const g = k.child(trs(x, 0, z, 0, yaw, 0));
+    staffFigure(g, false);
+    g.box(0.9, 0.06, 0.06, 0.2, 1.15, 0.2, PAL.steel, 0, 0.35, 0, 0.35);
+  }
+  // HQ pennant on a light pole, streaming back from the group.
+  k.cyl(0.03, 0.035, 2.9, 5, -0.6, 1.45, -0.35, wood);
+  k.geo(pennantGeo(), trs(-0.6, 2.35, -0.35, 0, Math.PI, 0, 0.95, 0.5, 1), ZERO, 1);
+  k.cyl(0.06, 0.06, 0.06, 6, -0.6, 2.92, -0.35, PAL.steel);
+  return k.b.build();
+}
+
 const cache = new Map<string, THREE.BufferGeometry>();
 
-/** Geometry by key: soldier | soldierKneel | soldierRecon | hull:<tank> | turret:<tank> | truck | troopTruck | gun:<id> | bunker. */
+/** Geometry by key: soldier | soldierKneel | soldierRecon | hull:<tank> | turret:<tank> | truck | troopTruck | gun:<id> | bunker | staff. */
 export function unitGeometry(key: string): THREE.BufferGeometry {
   let g = cache.get(key);
   if (g) return g;
@@ -267,6 +341,7 @@ export function unitGeometry(key: string): THREE.BufferGeometry {
     case 'troopTruck': g = troopTruckGeo(); break;
     case 'gun': g = crewGunGeo(b); break;
     case 'bunker': g = bunkerGeo(); break;
+    case 'staff': g = staffGeo(); break;
     default: throw new Error(`unknown unit geometry ${key}`);
   }
   cache.set(key, g);
@@ -316,6 +391,10 @@ function buildSpec(unitType: string, fixed: boolean): ModelSpec {
     }
     case 'supply_truck':
       return { ...base, body: 'truck', turret: null, scale: VEHICLE_SCALE, vehicle: true, wreck: true, top: 9 };
+    case 'commander':
+      // Staff group drawn as one turret-space part so it faces where the commander looks; no crew
+      // slots (the four figures are in the geometry); it falls as a squad when killed.
+      return { ...base, body: null, turret: 'staff', scale: SOLDIER_SCALE };
     case 'mg': case 'at_gun': case 'mortar': case 'howitzer':
       return { ...base, body: null, turret: `gun:${unitType}`, scale: GUN_SCALE, crew: CREW_SPOTS.slice(0, unitType === 'howitzer' ? 5 : 4), wreck: true, top: 8 };
     default:
