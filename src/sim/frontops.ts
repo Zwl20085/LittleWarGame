@@ -1,5 +1,5 @@
 import { appointCommander, frontUnits, nearestFront, newFront } from './fronts';
-import { frontById } from './frontref';
+import { frontById, onBoundFront } from './frontref';
 import { resetOperation } from './doctrine';
 import { isCommander } from './formulas';
 import type { Faction, Front, Objective, Unit } from './types';
@@ -30,7 +30,7 @@ export function transferable(u: Unit): boolean {
  * takes `want` free line troops nearest the target from the other fronts (each donor keeps
  * `donorKeep` of its free troops). Returns null at `fronts_max` or when P cannot pay the commander.
  */
-export function createFront(world: World, f: Faction, target: Objective, want: number): Front | null {
+export function createFront(world: World, f: Faction, target: Objective, want: number, at: V2 = target.pos, withinM = Infinity): Front | null {
   const rules = world.data.rules.command;
   if (f.fronts.length >= rules.fronts_max) return null;
   const def = world.data.units.get(rules.commander_unit);
@@ -41,19 +41,23 @@ export function createFront(world: World, f: Faction, target: Objective, want: n
   for (const x of f.fronts) x.share *= (n - 1) / n;
   f.fronts = [...f.fronts, s];
   appointCommander(world, f, s);
-  transferUnits(world, f, s, target.pos, want);
+  transferUnits(world, f, s, at, want, withinM);
   assignWings(world, f);
   world.note(f.id, 'log.frontOpened', { point: s.name }, 'info');
   return s;
 }
 
-/** Move up to `want` free line troops nearest `at` from the other fronts to `s`. */
-function transferUnits(world: World, f: Faction, s: Front, at: V2, want: number): void {
+/**
+ * Move up to `want` free line troops nearest `at` (within `withinM`) from the other fronts to `s`.
+ * A local adoption (finite `withinM`, the player's `newFront`) takes every free unit of a front on
+ * `auto`; a front under a binding order (and every donor of an AI front) keeps `donorKeep`.
+ */
+function transferUnits(world: World, f: Faction, s: Front, at: V2, want: number, withinM = Infinity): void {
   if (want <= 0) return;
   const free = new Map<number, number>();
   const pool: Unit[] = [];
   for (const u of world.units.values()) {
-    if (u.owner !== f.id || u.frontId === s.id || !transferable(u)) continue;
+    if (u.owner !== f.id || u.frontId === s.id || !transferable(u) || dist(u.pos, at) > withinM) continue;
     free.set(u.frontId, (free.get(u.frontId) ?? 0) + 1);
     pool.push(u);
   }
@@ -62,7 +66,7 @@ function transferUnits(world: World, f: Faction, s: Front, at: V2, want: number)
   let moved = 0;
   for (const u of pool) {
     if (moved >= want) break;
-    const keep = Math.ceil((free.get(u.frontId) ?? 0) * FRONT_OPS.donorKeep);
+    const keep = Number.isFinite(withinM) && !onBoundFront(f, u.frontId) ? 0 : Math.ceil((free.get(u.frontId) ?? 0) * FRONT_OPS.donorKeep);
     const l = left.get(u.frontId) ?? 0;
     if (l <= keep) continue;
     left.set(u.frontId, l - 1);
@@ -189,11 +193,11 @@ export function createFrontAt(world: World, f: Faction, p: V2): Front | null {
   if (!obj) return null;
   let near = 0;
   for (const u of world.units.values()) if (u.owner === f.id && transferable(u) && dist(u.pos, p) < NEW_FRONT_ADOPT_M) near++;
-  const s = createFront(world, f, obj, near);
+  // (The caller gives the order: pre-setting the same manual order here made it a "repeat" that kept the 'cautious' posture.)
+  const s = createFront(world, f, obj, near, p, NEW_FRONT_ADOPT_M);
   if (s) {
     s.targetPos = { ...p };
     s.front = { ...p };
-    s.order = { kind: 'defend', a: { ...p }, b: null, issuedAt: world.time, manual: true };
   }
   return s;
 }

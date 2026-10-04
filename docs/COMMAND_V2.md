@@ -42,16 +42,37 @@ Unit.frontId: number   // -1 is never stored; ProductionOrder.frontId -1 = "pick
 
 ## 3. Order semantics (`fronts.issueFrontOrder`)
 
-| order | line | objective | posture | engineers |
-|---|---|---|---|---|
-| `auto` | none | commander picks (`nextTarget`, HQ attack bias) | commander picks | as 1.x |
-| `attack a[,b]` | a–b if given | `a` (or the line's centre); an enemy capital there → `targetCity` | cautious → assault by aggression | — |
-| `defend a[,b]` | a–b (a point: 240 m line through `a`, square to the capital bearing) | line centre | hold | — |
-| `fortify a[,b]` | same | same | fortify | build trench / pillbox / bunker along the line |
-| `fallBack a[,b]` | same | same | hold | — ; every unit drops spearhead / op roles and marches back first |
+| order | line | objective | posture | engineers | binding (player, `manual: true`) — 2.1 |
+|---|---|---|---|---|---|
+| `auto` | none | commander picks (`nextTarget`, HQ attack bias) | commander picks | as 1.x | not binding: the 1.x / 2.0 freedoms |
+| `attack a[,b]` | a–b if given | `a` (or the line's centre); an enemy capital there → `targetCity` | cautious → assault by aggression | — | the front goes: no `outmatched` / leaderless hold, `eagerPush` always pushes after a massing wait ≤ 30 s (`BOUND_MASS_WAIT_S`), river staging kept; flank / pincer / infiltrate / siege only toward the ordered objective; spearheads allowed |
+| `defend a[,b]` | a–b (a point: 240 m line through `a`, square to the capital bearing) | line centre | hold | — | every unit takes a slot on the (terrain-snapped) line, crews included (no `crewPost`); nobody waits at the rally point; no push, spearhead, manoeuvre op (`op` frontal, phase ''), truck hunt or escort away from the line; targets only from the line |
+| `fortify a[,b]` | same | same | fortify | build trench / pillbox / bunker along the line (a permanent zone, `fronts.addZone`) | as `defend` |
+| `fallBack a[,b]` | same | same | hold | — ; every unit drops spearhead / op roles and marches back first | as `defend`; town garrisons of the front come back too |
 
 While an order stands (`orderedTarget(s)`), the commander does not retarget. `planFront` holds a
 line order *along the ordered line* (`lineCells`) instead of the computed front segment.
+
+**Binding orders (2.1, user: "最高统帅部的指挥命令为强约束")** — `frontref.boundOrder(s)` = `manual && kind ≠ auto`:
+- No detachments are drawn from a bound front: town garrisons (`command.assignGarrisons`),
+  occupations (`assignOccupations`), raids and rear guard (`operations.planOperations`),
+  reserve shifts (`cityai.balanceReserves`). Detachments already out come back
+  (`fronts.recallDetachments`, on the order and every front think).
+- Exempt (user rule 8): the capital's standing garrison and HQ-point squads (`homeguard.keepStanding`,
+  `assignHolders`, breach convergence) are still drawn from any front.
+- Home recall: a bound front is recalled only at the gates (a breach, or the nearest aimed group's
+  ETA ≤ `HOME.gatesEtaS`) and only if its order predates the alarm (`homeguard.recallable`).
+  The recall keeps `order` and `line`; `restoreOrders` returns the objective afterwards. A new
+  manual order to a recalled front ends its recall (`homeguard.releaseRecall`).
+- The front's `reason` shows the order (`reason.order.<kind>`) except for a river staging /
+  massing wait; its units' status reads `status.orderAttack` / `status.orderMove` /
+  `status.orderHold` instead of advancing / holding.
+- AI fronts (`manual: false`) are not bound, except the AI's fortified-zone garrison fronts
+  (`theatre.garrisonZone`), which get a standing binding `defend` on the zone's line.
+
+`newFront {a}` (2.1): `frontops.createFrontAt` opens a front named after the nearest settlement,
+appoints its commander (P), adopts every free unit within 350 m of `a` (a bound donor front keeps
+half of its free troops), and the command then gives it a binding `defend` at `a` (posture hold).
 
 Player commands (`commands.ts`): `frontOrder {frontId | null, kind, a, b?}` (null = nearest
 front to `a`), `setMainFront`, `queueUnit {frontId: -1 | id}`, economy and unit micro as before.

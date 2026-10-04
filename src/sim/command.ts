@@ -11,6 +11,7 @@ import { populationCap } from './production';
 import { isCommander } from './formulas';
 import { createHomeThreat, fortifyPlace, homeOn, thinkHomeDefence, thinkHomeGuard, type HomeThreat } from './homeguard';
 import { reassignStale } from './frontops';
+import { boundOrder } from './frontref';
 import { thinkTheatre } from './theatre';
 import type { Faction, Objective, Unit } from './types';
 import { dist, headingTo, type V2 } from './vec';
@@ -324,8 +325,9 @@ function assignGarrisons(world: World, f: Faction, defend: Directive[]): void {
       d.assigned = count;
       continue;
     }
-    // Groups in the middle of an operation (forming up, digging in, storming) keep their troops.
-    const busy = new Set(f.fronts.filter((s) => s.op !== 'frontal' && s.opPhase !== '').map((s) => s.id));
+    // Groups in the middle of an operation (forming up, digging in, storming) keep their troops;
+    // 2.1: so does a front under a binding (player) order.
+    const busy = new Set(f.fronts.filter((s) => (s.op !== 'frontal' && s.opPhase !== '') || boundOrder(s)).map((s) => s.id));
     const pool = mine.filter((u) => freeLine(u) && !busy.has(u.frontId) && GARRISON_TYPES.has(u.def.id) && dist(u.pos, d.pos) < HQ.assignRadius)
       .sort((a, b) => dist(a.pos, d.pos) - dist(b.pos, d.pos));
     const sent: Unit[] = [];
@@ -362,10 +364,12 @@ function assignOccupations(world: World, f: Faction, occupy: Directive[]): void 
   }
   const active = new Map<string, number>();
   const pool: Unit[] = [];
+  // 2.1: no detachments from a front under a binding (player) order.
+  const bound = new Set(f.fronts.filter(boundOrder).map((s) => s.id));
   for (const u of world.units.values()) {
     if (u.owner !== f.id || u.hp <= 0 || u.fixed) continue;
     if (u.opRole === 'occupy' && u.opObjective) active.set(u.opObjective, (active.get(u.opObjective) ?? 0) + 1);
-    else if (freeLine(u) && OCCUPY_TYPES.has(u.def.id)) pool.push(u);
+    else if (freeLine(u) && OCCUPY_TYPES.has(u.def.id) && !bound.has(u.frontId)) pool.push(u);
   }
   let detachments = active.size;
   for (const d of occupy) d.assigned = active.get(d.obj) ?? 0;

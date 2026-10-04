@@ -1,6 +1,6 @@
 import { hostileMask } from './spatial';
 import { EAGER, stormOn } from './strategyai';
-import type { Faction, Front, Unit } from './types';
+import type { Faction, Fort, Front, Unit } from './types';
 import { dist, type V2 } from './vec';
 import type { World } from './world';
 
@@ -111,10 +111,19 @@ export function capitalDefence(world: World, f: number, city: number): number {
     if (w.owner !== city || w.hp <= 0 || w.progress < 1 || dist(w.pos, hq) > STORM.defenceR) continue;
     if (w.kind === 'trench') v += STORM.trenchValue;
     else if (w.kind === 'sandbag') v += STORM.sandbagValue;
-    else if (w.kind === 'pillbox') v += STORM.pillboxValue;
-    else if (w.kind === 'bunker') v += STORM.bunkerValue;
+    // 2.1: a building counts only as far as it is manned (empty concrete deterred the finisher).
+    else if (w.kind === 'pillbox') v += STORM.pillboxValue * mannedShare(world, w);
+    else if (w.kind === 'bunker') v += STORM.bunkerValue * mannedShare(world, w);
   }
   return v;
+}
+
+/** Share of a building's slots held by living occupants (0 … 1). */
+function mannedShare(world: World, w: Fort): number {
+  const ids = w.occupants ?? (w.occupant !== null ? [w.occupant] : []);
+  let n = 0;
+  for (const id of ids) if (world.unitAlive(id)) n++;
+  return Math.min(1, n / Math.max(1, w.capacity ?? 1));
 }
 
 /** Our value within `massR` of the capital (every group converging on it counts). */
