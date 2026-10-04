@@ -1,4 +1,4 @@
-import { frontOrderShape, ORDER_COLOR } from '../render/orderLines';
+import { frontOrderShape, ORDER_COLOR, ZONE_COLOR } from '../render/orderLines';
 import { CONTESTED, NEUTRAL } from '../sim/frontline';
 import { Ground } from '../sim/terrain';
 import type { GameContext } from './context';
@@ -78,6 +78,36 @@ export class MinimapPanel {
     this.ctx.renderer.rig.lookAt(x, z);
   }
 
+  /** 2.1 fortified zone: double rail with ticks (concrete stencil); cancelled = faint dashed. */
+  private drawZone(g: CanvasRenderingContext2D, a: { x: number; z: number }, b: { x: number; z: number }, cancelled: boolean): void {
+    const k = this.scale;
+    const len = Math.hypot(b.x - a.x, b.z - a.z) * k;
+    if (len < 0.5) return;
+    const tx = ((b.x - a.x) * k) / len;
+    const tz = ((b.z - a.z) * k) / len;
+    const off = 2.2;
+    g.save();
+    g.setLineDash(cancelled ? [2, 2] : []);
+    g.globalAlpha = cancelled ? 0.45 : 1;
+    g.strokeStyle = cancelled ? '#9a968a' : ZONE_COLOR;
+    g.lineWidth = 1;
+    g.beginPath();
+    for (const o of [off, -off]) {
+      g.moveTo(a.x * k - tz * o, a.z * k + tx * o);
+      g.lineTo(b.x * k - tz * o, b.z * k + tx * o);
+    }
+    if (!cancelled) {
+      for (let s = 0; s <= len; s += 4) {
+        const x = a.x * k + tx * s;
+        const z = a.z * k + tz * s;
+        g.moveTo(x - tz * off, z + tx * off);
+        g.lineTo(x + tz * off, z - tx * off);
+      }
+    }
+    g.stroke();
+    g.restore();
+  }
+
   /** Standing supreme-HQ orders (the player's; every faction's, thin, when spectating) + front names. */
   private drawOrders(g: CanvasRenderingContext2D): void {
     const w = this.ctx.match.world;
@@ -87,6 +117,7 @@ export class MinimapPanel {
     g.lineCap = 'round';
     for (const f of w.factions) {
       if ((!spect && f.id !== this.ctx.playerId) || !f.alive) continue;
+      for (const z of f.zones ?? []) this.drawZone(g, z.a, z.b, z.cancelled);
       for (const s of f.fronts) {
         const sh = frontOrderShape(w, f, s);
         const col = ORDER_COLOR[s.order.kind];

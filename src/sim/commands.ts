@@ -43,7 +43,7 @@ export type Command =
 
 export type CommandFail =
   | 'FACTION_DEAD' | 'NOT_OWNER' | 'STALE_TARGET' | 'UNREACHABLE' | 'BAD_VALUE' | 'ROUTING'
-  | 'LOCKED' | 'INSUFFICIENT_M' | 'OUT_OF_BOUNDS' | 'NO_ORDER' | 'NO_FRONT';
+  | 'LOCKED' | 'INSUFFICIENT_M' | 'INSUFFICIENT_P' | 'OUT_OF_BOUNDS' | 'NO_ORDER' | 'NO_FRONT';
 
 export interface CommandEnvelope {
   readonly commandId: number;
@@ -160,7 +160,7 @@ function apply(match: Match, env: CommandEnvelope): CommandOutcome {
       const p = w.nav(false, 35).nearestPassable(c.a, 30);
       if (!p) return fail('UNREACHABLE');
       const s = createFrontAt(w, f, { ...p });
-      if (!s) return fail('INSUFFICIENT_M');
+      if (!s) return fail('INSUFFICIENT_P');
       applyOrder(w, f, s, { kind: 'defend', a: { ...p }, b: null, issuedAt: w.time, manual: true });
       return OK;
     }

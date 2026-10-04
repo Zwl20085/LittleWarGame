@@ -7,7 +7,7 @@ import type { GameContext } from './context';
 import type { Hud } from './hud';
 import { TerrainTip } from './terrainTip';
 
-/** Supreme-HQ order hotkeys (A/H/R/G/F/U/Q/E/W/S/D/Tab/Space/1-4 are taken). */
+/** Supreme-HQ order hotkeys (A/H/R/G/F/U/Q/E/W/S/D/Tab/Space/1-8 are taken; N = new front). */
 export const ORDER_KEYS: Record<string, OrderKind> = { z: 'attack', x: 'defend', c: 'fortify', v: 'fallBack', b: 'auto' };
 
 /** Mouse/keyboard → camera moves and CommandBus commands. Never mutates the sim directly. */
@@ -90,6 +90,10 @@ export class InputController {
       const ids = [...this.ctx.renderer.units.selected];
       this.ctx.issue({ type: 'unitOrder', unitIds: ids, order: 'attackMove', pos: p, queue: e.shiftKey });
       this.ctx.renderer.orderMarker(p, '#e08050');
+    }
+    if (m.kind === 'newFront') {
+      this.hud.fronts.openFrontAt(p);
+      this.ctx.renderer.orderMarker(p, ORDER_COLOR.defend);
     }
   }
 
@@ -290,6 +294,12 @@ export class InputController {
       case 'z': case 'x': case 'c': case 'v': case 'b':
         if (!this.ctx.spectator) this.hud.fronts.pickOrder(ORDER_KEYS[k]);
         break;
+      case 'n':
+        if (!this.ctx.spectator) {
+          this.clearPreview();
+          this.hud.fronts.pickNewFront();
+        }
+        break;
       case 'escape':
         if (this.ctx.mode.kind !== 'normal') {
           this.ctx.mode = { kind: 'normal' };
@@ -298,7 +308,7 @@ export class InputController {
         else if (this.ctx.renderer.units.selected.size > 0) this.ctx.renderer.units.selected.clear();
         else this.onEscape?.();
         break;
-      case '1': case '2': case '3': case '4': {
+      case '1': case '2': case '3': case '4': case '5': case '6': case '7': case '8': {
         const fr = this.ctx.match.world.factions[this.ctx.playerId]?.fronts[Number(k) - 1];
         if (!this.ctx.spectator && fr) this.hud.fronts.toggle(fr.id);
         break;

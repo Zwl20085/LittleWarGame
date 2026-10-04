@@ -31,9 +31,17 @@ export function localizeParams(world: World, params: Record<string, string | num
   return out;
 }
 
-/** Display name of a front: the settlement it is named after, else "Front N". */
+const ORDINAL = ['', ' II', ' III', ' IV', ' V', ' VI', ' VII', ' VIII'];
+
+/**
+ * Display name of a front: the settlement it is named after, else "Front N". Two fronts named
+ * after the same place (2.1: the player opens fronts anywhere) get II, III… by creation order.
+ */
 export function frontLabel(world: World, faction: number, frontId: number): string {
-  const s = world.factions[faction]?.fronts.find((x) => x.id === frontId);
+  const fronts = world.factions[faction]?.fronts ?? [];
+  const s = fronts.find((x) => x.id === frontId);
   if (!s) return t('front.none');
-  return s.name ? t('front.named', { place: objectiveLabel(world, s.name) }) : t('front.numbered', { n: s.id + 1 });
+  if (!s.name) return t('front.numbered', { n: s.id + 1 });
+  const dup = fronts.filter((x) => x.name === s.name && x.id < s.id).length;
+  return t('front.named', { place: objectiveLabel(world, s.name) }) + (ORDINAL[dup] ?? ` ${dup + 1}`);
 }

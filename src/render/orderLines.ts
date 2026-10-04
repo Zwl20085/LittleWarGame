@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type { Faction, Front, OrderKind } from '../sim/types';
+import type { Faction, Front, OrderKind, Zone } from '../sim/types';
 import type { V2 } from '../sim/vec';
 import type { World } from '../sim/world';
 import type { ScreenOverlay } from './screenOverlay';
@@ -13,6 +13,9 @@ import type { ScreenOverlay } from './screenOverlay';
  * The faction colour runs underneath as a wider edge. All fronts share one merged mesh (one draw
  * call) rebuilt only when an order / line changes; a second small mesh previews the order being
  * placed (click / drag) by the player. Widths are metres scaled up at far zoom (uScale).
+ * 2.1 fortified zones (permanent works) are drawn into the same mesh as a stencil: a double rail
+ * flanking the line with small concrete blocks on the enemy side; cancelled zones fade to a
+ * thin dashed ghost. They stay when the front's order changes.
  */
 
 export const ORDER_COLOR: Record<OrderKind, string> = {
@@ -128,8 +131,8 @@ class Buf {
     return i;
   }
 
-  /** A stroke of half-width `hw` (m) along an evenly sampled polyline. */
-  strip(pts: V2[], hw: number, c: THREE.Color, dashed: boolean): void {
+  /** A stroke of half-width `hw` (m) along an evenly sampled polyline, `off` (m, zoom-scaled) to its left. */
+  strip(pts: V2[], hw: number, c: THREE.Color, dashed: boolean, off = 0): void {
     let u = 0;
     let prev = -1;
     for (let i = 0; i < pts.length; i++) {
@@ -139,8 +142,8 @@ class Buf {
       const l = Math.hypot(b.x - a.x, b.z - a.z) || 1;
       const nx = -(b.z - a.z) / l;
       const nz = (b.x - a.x) / l;
-      const v = this.vert(pts[i], nx * hw, nz * hw, c, u, dashed ? 1 : 0);
-      this.vert(pts[i], -nx * hw, -nz * hw, c, u, dashed ? 1 : 0);
+      const v = this.vert(pts[i], nx * (off + hw), nz * (off + hw), c, u, dashed ? 1 : 0);
+      this.vert(pts[i], nx * (off - hw), nz * (off - hw), c, u, dashed ? 1 : 0);
       if (prev >= 0) this.idx.push(prev, v, prev + 1, prev + 1, v, v + 1);
       prev = v;
     }
@@ -233,6 +236,48 @@ function drawShape(b: Buf, sh: OrderShape, faction: THREE.Color, k: number): voi
   }
 }
 
+export const ZONE_COLOR = '#c9c2ae';
+const ZONE_FADED = new THREE.Color('#9a968a');
+
+/**
+ * A fortified zone as a permanent stencil: two thin rails either side of the line (outside an
+ * order line drawn on it) and small concrete blocks on the enemy side; cancelled = dashed ghost.
+ */
+function drawZone(b: Buf, z: Zone, home: V2, k: number): void {
+  const len = Math.hypot(z.b.x - z.a.x, z.b.z - z.a.z);
+  if (len < 1) return;
+  const tx = (z.b.x - z.a.x) / len;
+  const tz = (z.b.z - z.a.z) / len;
+  // strip() offsets to the left of a→b: n = (-tz, tx). Blocks go on the enemy side (away from home).
+  const n = { x: -tz, z: tx };
+  const mid = { x: (z.a.x + z.b.x) / 2, z: (z.a.z + z.b.z) / 2 };
+  const side = n.x * (mid.x - home.x) + n.z * (mid.z - home.z) >= 0 ? 1 : -1;
+  const pts = sample(z.a, z.b);
+  const w = WIDTH * k;
+  const rail = w * 0.5 + 5 * k;
+  if (z.cancelled) {
+    b.strip(pts, 0.8 * k, ZONE_FADED, true, rail);
+    b.strip(pts, 0.8 * k, ZONE_FADED, true, -rail);
+    return;
+  }
+  const col = new THREE.Color(ZONE_COLOR);
+  for (const o of [rail, -rail]) {
+    b.strip(pts, 2.1 * k, INK, false, o);
+    b.strip(pts, 1.2 * k, col, false, o);
+  }
+  // Concrete blocks beyond the enemy-side rail (dragon's teeth).
+  const en = { x: n.x * side, z: n.z * side };
+  const nb = Math.max(2, Math.floor(len / (30 * k)));
+  for (let i = 0; i <= nb; i++) {
+    const s = (i / nb) * len;
+    const p = { x: z.a.x + tx * s, z: z.a.z + tz * s };
+    b.poly(p, rect(en.x, en.z, tx, tz, rail + 1.5 * k, rail + 1.5 * k + w * 0.75, -w * 0.38, w * 0.38), INK);
+    b.poly(p, rect(en.x, en.z, tx, tz, rail + 2.3 * k, rail + 1.5 * k + w * 0.63, -w * 0.27, w * 0.27), col);
+  }
+  // End posts square to the line.
+  for (const p of [z.a, z.b]) b.poly(p, rect(n.x, n.z, tx, tz, -rail - 1.5 * k, rail + 1.5 * k, -w * 0.2, w * 0.2), INK);
+}
+
 /** Arrow shaft (from → to) and a barbed head ending at `to`. */
 function arrowShape(b: Buf, from: V2, to: V2, w: number, col: THREE.Color, faction: THREE.Color, dashed: boolean): void {
   const len = Math.hypot(to.x - from.x, to.z - from.z);
@@ -289,6 +334,8 @@ export class OrderLines {
   private previewSig = '';
   /** Display name of a front for the map stamp (set by the HUD; null = no labels). */
   label: ((faction: number, frontId: number) => string) | null = null;
+  /** Stencil caption of a fortified zone (set by the HUD; null = none). */
+  zoneLabel: ((faction: number, zone: Zone) => string) | null = null;
 
   constructor(private readonly heightAt: (x: number, z: number) => number) {
     const mk = (u: object, order: number): THREE.Mesh => {
@@ -318,6 +365,7 @@ export class OrderLines {
     for (const f of w.factions) {
       if ((!spectator && f.id !== playerId) || !f.alive) continue;
       h = mix(h, f.mainFront + 101);
+      for (const z of f.zones ?? []) h = mix(mix(h, z.id * 2 + (z.cancelled ? 1 : 0) + 7919), Math.round(z.a.x + z.b.z));
       for (const s of f.fronts) {
         const o = s.order;
         if (o.kind === 'auto') continue;
@@ -338,6 +386,8 @@ export class OrderLines {
     for (const f of w.factions) {
       if ((!spectator && f.id !== playerId) || !f.alive) continue;
       const fc = new THREE.Color(f.color);
+      const home = w.hqPos(f.id);
+      for (const z of f.zones ?? []) drawZone(b, z, home, spectator ? SPECTATOR_K : 1);
       for (const s of f.fronts) {
         const sh = frontOrderShape(w, f, s);
         if (sh) drawShape(b, sh, fc, spectator ? SPECTATOR_K : s.id === f.mainFront ? 1.2 : 1);
@@ -377,6 +427,7 @@ export class OrderLines {
     g.font = `700 ${12}px "Big Shoulders Stencil Display", "Oswald", "Microsoft YaHei", sans-serif`;
     g.textAlign = 'center';
     g.textBaseline = 'middle';
+    if (this.zoneLabel) this.drawZoneLabels(o, f, P);
     for (const s of f.fronts) {
       const sh = frontOrderShape(w, f, s);
       if (!sh) continue;
@@ -394,6 +445,28 @@ export class OrderLines {
       g.lineWidth = 2;
       g.strokeRect(-tw / 2 + 1, -8, tw - 2, 16);
       g.fillStyle = '#272c27';
+      g.fillText(text, 0, 1);
+      g.restore();
+    }
+  }
+
+  /** Small stencil caption at the far end of each standing zone (cancelled ones are not captioned). */
+  private drawZoneLabels(o: ScreenOverlay, f: Faction, P: { x: number; y: number }): void {
+    const g = o.ctx;
+    for (const z of f.zones ?? []) {
+      if (z.cancelled || !this.zoneLabel) continue;
+      if (!o.project(z.b.x, this.heightAt(z.b.x, z.b.z) + 6, z.b.z, P) || !o.onScreen(P)) continue;
+      const text = this.zoneLabel(f.id, z);
+      const tw = g.measureText(text).width + 10;
+      g.save();
+      g.translate(P.x, P.y - 14);
+      g.fillStyle = 'rgba(39, 44, 39, 0.82)';
+      g.fillRect(-tw / 2, -8, tw, 16);
+      g.strokeStyle = ZONE_COLOR;
+      g.lineWidth = 1;
+      g.setLineDash([3, 2]);
+      g.strokeRect(-tw / 2 + 1.5, -6.5, tw - 3, 13);
+      g.fillStyle = '#e9e2cc';
       g.fillText(text, 0, 1);
       g.restore();
     }

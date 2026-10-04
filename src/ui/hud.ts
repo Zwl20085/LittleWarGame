@@ -49,6 +49,7 @@ export class Hud {
       const s = ctx.match.world.factions[fid]?.fronts.find((x) => x.id === id);
       return s ? `${frontLabel(ctx.match.world, fid, id)} · ${t(`order.${s.order.kind}`)}` : '';
     };
+    ctx.renderer.orderLines.zoneLabel = (_fid, z) => t('zone.mapLabel', { n: z.id + 1 });
     this.refresh();
   }
 
@@ -99,12 +100,13 @@ export class Hud {
     const hint = m.kind === 'attackMove' ? t('cmd.pickAttack') : this.fronts.modeHint();
     if (this.modeHint.textContent !== hint) this.modeHint.textContent = hint;
     this.modeHint.style.display = hint ? '' : 'none';
-    this.modeHint.className = `mode-hint ${m.kind === 'frontOrder' ? `order k-${m.order}` : ''}`;
+    this.modeHint.className = `mode-hint ${m.kind === 'frontOrder' ? `order k-${m.order}` : m.kind === 'newFront' ? 'order k-defend' : ''}`;
   }
 
   dispose(): void {
     this.offLang();
     this.ctx.renderer.orderLines.label = null;
+    this.ctx.renderer.orderLines.zoneLabel = null;
     this.root.remove();
     this.hiddenHint.remove();
   }
