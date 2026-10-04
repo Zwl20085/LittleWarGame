@@ -349,6 +349,17 @@ function assignGarrisons(world: World, f: Faction, defend: Directive[]): void {
 
 /** Occupy directives: small infantry detachments take open settlements behind the lines. */
 function assignOccupations(world: World, f: Faction, occupy: Directive[]): void {
+  // Round 7 (lead decision, wars must end): a finisher sends no occupation detachments; those out return to the line (and the storm).
+  if (f.command.finisher) {
+    for (const u of world.units.values()) {
+      if (u.owner !== f.id || u.hp <= 0 || u.opRole !== 'occupy') continue;
+      u.opRole = 'line';
+      u.opObjective = null;
+      u.opTarget = null;
+    }
+    for (const d of occupy) d.assigned = 0;
+    return;
+  }
   const active = new Map<string, number>();
   const pool: Unit[] = [];
   for (const u of world.units.values()) {

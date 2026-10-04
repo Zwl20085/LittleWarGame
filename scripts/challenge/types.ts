@@ -71,11 +71,16 @@ export interface AiDefence {
   /** Share of its alive seconds with homeThreat.active, and alarm onsets. */
   alarmShare: number;
   alarmOnsets: number;
+  /** Round 7 `homeThreat.alert` (an attack actually coming): share of time, first time after the attack (-1 = never / field absent). */
+  alertShare: number;
+  firstAlertAfterAttackS: number;
   /** Peak challenger value within 600 m of its capital after the attack (and when), max / seconds of challenger capture progress. */
   peakAttacker: number;
   peakAttackerS: number;
   maxProgress: number;
   progressS: number;
+  /** Challenger army ÷ this AI's army when the challenger's latest capture episode began (-1 = never). ≥ HOME.hopelessArmyRatio = an outmatched (hopeless) defence. */
+  ratioAtProgress: number;
   /** Every 30 s while alive. */
   trace: TracePoint[];
 }
@@ -111,6 +116,9 @@ export interface CapitalEvent {
 
 export interface ChallengeReport {
   readonly strategy: string;
+  readonly infoMode?: 'open' | 'fog';
+  /** Round-7 AI fixes switched off for this match (R7_OFF), '' = all on. */
+  readonly r7off?: string;
   readonly seed: number;
   readonly challenger: number;
   readonly minutes: number;

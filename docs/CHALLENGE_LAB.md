@@ -18,6 +18,7 @@ npx tsx scripts/challenge.ts --all --seeds 7,11,13 --minutes 40 --jobs 6        
 npx tsx scripts/challenge.ts --strategy rush --rushAt 180,300,600 --seeds 7,11,13  # rush at 3 / 5 / 10 min
 npx tsx scripts/challenge.ts --all --rushAt 300,180,600 --seeds 7,11,13 --jobs 8  # the baseline: all + rush variants
 npx tsx scripts/challenge.ts --strategy turtle,raid --challenger 2                  # another slot
+npx tsx scripts/challenge.ts --strategy rush,rush_micro --fog --seeds 7,11,13       # AI factions in fog of war
 ```
 
 - Each match runs in its own child process (`--jobs`, default 6). A 40-minute match takes about
@@ -25,7 +26,9 @@ npx tsx scripts/challenge.ts --strategy turtle,raid --challenger 2              
 - The raw report for each match goes to `media/stats/challenge-runs/<strategy>[-<rushAt>]-c<slot>-<seed>-<min>m.json`.
   The Markdown report goes to `media/stats/challenge-<timestamp>.md`, and the script also prints
   the summary table.
-- Setup: generated map, 4 factions, `open` information, `normal` difficulty, default personalities
+- `--fog` runs the match in fog of war: the AI factions only know what they see. The challenger
+  still reads the world, so it stays omniscient. Report labels get a `/fog` suffix.
+- Setup: generated map, 4 factions, `open` information (unless `--fog`), `normal` difficulty, default personalities
   (slot id % 5). The challenger is `playerSlot` with `spectate: false`, so it is a player faction.
   `isPlayer` switches off `cityai.thinkCity` (production mix and postures), `theatre.thinkTheatre`
   (dynamic fronts and AI orders) and the engineer requests in `fortplans` for that faction. Everything else still runs for
@@ -44,6 +47,7 @@ npx tsx scripts/challenge.ts --strategy turtle,raid --challenger 2              
 | `two_axis` | balanced | every 90 s two fronts each `attack` a different neighbour's nearest town (village at 1.5× distance, its capital once nothing else is left). The third front `defend`s 350 m out. Each front is matched to the neighbour whose bearing is closest to its axis. |
 | `raid` | motor inf, light tanks, recon | every 60 s each front `attack`s the least defended enemy village or town ≥ 900 m from its owner's capital, nearest first, using omniscient defence values. Two fronts never take the same target. |
 | `late_blitz` | armour heavy | `fortify` 450 m out until 15 min, then every front `attack`s the nearest capital with `setMainFront`, re-issued every 60 s. |
+| `rush_micro` | as `rush` | no front orders. From `--rushAt`, every 60 s, *every* combat unit gets a unit-level `unitOrder attackMove` on the nearest enemy capital. This is the literal "select all, attack the capital", bypassing the front commanders. |
 | `human_like` | balanced, tank leaning | every 30 s: (1) if ≥ 300 hostile value is within 900 m of home and outweighs 0.8× the home value, the front nearest home `defend`s toward it. (2) After 12 min it strikes a neighbour (one of the two nearest) whose capital area holds < 40 % of its army, when our army is ≥ 2.2× that capital's defence and ≥ 0.8× their army. The strike continues until the capital falls or our army drops below 50 % of its value at launch. (3) Otherwise each front `attack`s the best cheap place: value ÷ defence ÷ distance. |
 
 ## Adding a strategy
@@ -117,8 +121,56 @@ validation refused (`UNREACHABLE`, `NO_FRONT` …), so its plan did not happen a
 
 - The challenger is omniscient (open mode) and reacts on exact values. It is a stress test, not a
   model of a human.
-- Player fronts never get the `assault` posture: only `cityai` sets that posture, and only for AI
-  factions. A manual `attack` order leaves the front `cautious`, and the push threshold falls with
-  aggression. This is the same for a human player.
+- Since Round 7, player fronts on an `attack` order switch between cautious and assault by the
+  same rule `cityai` uses for the AI (`fronts.orderedAssault`). Repeating an identical manual order
+  keeps the posture and the operation that is under way.
 - `thinkHomeDefence` runs for the challenger too, but manual orders set `manualTarget`, which
   exempts those fronts from recall.
+
+## A/B switches
+
+- `R7_OFF=hqPoint,eta,assault` (or `all`) switches the Round-7 AI fixes off in the match processes.
+- `R7_ON=alarm,counter` switches on the two Round-7 variants that were rejected.
+- The switches are read by `scripts/challenge/match.ts` and set `homeguard.ROUND7_AB`, and the
+  report labels get `/r7off:…`.
+- `R7_OFF=… npx tsx scripts/challenge/soak-ab.ts 60 7` runs `scripts/soak.ts` with the same
+  switches.
+- Other agents edit the sim while the lab runs. For a clean A/B, copy `src`, `scripts`,
+  `docs/data`, `package.json` and `tsconfig.json` to a scratch folder with a `node_modules`
+  junction, and run both variants there. The runs are deterministic per seed.
+
+## Round 7 results (2026-10-04)
+
+Both columns come from frozen copies of the tree that include the balance agent's attack-side
+round (67f3b05): buffed tanks, `STORM.massR` 500 m, and pillbox / bunker values in
+`capitalDefence`. "Off" is `R7_OFF=all` on the copy frozen at 17:05. "Final" is the copy frozen
+at 18:00, with the lead's rules (hopeless, finisher massing).
+
+| strategy (3 seeds × 40 min) | AI survival, R7 off | AI survival, R7 final | survival when not outmatched, final |
+|---|---|---|---|
+| rush@3m | 100 % | 67 % | 100 % |
+| rush@5m | 100 % | 67 % | 100 % |
+| rush@10m | 100 % | 33 % | 100 % |
+| turtle | 100 % | 100 % | 100 % |
+| two_axis | 100 % | 100 % | 100 % |
+| raid | 67 % | 67 % | 100 % |
+| late_blitz | 100 % | 100 % | 100 % |
+| human_like | 100 % | 100 % | 100 % |
+| rush_micro@3m | 67 % | 67 % | 67 % |
+| rush_micro@5m | 67 % | 100 % | 100 % |
+| rush_micro@10m | 33 % | 100 % | 100 % |
+| **all 33 matches** | 27 / 33 | 27 / 33 | **32 / 33 (97 %)** |
+
+- The "off" column comes from the frozen-tree A/B run before the lead's rules were added. The
+  final column is `media/stats/challenge-2026-10-04T18-28-44.md`.
+- *Not outmatched* counts a capital taken by a challenger with ≥ 2 × the defender's army as a
+  legitimate loss. That is the lead's rule: a defender must not hold against 2.5× forever. Every
+  rush loss in the final run was at 2.4–12× the AI's army.
+- `rush_micro` is the literal "select all, attack the capital". The AI now survives 8/9 of those
+  matches, against 5/9 with Round 7 off.
+- Front-order rushes win more often. Their fronts can now assault (item 6), which buffs the
+  challenger the same way it buffs a human player.
+
+The alarm became a signal. The new `homeThreat.alert` fires 1–5 min after an attack is launched,
+and is on 18–72 % of the time. The old readiness alarm `active` is on 51–94 % of the time and is
+kept for recall: gating recall on the narrow alert lost 4 more capitals.

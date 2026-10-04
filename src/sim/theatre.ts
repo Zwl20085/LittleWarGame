@@ -285,6 +285,13 @@ const order = (world: World, kind: FrontOrder['kind'], a: V2, b: V2 | null = nul
 /** One order per front: stances (fall back / defend / fortify) first, else attack the commander's next objective. */
 function orderFront(world: World, f: Faction, s: Front, combat: Unit[]): void {
   if (s.manualTarget || isRecalled(f, s) || defendingHome(s) || counterStrikes.has(s) || !f.fronts.includes(s)) return;
+  // Round 7 (lead decision, wars must end): the finisher masses every front on the finish capital —
+  // no stances, no other objectives — so the storm (storm.stormMass) counts the whole army.
+  const fin = f.command.finishTarget;
+  if (f.command.finisher && fin >= 0 && world.factions[fin]?.alive) {
+    if (s.order.kind !== 'attack' || s.targetCity !== fin) issueFrontOrder(world, f, s, order(world, 'attack', world.hqPos(fin)));
+    return;
+  }
   const m = metaOf(world, s);
   const mine = sumValue(combat);
   const k = s.order.kind;

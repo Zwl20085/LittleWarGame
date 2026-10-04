@@ -21,6 +21,6 @@ describe('challenge lab', () => {
   it('registers every strategy once', () => {
     const ids = STRATEGIES.map((s) => s.id);
     expect(new Set(ids).size).toBe(ids.length);
-    expect(ids).toEqual(['rush', 'turtle', 'two_axis', 'raid', 'late_blitz', 'human_like']);
+    expect(ids).toEqual(['rush', 'turtle', 'two_axis', 'raid', 'late_blitz', 'human_like', 'rush_micro']);
   });
 });

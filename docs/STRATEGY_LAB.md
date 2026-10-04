@@ -833,3 +833,68 @@ O(units + objectives × fronts) work. It adds no per-tick or per-unit work.
   uncovered axis.
 - New log keys for the UI: `log.frontOpened {point}`, `log.frontMerged {point, into}`,
   `log.frontFallBack {point}`, `log.counterStrike {point}`.
+
+## Round 7: challenge lab (capital defence against scripted strategies)
+
+User: *"in some game I just let all units attack the capital, then it wins."*
+`scripts/challenge.ts` (docs/CHALLENGE_LAB.md) plays one faction through the command API with
+scripted strategies against the three AIs. The phase-1 baseline found one real hole. A capital
+falls when one eligible enemy squad holds the 35 m HQ radius for 45 s. The AI counted
+"garrison" over 250 m, built its works at 85–160 m, and posted nobody on the point. On
+human_like seed 13, F3 fell with 1.3 k of its own value inside 250 m and 7 k inside 1.5 km.
+
+### Changes
+
+- **HQ point** (`homeguard.HQ_POINT`, `assignHolders`, `hqDuty`; hook in `behavior.ts` before
+  structure duty):
+  - 2 standing-garrison squads stand within 12 m of the HQ. They must be eligible capturers
+    (infantry / recon / engineer, ≥ 50 % hp), not engineers by preference.
+  - A breach is capture progress, or an eligible enemy within `command_radius_m` + 40 m. It forces
+    the alarm. Every own infantry / vehicle within 400 m becomes a home guard and makes for the
+    point. Crews keep their posts.
+  - Units of recalled fronts within 1.5 km also converge, unless the defence is hopeless.
+- **Forecast**:
+  - `garrison` counts eligible infantry fully and crews, vehicles and fixed MGs at × 0.5.
+  - `eta` is the nearest aimed group's ETA (groups ≥ 150 value); `etaMean` keeps the old value.
+    The nearest ETA decides "at the gates". The recall march window keeps the mean ETA, because
+    the nearest ETA shrank the window and stopped distant groups from being recalled.
+- **Alert**: `homeThreat.alert` / `alarmLevel` count only contact, aimed groups inside 900 m, and
+  aimed closing groups with ETA ≤ 240 s.
+  - The early alarms (≈ 1 min) were AI fronts marching out on a capital axis 900–2400 m away,
+    with ETA 850–1070 s.
+  - `active` (readiness, drives recall) keeps the wide forecast. Gating recall on the narrow
+    alert lost 4 more capitals in the lab, so it is kept as the switch `ROUND7_AB.alarm` = off.
+- **Hopeless** (lead rule, wars must end): the defence is hopeless when the forecast is ≥ 1.5 ×
+  our army, or the main attacker's whole known army is ≥ `HOME.hopelessArmyRatio` (2) × ours.
+  Then every recalled front is released and the capital keeps only its standing garrison, HQ
+  squads and home guards.
+- **Finisher** (lead rule): `theatre.orderFront` orders every front of the finisher to `attack`
+  the finish capital, with no stances. `command.assignOccupations` sends no occupation
+  detachments and returns those already out. Rear guards and raids were already off for a
+  finisher in `operations.ts`.
+- **Player attack fronts can assault** (`fronts.ORDER_ASSAULT`, `orderedAssault`): `cityai` never
+  runs for players. The rule is assault when aggression ≥ assaultAll; or when the front is the
+  main effort and aggression ≥ assaultMain or it is strong (> 900); or when it outweighs the
+  known defence at the objective by 1.5×. Postures hold ≥ 45 s. An identical manual order given
+  again no longer resets the posture or the operation.
+- **Rejected**: `theatre.csCommittedAttacked` (counter-strike at 20 % committed while under
+  alarm). It cost 2 of 5 soak eliminations with no lab gain, so `ROUND7_AB.counter` is off.
+
+### Results
+
+| | Round 7 off (same tree) | Round 7 final |
+|---|---:|---:|
+| challenge lab, AI survival (33 matches) | 27 / 33 | 27 / 33 |
+| … when not outmatched (≥ 2 × army = legitimate loss) | — | **32 / 33** |
+| … `rush_micro` (literal all-in rush, 9 matches) | 5 / 9 | **8 / 9** |
+| soak 60 min (7, 11, 13): wars ended | 0 / 3 | 1 / 3 (seed 13, 52.0 min) |
+| soak 60 min: eliminations | 5 | **7** |
+| soak by 45 min: eliminations (Round 6: 3) | 5 | 4 |
+
+The lead's target of ≥ 2 / 3 wars ended is not met. The two open soak wars at 60 min:
+- Seed 7 is a near-even two-way fight (pop 536 vs 658), below the finisher threshold
+  (pop ≥ 1.3 ×), which is a balance question.
+- Seed 11 is a finisher war in progress (F3 949 vs F1 525 pop, 1.8 ×, F1 down from 65 to 41
+  settlements since minute 45) that did not reach F1's capital within the hour.
+Anomalies: 2–5 per seed, of the known kinds (home-guard AT guns "unreachable", raiders and
+tanks on slopes).

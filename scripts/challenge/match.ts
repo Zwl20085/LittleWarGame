@@ -6,6 +6,12 @@ import { buildGameData } from '../../src/data/loader';
 import type { GameData } from '../../src/data/types';
 import { CommandBus, type Command } from '../../src/sim/commands';
 import { createMatch, step } from '../../src/sim/sim';
+import { ROUND7_AB } from '../../src/sim/homeguard';
+
+// A/B: R7_OFF=hqPoint,eta,assault,counter (or "all"); R7_ON=alarm turns the rejected narrow-alarm recall gate on turns round-7 AI fixes off in this process (docs/CHALLENGE_LAB.md).
+const r7off = (process.env.R7_OFF ?? '').split(',').filter(Boolean);
+for (const k of Object.keys(ROUND7_AB) as (keyof typeof ROUND7_AB)[]) if (r7off.includes(k) || r7off.includes('all')) ROUND7_AB[k] = false;
+for (const k of (process.env.R7_ON ?? '').split(',').filter(Boolean)) if (k in ROUND7_AB) ROUND7_AB[k as keyof typeof ROUND7_AB] = true;
 import { createSampler } from './metrics';
 import { strategyById } from './strategies';
 import type { ChallengeParams, ChallengeReport, StrategyCtx } from './types';
@@ -17,6 +23,8 @@ export interface ChallengeOptions {
   readonly challenger?: number;
   readonly params?: Partial<ChallengeParams>;
   readonly mapId?: 'generated';
+  /** 'fog': the AI factions only know what they see (the challenger stays omniscient: it reads the world). */
+  readonly infoMode?: 'open' | 'fog';
   readonly data?: GameData;
 }
 
@@ -31,7 +39,7 @@ export function runChallengeMatch(opt: ChallengeOptions): ChallengeReport {
   const params: ChallengeParams = { ...DEFAULT_PARAMS, ...opt.params };
   const strategy = strategyById(opt.strategy);
   const match = createMatch(opt.data ?? loadDataFromDisk(), {
-    mapId: opt.mapId ?? 'generated', factions: 4, infoMode: 'open', seed: opt.seed, difficulty: 'normal', playerSlot: me, spectate: false,
+    mapId: opt.mapId ?? 'generated', factions: 4, infoMode: opt.infoMode ?? 'open', seed: opt.seed, difficulty: 'normal', playerSlot: me, spectate: false,
   });
   const w = match.world;
   if (!w.factions[me]?.isPlayer) throw new Error(`challenger slot ${me} is not a player faction`);
@@ -82,7 +90,7 @@ export function runChallengeMatch(opt: ChallengeOptions): ChallengeReport {
   }
   const own = sampler.falls.find((x) => x.capital === me);
   return {
-    strategy: strategy.id, seed: opt.seed, challenger: me, minutes: Math.round((w.time / 60) * 10) / 10,
+    strategy: strategy.id, infoMode: opt.infoMode ?? 'open', r7off: r7off.join(','), seed: opt.seed, challenger: me, minutes: Math.round((w.time / 60) * 10) / 10,
     wallS: Math.round((performance.now() - t0) / 100) / 10,
     attackS, attackTarget, nearestAi,
     captures: sampler.falls.filter((x) => x.by === me),

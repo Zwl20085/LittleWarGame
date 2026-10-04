@@ -1,11 +1,13 @@
 // Challenge lab: Markdown report and console summary from per-match ChallengeReports.
+import { HOME } from '../../src/sim/homeguard';
 import type { AiDefence, ChallengeReport } from './types';
 
 const mmss = (s: number): string => (!Number.isFinite(s) || s < 0 ? '—' : `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}`);
 const mean = (xs: number[]): number => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : NaN);
 const fmt = (x: number, d = 0): string => (Number.isFinite(x) ? x.toFixed(d) : '—');
 
-export const label = (r: ChallengeReport, rushAt: number): string => (r.strategy === 'rush' ? `rush@${Math.round(rushAt / 60)}m` : r.strategy);
+export const label = (r: ChallengeReport, rushAt: number): string =>
+  `${r.strategy.startsWith('rush') ? `${r.strategy}@${Math.round(rushAt / 60)}m` : r.strategy}${r.infoMode === 'fog' ? '/fog' : ''}${r.r7off ? `/r7off:${r.r7off}` : ''}`;
 
 /** The AI faction the match is about: the capital the strategy attacked, else the nearest. */
 export const targetOf = (r: ChallengeReport): AiDefence => r.ai.find((a) => a.id === (r.attackTarget >= 0 ? r.attackTarget : r.nearestAi)) ?? r.ai[0];
@@ -16,6 +18,7 @@ export interface Aggregate {
   readonly label: string;
   readonly n: number;
   readonly aiSurvival: number;
+  readonly aiSurvivalFair: number;
   readonly ownLost: number;
   readonly attackS: number;
   readonly arrivalS: number;
@@ -24,6 +27,8 @@ export interface Aggregate {
   readonly defenceRatio: number;
   readonly firstCaptureS: number;
   readonly alarmShare: number;
+  readonly alertDelayS: number;
+  readonly alertShare: number;
   readonly maxProgress: number;
   readonly verdict: string;
 }
@@ -33,6 +38,8 @@ export function aggregate(rows: Row[]): Aggregate[] {
   return labels.map((lb) => {
     const rs = rows.filter((x) => x.label === lb).map((x) => x.r);
     const survived = rs.filter((r) => r.captures.length === 0).length;
+    // Not outmatched: every capital the challenger took fell to < hopelessArmyRatio × the defender's army.
+    const fair = rs.filter((r) => r.captures.every((c) => (r.ai.find((a) => a.id === c.capital)?.ratioAtProgress ?? 0) >= HOME.hopelessArmyRatio)).length;
     const tg = rs.map(targetOf);
     const attack = rs.filter((r) => r.attackS >= 0);
     const delays = rs.flatMap((r) => {
@@ -43,7 +50,7 @@ export function aggregate(rows: Row[]): Aggregate[] {
     const aiSurvival = rs.length ? survived / rs.length : NaN;
     const verdict = aiSurvival >= 1 ? 'AI holds' : aiSurvival >= 0.5 ? 'AI shaky — loses some seeds' : 'AI BEATEN — loses most seeds';
     return {
-      label: lb, n: rs.length, aiSurvival,
+      label: lb, n: rs.length, aiSurvival, aiSurvivalFair: rs.length ? fair / rs.length : NaN,
       ownLost: rs.filter((r) => r.ownLostS >= 0).length,
       attackS: mean(attack.map((r) => r.attackS)),
       arrivalS: mean(arrived.map((a) => a.arrivalS)),
@@ -52,6 +59,8 @@ export function aggregate(rows: Row[]): Aggregate[] {
       defenceRatio: mean(arrived.filter((a) => a.attackerAtArrival > 0).map((a) => a.defenceAtArrival / a.attackerAtArrival)),
       firstCaptureS: mean(rs.flatMap((r) => (r.captures.length ? [r.captures[0].t] : []))),
       alarmShare: mean(tg.map((a) => a.alarmShare)),
+      alertDelayS: mean(rs.flatMap((r) => { const a = targetOf(r); return r.attackS >= 0 && (a.firstAlertAfterAttackS ?? -1) >= 0 ? [a.firstAlertAfterAttackS - r.attackS] : []; })),
+      alertShare: mean(tg.map((a) => a.alertShare ?? 0)),
       maxProgress: Math.max(0, ...tg.map((a) => a.maxProgress)),
       verdict,
     };
@@ -59,9 +68,9 @@ export function aggregate(rows: Row[]): Aggregate[] {
 }
 
 export function summaryTable(aggs: Aggregate[]): string {
-  const head = '| strategy | n | AI survival | challenger capital lost | mean attack | mean arrival | alarm delay after attack (s) | alarm ≤ arrival | defence ÷ attacker at arrival | mean first capital taken | target alarm on (share of time) | max capture progress (s) | verdict |';
-  const sep = '|---|---|---|---|---|---|---|---|---|---|---|---|---|';
-  const lines = aggs.map((a) => `| ${a.label} | ${a.n} | ${fmt(a.aiSurvival * 100)} % | ${a.ownLost}/${a.n} | ${mmss(a.attackS)} | ${mmss(a.arrivalS)} | ${fmt(a.alarmDelayS)} | ${a.alarmBeforeArrival} | ${fmt(a.defenceRatio, 2)} | ${mmss(a.firstCaptureS)} | ${fmt(a.alarmShare * 100)} % | ${a.maxProgress} | ${a.verdict} |`);
+  const head = '| strategy | n | AI survival | AI survival when not outmatched | challenger capital lost | mean attack | mean arrival | alarm delay after attack (s) | alarm ≤ arrival | defence ÷ attacker at arrival | mean first capital taken | target alarm on (share of time) | alert delay (s) | alert on (share) | max capture progress (s) | verdict |';
+  const sep = '|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|';
+  const lines = aggs.map((a) => `| ${a.label} | ${a.n} | ${fmt(a.aiSurvival * 100)} % | ${fmt(a.aiSurvivalFair * 100)} % | ${a.ownLost}/${a.n} | ${mmss(a.attackS)} | ${mmss(a.arrivalS)} | ${fmt(a.alarmDelayS)} | ${a.alarmBeforeArrival} | ${fmt(a.defenceRatio, 2)} | ${mmss(a.firstCaptureS)} | ${fmt(a.alarmShare * 100)} % | ${fmt(a.alertDelayS)} | ${fmt(a.alertShare * 100)} % | ${a.maxProgress} | ${a.verdict} |`);
   return [head, sep, ...lines].join('\n');
 }
 
@@ -71,7 +80,7 @@ function matchTable(rows: Row[]): string {
   const lines = rows.map(({ label: lb, r }) => {
     const a = targetOf(r);
     const counter = r.ai.filter((x) => x.counterAttackS >= 0).map((x) => `F${x.id}@${mmss(x.counterAttackS)}${x.counterAfterAttackS >= 0 ? `/${mmss(x.counterAfterAttackS)}` : ''}`).join(' ') || '—';
-    const took = r.captures.map((c) => `F${c.capital}@${mmss(c.t)}`).join(' ') || '—';
+    const took = r.captures.map((c) => { const ra = r.ai.find((x) => x.id === c.capital)?.ratioAtProgress ?? -1; return `F${c.capital}@${mmss(c.t)}${ra >= 0 ? ` (army ×${ra.toFixed(1)})` : ''}`; }).join(' ') || '—';
     const own = r.ownLostS >= 0 ? `${mmss(r.ownLostS)} by F${r.ownLostTo}` : '—';
     const works = Object.entries(a.worksKinds).map(([k, n]) => `${k} ${n}`).join(', ');
     const res = r.result ? `${r.result.reason}: F${r.result.winners.join('/')} @${mmss(r.result.t)}` : `open @${r.minutes} min`;
@@ -117,7 +126,7 @@ export function markdown(rows: Row[], cmdLine: string): string {
     `# Challenge lab — scripted supreme HQ vs the AI (seeds ${seeds})`, '',
     `Generated ${new Date().toISOString()} by \`${cmdLine}\`. Challenger = slot ${rows[0]?.r.challenger ?? 0} (player faction, orders via CommandBus only); the other 3 factions are the normal AI. See docs/CHALLENGE_LAB.md.`, '',
     '## Summary per strategy', '',
-    'AI survival = share of matches in which the challenger took **no** AI capital within the cap. Alarm delay = first `homeThreat.active` of the attacked AI after the strategy launched its capital attack. Arrival = challenger ≥ 300 value within 600 m of that capital, or capture progress.', '',
+    'AI survival = share of matches in which the challenger took **no** AI capital within the cap; *when not outmatched* counts a capital taken by a challenger with ≥ HOME.hopelessArmyRatio (2) × the defender’s army as a legitimate loss (lead rule: a defender must not hold against 2.5× forever). Alarm delay = first `homeThreat.active` of the attacked AI after the strategy launched its capital attack. Arrival = challenger ≥ 300 value within 600 m of that capital, or capture progress.', '',
     summaryTable(aggs), '',
     '## Per match (target = the AI whose capital the strategy attacked, else the nearest AI)', '',
     matchTable(rows), '',

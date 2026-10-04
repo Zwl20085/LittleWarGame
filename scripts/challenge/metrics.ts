@@ -42,12 +42,14 @@ export function createSampler(w: World, me: number): Sampler {
     firstAlarmS: -1, firstAlarmAfterAttackS: -1, maxLevel: 0, groupsRecalled: 0, peakRecalled: 0,
     worksPeak: 0, worksKinds: {}, counterAttackS: -1, counterAfterAttackS: -1, arrivalS: -1, defenceAtArrival: 0, garrisonAtArrival: 0,
     homeValueAtArrival: 0, attackerAtArrival: 0, alarmActiveAtArrival: false, recalledAtArrival: 0, holdersAtArrival: 0, lostS: -1, lostTo: -1, unitsLost: 0,
-    alarmShare: 0, alarmOnsets: 0, peakAttacker: 0, peakAttackerS: -1, maxProgress: 0, progressS: 0, trace: [],
+    alarmShare: 0, alarmOnsets: 0, alertShare: 0, firstAlertAfterAttackS: -1, ratioAtProgress: -1, peakAttacker: 0, peakAttackerS: -1, maxProgress: 0, progressS: 0, trace: [],
   }));
   const recalled = ai.map(() => new Set<number>());
   const aliveS = ai.map(() => 0);
   const alarmS = ai.map(() => 0);
+  const alertS = ai.map(() => 0);
   const wasOn = ai.map(() => false);
+  const inProgress = ai.map(() => false);
   const alive = w.factions.map((f) => f.alive);
   const falls: CapitalEvent[] = [];
   const held: { t: number; byFaction: number[] }[] = [];
@@ -79,6 +81,10 @@ export function createSampler(w: World, me: number): Sampler {
       if (ht.active && !wasOn[i]) a.alarmOnsets++;
       wasOn[i] = ht.active;
       a.alarmShare = Math.round((alarmS[i] / aliveS[i]) * 100) / 100;
+      const alert = !!(ht as { alert?: boolean }).alert;
+      if (alert) alertS[i]++;
+      a.alertShare = Math.round((alertS[i] / aliveS[i]) * 100) / 100;
+      if (alert && attackS >= 0 && t >= attackS && a.firstAlertAfterAttackS < 0) a.firstAlertAfterAttackS = t;
       if (ht.active && a.firstAlarmS < 0) a.firstAlarmS = t;
       if (ht.active && attackS >= 0 && t >= attackS && a.firstAlarmAfterAttackS < 0) a.firstAlarmAfterAttackS = t;
       a.maxLevel = Math.max(a.maxLevel, Math.round(ht.level * 100) / 100);
@@ -99,6 +105,8 @@ export function createSampler(w: World, me: number): Sampler {
       if (counter && a.counterAttackS < 0) a.counterAttackS = t;
       if (counter && attackS >= 0 && t >= attackS && a.counterAfterAttackS < 0) a.counterAfterAttackS = t;
       const prog = f.hqProgress[me] ?? 0;
+      if (prog > 0 && !inProgress[i]) a.ratioAtProgress = Math.round((myArmy / Math.max(1, armyValue(w, a.id))) * 100) / 100;
+      inProgress[i] = prog > 0;
       if (prog > 0) a.progressS++;
       a.maxProgress = Math.max(a.maxProgress, Math.round(prog));
       const att = valueNear(w, me, hq, ARRIVAL_R);
