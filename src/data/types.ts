@@ -49,6 +49,48 @@ export interface WeaponDef {
 }
 
 /** Shape of docs/data/rules.json (only the fields the sim reads are typed strictly). */
+/** One engineer-built defensive building (rules.json `construction.defensive.structures`). */
+export interface DefensiveStructureDef {
+  readonly id: 'pillbox' | 'bunker';
+  readonly label_zh: string;
+  readonly cost_p: number;
+  readonly cost_m: number;
+  readonly work_seconds: number;
+  readonly max_hp: number;
+  /** Squads it holds, and how many of them may be crews (MG / AT gun). */
+  readonly capacity: number;
+  readonly max_crews: number;
+  /** Unit ids that may garrison it. */
+  readonly accepts: readonly string[];
+  /** Cover level the occupants get from every direction while it stands. */
+  readonly cover: 0 | 1 | 2 | 3;
+  /** Built-in weapon (weapons.csv id) the occupant fires instead of its own; null = own weapon. */
+  readonly weapon: string | null;
+  /** Rear arc (deg, centred on the back) the occupants cannot fire into; 0 = none. */
+  readonly blind_rear_deg: number;
+  /** Blast damage multiplier for the occupants (replaces the cover level's blast factor). */
+  readonly occupant_blast_mul: number;
+  /** Occupants fire and observe from this much above their normal muzzle height. */
+  readonly muzzle_raise_m: number;
+}
+
+export interface DefensiveRules {
+  readonly structures: readonly DefensiveStructureDef[];
+  readonly garrison: {
+    /** A stopped eligible squad this close to a finished building with room enters it. */
+    readonly enter_radius_m: number;
+    /** An occupant moved farther than this from it has left. */
+    readonly leave_radius_m: number;
+    /** Holding troops look for an empty building this far away. */
+    readonly seek_radius_m: number;
+    /** Share of a direct hit on an occupant that the building takes instead (small arms: absorbed, no structural damage). */
+    readonly absorb_share: number;
+    /** On collapse the occupants are thrown out with this suppression and this share of max HP as damage. */
+    readonly collapse_suppression: number;
+    readonly collapse_damage_ratio: number;
+  };
+}
+
 export interface Rules {
   readonly proposed_defaults: {
     readonly army_scale?: number;
@@ -179,6 +221,10 @@ export interface Rules {
     /** Squads always kept at the capital, and the works its engineers build there early (user rule). */
     readonly capital_standing_garrison: number;
     readonly capital_line_works: Record<string, number>;
+  };
+  /** Engineer construction; `defensive` = 2.0 pillboxes / bunkers (structures.ts, BALANCE_SPEC §10). */
+  readonly construction: {
+    readonly defensive: DefensiveRules;
   };
   readonly information: { readonly enemy_memory_seconds: number };
   readonly manual_control: {

@@ -50,7 +50,11 @@ for (const seed of seeds) {
     w.fx.length = 0;
     // Log spam: count keys as they appear (the log is capped, so sample the new tail).
     if (w.log.length < logSeen) logSeen = 0;
-    for (; logSeen < w.log.length; logSeen++) logCounts.set(w.log[logSeen].key, (logCounts.get(w.log[logSeen].key) ?? 0) + 1);
+    for (; logSeen < w.log.length; logSeen++) {
+      const e = w.log[logSeen];
+      logCounts.set(e.key, (logCounts.get(e.key) ?? 0) + 1);
+      logCounts.set(`${e.key}@${e.faction}`, (logCounts.get(`${e.key}@${e.faction}`) ?? 0) + 1);
+    }
     if ((i + 1) % (300 * w.tickHz) === 0) report(win.splice(0, win.length));
     if (i % w.tickHz !== 0) continue;
     // Per-second invariants.
@@ -78,11 +82,19 @@ for (const seed of seeds) {
   const r = w.result;
   if (r) console.log(`RESULT: ${r.reason} winners [${r.winners.join(',')}] at ${(r.tick / w.tickHz / 60).toFixed(1)} min`);
   else console.log(`RESULT: no result after ${minutes} min (alive: ${w.factions.filter((f) => f.alive).map((f) => f.id).join(',')}; held ${w.factions.map((f) => w.objectives.filter((o) => o.owner === f.id).length).join('/')})`);
+  // 2.0 defensive buildings: standing (finished / sites) and garrisoned squads per faction, completions from the log.
+  const builtLog = (key: string): string => w.factions.map((f) => logCounts.get(`${key}@${f.id}`) ?? 0).join('/');
+  const bstat = (kind: string): string => w.factions.map((f) => {
+    const mine = w.forts.filter((x) => x.owner === f.id && x.kind === kind && x.hp > 0);
+    const done = mine.filter((x) => x.progress >= 1);
+    return `${done.length}+${mine.length - done.length}(${done.reduce((a, x) => a + (x.occupants?.length ?? 0), 0)})`;
+  }).join(' ');
+  console.log(`BUILDINGS standing+sites(garrison) | pillbox ${bstat('pillbox')} | bunker ${bstat('bunker')} | built pillbox ${builtLog('log.pillboxBuilt')} bunker ${builtLog('log.bunkerBuilt')} lost ${builtLog('log.structureLost')}`);
   // Batteries that never fired in the whole war.
   let silentGuns = 0; let guns = 0;
   for (const u of w.units.values()) if (u.def.id === 'howitzer' || u.def.id === 'mortar') { guns++; if (!tracks.get(u.id)?.fired && w.time - (tracks.get(u.id)?.since ?? w.time) > 300) silentGuns++; }
   if (guns && silentGuns / guns > 0.3) note(`${silentGuns}/${guns} artillery pieces alive at the end never fired (≥ 5 min old)`);
-  const spam = [...logCounts].filter(([, n]) => n > minutes * 30).sort((a, b) => b[1] - a[1]).slice(0, 5);
+  const spam = [...logCounts].filter(([k, n]) => !k.includes('@') && n > minutes * 30).sort((a, b) => b[1] - a[1]).slice(0, 5);
   if (spam.length) note(`log spam (> 30/min): ${spam.map(([k, n]) => `${k}×${n}`).join(', ')}`);
   console.log(anomalies.length ? `ANOMALIES (${anomalies.length}):\n  ${anomalies.join('\n  ')}` : 'ANOMALIES: none');
 

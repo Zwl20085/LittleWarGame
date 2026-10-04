@@ -168,7 +168,22 @@
       {"id": "trench_node", "cost_m": 50, "work_seconds": 35, "max_hp": 700, "squad_capacity": 2},
       {"id": "mg_bunker", "cost_m": 100, "work_seconds": 60, "max_hp": 1400, "squad_capacity": 1},
       {"id": "at_obstacle", "cost_m": 40, "work_seconds": 25, "max_hp": 600, "squad_capacity": 0}
-    ]
+    ],
+    "defensive": {
+      "comment": "2.0 defensive buildings (user: 工兵可以建设筑垒区域、炮楼、堡垒，需要步兵/侦察等单位进入驻防，不占人口). Built by engineers (structures.ts); costs are per building and NOT × army_scale (like unit costs). Buildings cost no population and squads inside them do not count against the population cap. A fortified zone (筑垒地域) is a planned layout of trenches + pillboxes + a bunker along a line, not a building of its own.",
+      "structures": [
+        {"id": "pillbox", "label_zh": "炮楼", "cost_p": 10, "cost_m": 80, "work_seconds": 70, "max_hp": 2200, "capacity": 1, "max_crews": 1, "accepts": ["infantry", "recon", "engineer", "motor_inf", "mg"], "cover": 3, "weapon": "mg", "blind_rear_deg": 90, "occupant_blast_mul": 0.55, "muzzle_raise_m": 2.2},
+        {"id": "bunker", "label_zh": "堡垒", "cost_p": 20, "cost_m": 160, "work_seconds": 120, "max_hp": 4500, "capacity": 2, "max_crews": 1, "accepts": ["infantry", "recon", "engineer", "motor_inf", "mg", "at_gun"], "cover": 3, "weapon": null, "blind_rear_deg": 0, "occupant_blast_mul": 0.4, "muzzle_raise_m": 0.8}
+      ],
+      "garrison": {
+        "enter_radius_m": 6,
+        "leave_radius_m": 9,
+        "seek_radius_m": 160,
+        "absorb_share": 0.5,
+        "collapse_suppression": 60,
+        "collapse_damage_ratio": 0.15
+      }
+    }
   },
   "command": {
     "comment": "2.0 command hierarchy (user decision 2026-10-04): the supreme HQ (player or AI) gives each front one order (attack / defend / fortify / fall back / auto); a front commander unit executes it. Commanders are appointed, never produced.",

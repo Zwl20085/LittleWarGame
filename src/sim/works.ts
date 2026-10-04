@@ -52,15 +52,18 @@ function newLine(world: World, owner: number, kind: LineKind, c: V2, facing: num
   return { id: world.newId(), owner, kind, pos: { ...c }, facing, start, end, length: spec.length, hp: spec.hp, maxHp: spec.hp, progress: 0, occupant: null };
 }
 
-/** Pay for and register a line work if the faction's works budget allows. */
-export function startLine(world: World, f: Faction, kind: LineKind, c: V2, facing: number): Fort | null {
+/**
+ * Pay for and register a line work if the faction's works budget allows. `prepaid`: the planner
+ * already collected the cost in instalments (fortplans.ts escrow), so nothing is charged here.
+ */
+export function startLine(world: World, f: Faction, kind: LineKind, c: V2, facing: number, prepaid = false): Fort | null {
   if (world.time - (lineWorksAt.get(f) ?? -1e9) < WORKS.startEverySeconds) return null;
   const fort = newLine(world, f.id, kind, c, facing);
   if (!fort) return null;
   // Digging is labour: paid in manpower (P), not munitions.
   const k = world.data.rules.proposed_defaults.army_scale ?? 1;
   const cost = WORKS[kind].costP * k;
-  if (f.p < cost || !trySpend(f, cost, 0).ok) return null;
+  if (!prepaid && (f.p < cost || !trySpend(f, cost, 0).ok)) return null;
   world.forts.push(fort);
   lineWorksAt.set(f, world.time);
   return fort;
