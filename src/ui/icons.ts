@@ -20,6 +20,8 @@ const NATO: Record<string, string> = {
   heavy_tank: '<ellipse cx="18" cy="12" rx="11" ry="5"/><ellipse cx="18" cy="12" rx="6" ry="2"/><ellipse cx="18" cy="12" rx="2" ry="1" class="f"/>',
   howitzer: '<circle cx="18" cy="12" r="4" class="f"/>',
   supply_truck: '<path d="M3 12H33"/><circle cx="11" cy="18" r="2.5"/><circle cx="25" cy="18" r="2.5"/>',
+  // Front commander: headquarters pennant on its staff.
+  commander: '<path d="M11 20V4"/><path d="M11 4.5H27L23 8.5L27 12.5H11Z" class="f"/><path d="M7 20H15"/>',
 };
 
 /** Side silhouettes, viewBox 0 0 64 26, drawn in currentColor. */
@@ -56,6 +58,11 @@ const SIL: Record<string, string> = {
   supply_truck:
     '<path d="M4 7h34v13H4z"/><path d="M38 11h10l6 5v4H38z"/><path d="M41 12h6l3 3h-9z" class="cut"/>'
     + '<path d="M4 20h50v2H4z"/><g class="w"><circle cx="12" cy="22" r="3.2"/><circle cx="22" cy="22" r="3.2"/><circle cx="47" cy="22" r="3.2"/></g>',
+  // Officer with field glasses, a staff runner and the HQ pennant.
+  commander:
+    '<circle cx="14" cy="6" r="2.6"/><path d="M11.5 9h5l1 8-1.5 8h-2l.5-7-2 7h-2l1-8z"/><path d="M16 9.5l4.5 -1.6 .5 1.4-4.5 1.6z"/><rect x="19.6" y="6.6" width="3" height="2" rx=".6"/>'
+    + '<circle cx="29" cy="7" r="2.4"/><path d="M26.8 10h4.4l.9 7-1.4 8h-1.8l.4-7-1.8 7h-1.8l.9-8z"/>'
+    + '<rect x="42" y="1.5" width="1.4" height="23.5"/><path d="M43.4 2.5h15l-4 4.5 4 4.5h-15z"/><path d="M38 24.5h10v1.5H38z"/>',
 };
 
 export function natoSymbol(unitId: string): SVGSVGElement {

@@ -1,8 +1,10 @@
+import { frontOrderShape, ORDER_COLOR } from '../render/orderLines';
 import { CONTESTED, NEUTRAL } from '../sim/frontline';
 import { Ground } from '../sim/terrain';
 import type { GameContext } from './context';
 import { h, setText } from './dom';
 import { t } from './i18n';
+import { frontLabel } from './labels';
 
 /** Bottom-right: minimap and layer toggles. */
 export class MinimapPanel {
@@ -76,6 +78,65 @@ export class MinimapPanel {
     this.ctx.renderer.rig.lookAt(x, z);
   }
 
+  /** Standing supreme-HQ orders (the player's; every faction's, thin, when spectating) + front names. */
+  private drawOrders(g: CanvasRenderingContext2D): void {
+    const w = this.ctx.match.world;
+    const k = this.scale;
+    const spect = this.ctx.spectator;
+    g.save();
+    g.lineCap = 'round';
+    for (const f of w.factions) {
+      if ((!spect && f.id !== this.ctx.playerId) || !f.alive) continue;
+      for (const s of f.fronts) {
+        const sh = frontOrderShape(w, f, s);
+        const col = ORDER_COLOR[s.order.kind];
+        if (sh) {
+          g.setLineDash(s.order.kind === 'fallBack' ? [3, 2] : []);
+          const strokeSeg = (a: { x: number; z: number }, b: { x: number; z: number }, width: number): void => {
+            g.beginPath();
+            g.moveTo(a.x * k, a.z * k);
+            g.lineTo(b.x * k, b.z * k);
+            g.strokeStyle = '#1f231e';
+            g.lineWidth = width + 1.6;
+            g.stroke();
+            g.strokeStyle = col;
+            g.lineWidth = width;
+            g.stroke();
+          };
+          const lw = spect ? 1.5 : 2.5;
+          if (sh.line) strokeSeg(sh.line.a, sh.line.b, lw);
+          if (sh.arrow) {
+            strokeSeg(sh.arrow.from, sh.arrow.to, lw * 0.7);
+            const { from, to } = sh.arrow;
+            const ang = Math.atan2(to.z - from.z, to.x - from.x);
+            g.setLineDash([]);
+            g.fillStyle = col;
+            g.beginPath();
+            g.moveTo(to.x * k + Math.cos(ang) * 4, to.z * k + Math.sin(ang) * 4);
+            g.lineTo(to.x * k + Math.cos(ang + 2.4) * 5, to.z * k + Math.sin(ang + 2.4) * 5);
+            g.lineTo(to.x * k + Math.cos(ang - 2.4) * 5, to.z * k + Math.sin(ang - 2.4) * 5);
+            g.closePath();
+            g.fill();
+          }
+        }
+        if (spect) continue;
+        // Front name at its line (or battle line), stamped small.
+        const at = sh ? sh.anchor : s.front;
+        const name = frontLabel(w, f.id, s.id);
+        g.setLineDash([]);
+        g.font = '600 9px "Oswald", "Microsoft YaHei", sans-serif';
+        g.textAlign = 'center';
+        g.textBaseline = 'middle';
+        g.lineWidth = 2.5;
+        g.strokeStyle = 'rgba(31, 35, 30, 0.85)';
+        g.strokeText(name, at.x * k, at.z * k - 7);
+        g.fillStyle = s.id === f.mainFront ? '#e3c27a' : '#f4ecd9';
+        g.fillText(name, at.x * k, at.z * k - 7);
+      }
+    }
+    g.restore();
+  }
+
   refresh(): void {
     const w = this.ctx.match.world;
     const g = this.canvas.getContext('2d')!;
@@ -114,6 +175,7 @@ export class MinimapPanel {
       const s = u.def.kind === 'vehicle' ? 3 : 2;
       g.fillRect(u.pos.x * this.scale - s / 2, u.pos.z * this.scale - s / 2, s, s);
     }
+    if (this.ctx.renderer.layers.fronts) this.drawOrders(g);
     const corners = this.ctx.renderer.rig.viewCorners();
     if (corners.length === 4) {
       g.strokeStyle = '#f4ecd9';

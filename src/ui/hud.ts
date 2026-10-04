@@ -5,6 +5,7 @@ import { onLangChange, t } from './i18n';
 import { MinimapPanel } from './minimap';
 import { ProductionBar } from './production';
 import { FrontsPanel } from './fronts';
+import { frontLabel } from './labels';
 import { SelectionPanel } from './selection';
 import { TopBar } from './topbar';
 
@@ -40,9 +41,14 @@ export class Hud {
     this.root = h('div', { class: 'hud' },
       this.top.el, this.fronts.el, this.selection.el, this.economy.el, this.help,
       h('div', { class: 'bottom-row' }, this.production.el, this.minimap.el),
-      this.toasts, this.modeHint, this.pausedBadge, this.production.tip);
+      this.toasts, this.modeHint, this.pausedBadge, this.production.tip, this.fronts.briefing);
     parent.append(this.root, this.hiddenHint);
     this.offLang = onLangChange(() => this.relabel());
+    // Map stamps on the standing order lines: "<front> · <order>".
+    ctx.renderer.orderLines.label = (fid, id) => {
+      const s = ctx.match.world.factions[fid]?.fronts.find((x) => x.id === id);
+      return s ? `${frontLabel(ctx.match.world, fid, id)} · ${t(`order.${s.order.kind}`)}` : '';
+    };
     this.refresh();
   }
 
@@ -86,15 +92,19 @@ export class Hud {
     // Keep the selection dossier clear of the minimap stack.
     const miniH = `${Math.ceil(this.minimap.el.offsetHeight)}px`;
     if (this.root.style.getPropertyValue('--mini-h') !== miniH) this.root.style.setProperty('--mini-h', miniH);
+    // Keep the orders column clear of the production bar.
+    const botH = `${Math.ceil(this.production.el.offsetHeight)}px`;
+    if (this.root.style.getPropertyValue('--bottom-h') !== botH) this.root.style.setProperty('--bottom-h', botH);
     const m = this.ctx.mode;
-    const hint = m.kind === 'attackMove' ? t('cmd.pickAttack')
-      : m.kind === 'frontOrder' ? t('order.pick', { order: t(`order.${m.order}`) }) : '';
-    this.modeHint.textContent = hint;
+    const hint = m.kind === 'attackMove' ? t('cmd.pickAttack') : this.fronts.modeHint();
+    if (this.modeHint.textContent !== hint) this.modeHint.textContent = hint;
     this.modeHint.style.display = hint ? '' : 'none';
+    this.modeHint.className = `mode-hint ${m.kind === 'frontOrder' ? `order k-${m.order}` : ''}`;
   }
 
   dispose(): void {
     this.offLang();
+    this.ctx.renderer.orderLines.label = null;
     this.root.remove();
     this.hiddenHint.remove();
   }

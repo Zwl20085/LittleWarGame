@@ -126,7 +126,8 @@ export class OpArrows {
   update(ppm: number): void {
     // Full strength on the operational map, faint once the camera is down among the troops.
     const t = Math.min(1, Math.max(0, (ppm - 1.5) / 3));
-    this.uniforms.uAlpha.value = 1 - 0.82 * t;
+    // Subordinate to the supreme-HQ order lines (render/orderLines.ts) drawn over it.
+    this.uniforms.uAlpha.value = (1 - 0.82 * t) * 0.6;
     this.uniforms.uScale.value = Math.min(3, Math.max(1, MIN_PX / (this.minWidth * Math.max(0.02, ppm))));
   }
 

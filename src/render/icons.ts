@@ -117,6 +117,11 @@ export function unitIconCanvas(unitType: string, color: string, roman: string, g
       line(g, L, cy, R, cy); g.beginPath(); g.arc(cx - 16, B - 6, 5, 0, Math.PI * 2); g.arc(cx + 16, B - 6, 5, 0, Math.PI * 2); g.stroke(); break;
     case 'bunker':
       g.fillRect(cx - 18, cy - 9, 36, 18); break;
+    case 'commander':
+      // Headquarters: a swallow-tailed pennant on its staff.
+      line(g, cx - 16, B, cx - 16, T); line(g, cx - 24, B, cx - 8, B);
+      g.beginPath(); g.moveTo(cx - 16, T); g.lineTo(cx + 22, T); g.lineTo(cx + 12, T + 9); g.lineTo(cx + 22, T + 18); g.lineTo(cx - 16, T + 18); g.closePath(); g.fill();
+      break;
     default:
       break;
   }
