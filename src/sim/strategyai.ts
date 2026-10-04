@@ -116,6 +116,15 @@ export const EAGER = {
   finishSpearheadM: 2200,
   /** Local ratio for a spearhead toward the target capital (2.2 otherwise), every 60 s instead of 120 s. */
   finishSpearRatio: 1.3,
+  /** 2.0 attack-side round: local ratio for an ordinary spearhead (was a fixed 2.2), every `spearEveryS`. */
+  spearRatio: 2.2,
+  spearEveryS: 120,
+  /** An armoured / motorized front (≥ armorSpearMobile fresh tanks + motor_inf free for the thrust) breaks through at this ratio, every armorSpearEveryS. */
+  armorSpearRatio: 1.5,
+  armorSpearMobile: 3,
+  armorSpearEveryS: 75,
+  /** Spearhead size: this share of the front (tanks and motorized first), at least 4. */
+  spearShare: 0.3,
   /** Guns deploy this × range behind the group's line and at least this far from enemy ground (was 0.55 / 0.6 and 300 / 180 m). */
   /** Rear guard share while no convoy was hit for `rearGuardAlertS` (OPS.rearGuardShare 0.1 otherwise). */
   rearGuardQuiet: 0.04,

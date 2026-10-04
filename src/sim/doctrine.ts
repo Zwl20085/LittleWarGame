@@ -166,6 +166,14 @@ export function planPincer(world: World, f: Faction, groups: ReadonlyMap<number,
 export function runOperation(world: World, f: Faction, s: Front, units: Unit[]): void {
   const key = `${Math.round(s.targetPos.x)},${Math.round(s.targetPos.z)}`;
   let st = ops.get(s);
+  // 2.0 balance round: a capital whose faction is gone is no objective. Without this a flank /
+  // pincer on it never ended ('won' only checked targetObjective), re-launched every rethink and
+  // kept the front off `attackNext` (maneuvering) for the rest of the war (soak: the strongest
+  // side's fronts circled a dead capital for 10–20 min while its stock hit the caps).
+  if (deadCapital(world, s)) {
+    if (st && s.opPhase !== '') endOp(world, s, st, units, 'won');
+    return;
+  }
   // Re-plan when the objective changes, or (unlocked) once the current operation has run its course.
   // Round 4: a frontal march on a capital (phase 'move', no rethink) turns into a siege on arrival.
   const toSiege = !!st && st.key === key && capitalSiege(s) && !s.opLocked && s.op === 'frontal' && s.opPhase !== 'assault'
@@ -489,6 +497,11 @@ export function resetOperation(s: Front, units: Unit[], world?: World): void {
 }
 
 /** Is this group in the middle of a flank / pincer (its target must not change under it)? */
+/** The front's target capital belongs to a faction that has been eliminated. */
+export function deadCapital(world: World, s: Front): boolean {
+  return s.targetCity !== null && !world.factions[s.targetCity]?.alive;
+}
+
 export function maneuvering(s: Front): boolean {
   return (s.op === 'pincer' || s.op === 'flank') && s.opPhase !== '';
 }

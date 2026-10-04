@@ -6,7 +6,7 @@ mg,架设机枪,hitscan,170,0,1.2,72,10,0.75,0,18,false,0.014,0,0,0
 coax_mg,同轴机枪,hitscan,100,0,1.8,28,8,0.65,0,6,true,0.010,0,0,0
 at_cannon,反坦克炮,direct_projectile,240,15,4.5,900,140,0.72,3,10,false,0.030,180,-8,20
 light_cannon,轻坦主炮,direct_projectile,190,0,3.5,75,60,0.70,4,8,true,0.030,160,-8,20
-medium_cannon,中坦主炮,direct_projectile,220,0,5,115,100,0.72,6,12,true,0.035,180,-8,20
+medium_cannon,中坦主炮,direct_projectile,220,0,5,130,100,0.72,6,12,true,0.035,180,-8,20
 heavy_cannon,重坦主炮,direct_projectile,250,0,6,210,145,0.74,7,16,true,0.040,200,-8,20
 mortar_shell,迫击炮弹,ballistic,330,60,4.5,125,20,0,11,28,false,0.045,62,45,85
 howitzer_shell,榴弹炮弹,ballistic,560,120,11,180,35,0,16,38,false,0.080,100,4,75

@@ -18,6 +18,8 @@ export const COMBAT = {
   smallArmsPenCutoff: 15, // pen <= 15 vs armor > 20 => 0
   smallArmsArmorCutoff: 20,
   atVsInfantryMul: 0.15,
+  /** 2.0 attack-side round: an AP round's burst on a work / pillbox / bunker counts at most this (AT guns kill tanks, tank guns crack concrete). */
+  apStructureCap: 250,
   nearMissRadius: 5,
   nearMissSuppressionMul: 0.25,
   heTargetMul: { infantry: 1, crew: 1, supply_truck: 0.8, light_tank: 0.35, medium_tank: 0.2, heavy_tank: 0.12, fort: 1.2 } as Record<string, number>,

@@ -1,9 +1,9 @@
-import { maneuvering } from './doctrine';
+import { deadCapital, maneuvering } from './doctrine';
 import { isCommander } from './formulas';
 import { counterStrikes } from './frontref';
 import { assignWings, createFront, dissolveFront, transferable } from './frontops';
 import { finishNow, frontGroups, issueFrontOrder, nextTarget } from './fronts';
-import { defendingHome, HOME, isRecalled } from './homeguard';
+import { defendingHome, HOME, isRecalled, ROUND7_AB } from './homeguard';
 import { hostileMask } from './spatial';
 import { capitalDefence } from './storm';
 import { stormOn, STRATEGY_AI } from './strategyai';
@@ -77,6 +77,8 @@ export const THEATRE = {
   releaseRatio: 0.5,
   /** Counter-strike: an enemy with ≥ csCommitted of its known army within csNearM of our capital, and a capital defence ≤ csArmyShare of that army … */
   csCommitted: 0.4,
+  /** Round 7 (challenge lab, seed 13: a 20 % strike group took a capital, the 40 % rule never fired): while our capital is under alarm or breached, this share is enough. */
+  csCommittedAttacked: 0.2,
   csNearM: 1400,
   csArmyShare: 0.3,
   /** … is struck by our strongest free front within csReachM of its capital with ≥ csRatio × the defence and ≥ csMinUnits troops; kept ≥ csKeepS.
@@ -308,8 +310,10 @@ function orderFront(world: World, f: Faction, s: Front, combat: Unit[]): void {
 
 /** Attack the commander's next objective (1.x retarget cadence: ≥ retargetS, or the finish target now). */
 function attackNext(world: World, f: Faction, s: Front): void {
-  if (maneuvering(s)) return;
-  if (s.order.kind === 'attack' && world.time - s.lastRetarget <= THEATRE.retargetS && !finishNow(f, s)) return;
+  // A dead target capital is replaced at once (no manoeuvre or retarget cadence keeps it).
+  const dead = deadCapital(world, s);
+  if (!dead && maneuvering(s)) return;
+  if (!dead && s.order.kind === 'attack' && world.time - s.lastRetarget <= THEATRE.retargetS && !finishNow(f, s)) return;
   const t = nextTarget(world, f, s);
   if (s.order.kind !== 'attack' || dist(t.pos, s.targetPos) > 1) issueFrontOrder(world, f, s, order(world, 'attack', t.pos));
 }
@@ -441,9 +445,11 @@ function committedEnemy(world: World, f: Faction): number {
   }
   let best = -1;
   let bestNear: number = HOME.minThreat;
+  const ht = f.command.homeThreat;
+  const share = ROUND7_AB.counter && (ht.active || ht.breach) ? THEATRE.csCommittedAttacked : THEATRE.csCommitted;
   for (const [id, total] of army) {
     const n = near.get(id) ?? 0;
-    if (n < total * THEATRE.csCommitted || n < bestNear) continue;
+    if (n < total * share || n < bestNear) continue;
     if (capitalDefence(world, f.id, id) > total * THEATRE.csArmyShare) continue;
     best = id;
     bestNear = n;

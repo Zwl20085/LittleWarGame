@@ -3,10 +3,10 @@ import { hostileMask } from './spatial';
 import { crossings, defensivePosition, firstCrossing, lineSlot, nearestFeature, threatCentre, unitDepthRank } from './terrainai';
 import { frontAnchor, safeRear } from './frontai';
 import { ADAPT, adaptive, EAGER, eagerOn } from './strategyai';
-import { maneuvering, planPincer, resetOperation, runOperation, siegeRing } from './doctrine';
+import { deadCapital, maneuvering, planPincer, resetOperation, runOperation, siegeRing } from './doctrine';
 import { bridgeSiteFor } from './engineering';
 import { frontSegments, OPS, spreadAlong, planOperations } from './operations';
-import { defendingHome, homeOn, isRecalled, restoreOrders, saveOrders } from './homeguard';
+import { defendingHome, homeOn, isRecalled, restoreOrders, ROUND7_AB, saveOrders } from './homeguard';
 import { capitalSiege, stormRing } from './storm';
 import type { Faction, Objective, Front, Unit } from './types';
 import { dist, headingTo, angleDiff, DEG, type V2 } from './vec';
@@ -98,6 +98,10 @@ const ORDER_LINE_M = 240;
  * retarget did.
  */
 export function issueFrontOrder(world: World, f: Faction, s: Front, order: Front['order']): void {
+  // Round 7: the same manual order given again (a player re-confirming it) keeps the posture and the operation under way.
+  const prev = s.order;
+  const repeat = ROUND7_AB.assault && order.manual && prev.manual && prev.kind === order.kind && dist(prev.a, order.a) < 30
+    && (prev.b === null) === (order.b === null) && (!prev.b || !order.b || dist(prev.b, order.b) < 30);
   s.order = order;
   const hq = world.hqPos(f.id);
   if (order.kind === 'auto') {
@@ -131,8 +135,10 @@ export function issueFrontOrder(world: World, f: Faction, s: Front, order: Front
     s.rally = lerpV(exit, centre, attack ? 0.4 : 0.9);
     s.reason = `reason.order.${order.kind}`;
     s.reasonParams = { point: s.targetObjective ?? '' };
-    setPosture(world, s, attack ? 'cautious' : order.kind === 'fortify' ? 'fortify' : 'hold');
-    if (s.opPhase !== '') resetOperation(s, frontUnits(world, f.id, s.id), world);
+    if (!repeat) {
+      setPosture(world, s, attack ? 'cautious' : order.kind === 'fortify' ? 'fortify' : 'hold');
+      if (s.opPhase !== '') resetOperation(s, frontUnits(world, f.id, s.id), world);
+    }
   } else {
     // 1.x retarget rally points (lab-tuned): halfway to a capital, a third of the way to a place.
     s.rally = lerpV(exit, centre, attack ? (s.targetCity !== null ? 0.5 : 0.35) : 0.9);
@@ -158,6 +164,28 @@ function setPosture(world: World, s: Front, p: Front['posture']): void {
   if (s.posture === p) return;
   s.posture = p;
   s.postureSince = world.time;
+}
+
+/**
+ * Round 7 (challenge lab): `cityai.thinkCity` sets postures for AI factions only, so a player front
+ * on an `attack` order stayed 'cautious' for good and a front-order rush never stormed. Its
+ * commander now applies the same rule: assault when the army is eager (aggression ≥ assaultAll),
+ * when it is the main effort and eager or strong (> assaultAt), or when it outweighs the known
+ * defence at the objective by `localRatio`; else cautious. A posture stands ≥ `holdS`.
+ */
+export const ORDER_ASSAULT = { localRatio: 1.5, targetR: 220, assaultAt: 900, holdS: 45 } as const;
+
+function orderedAssault(world: World, f: Faction, s: Front, units: Unit[]): void {
+  if (s.order.kind !== 'attack' || defendingHome(s) || world.time - s.postureSince < ORDER_ASSAULT.holdS) return;
+  const own = world.objectives.find((o) => o.id === s.targetObjective);
+  const attacking = s.targetCity !== null || !own || own.owner !== f.id;
+  const mine = strengthOf(units);
+  const theirs = knownEnemyStrength(world, f.id, s.targetPos, ORDER_ASSAULT.targetR);
+  const aggr = eagerOn() ? f.command.aggression : 0;
+  const strong = mine > ORDER_ASSAULT.assaultAt * (world.data.rules.proposed_defaults.army_scale ?? 1);
+  const main = s.id === f.mainFront && (aggr >= EAGER.assaultMain || strong);
+  const assault = attacking && (aggr >= EAGER.assaultAll || main || mine >= ORDER_ASSAULT.localRatio * (theirs + 1));
+  setPosture(world, s, assault ? 'assault' : 'cautious');
 }
 
 /** Does the standing order fix this front's objective (the commander may not retarget on its own)? */
@@ -383,7 +411,7 @@ export function thinkFronts(world: World, f: Faction): void {
     // Strategy changes slowly: a front keeps its objective at least 60 s (user: AI was too fast).
     // (an assault already under way on a nearby place is finished first). 2.0: only a front on an
     // `auto` order picks its own objective; the AI supreme HQ re-issues attack orders (theatre.ts).
-    if (!orderedTarget(s) && !maneuvering(s) && (world.time - s.lastRetarget > 60 || finishNow(f, s))) {
+    if (!orderedTarget(s) && (deadCapital(world, s) || (!maneuvering(s) && (world.time - s.lastRetarget > 60 || finishNow(f, s))))) {
       const t = nextTarget(world, f, s);
       if (dist(t.pos, s.targetPos) > 1 || defendingHome(s)) {
         s.targetPos = { ...t.pos };
@@ -394,6 +422,8 @@ export function thinkFronts(world: World, f: Faction): void {
         s.rally = lerpV(world.cityOf(f.id).exit, s.targetPos, t.city !== null ? 0.5 : 0.35);
       }
     }
+    // Round 7: the player's attack orders get the AI's cautious ⇄ assault rule (cityai never runs for players).
+    if (f.isPlayer && ROUND7_AB.assault) orderedAssault(world, f, s, units);
     // Battle doctrine for this group's attack (flank, pincer, infiltration, siege …).
     runOperation(world, f, s, units);
     // Losing badly near target → pause the push (avoid suicidal trickle). Count the whole front,
@@ -482,7 +512,10 @@ function planFront(world: World, f: Faction, s: Front, units: Unit[], defensive:
     const finishing = eagerOn() && f.command.finishTarget >= 0 && s.targetCity === f.command.finishTarget;
     // Round 4: no trickle of spearheads while a capital siege masses / digs (storm.ts).
     const massing = capitalSiege(s) && s.op === 'siege' && (s.opPhase === 'form' || s.opPhase === 'dig');
-    if (!defensive && !massing && ratio > (finishing ? EAGER.finishSpearRatio : 2.2) && world.time - s.lastSpearhead > (finishing ? 60 : 120)) launchSpearhead(world, f, s, units, anchor);
+    const armoured = mobileFresh(units) >= EAGER.armorSpearMobile;
+    const spearRatio = finishing ? Math.min(EAGER.finishSpearRatio, armoured ? EAGER.armorSpearRatio : Infinity) : armoured ? EAGER.armorSpearRatio : EAGER.spearRatio;
+    const spearEvery = finishing ? 60 : armoured ? EAGER.armorSpearEveryS : EAGER.spearEveryS;
+    if (!defensive && !massing && ratio > spearRatio && world.time - s.lastSpearhead > spearEvery) launchSpearhead(world, f, s, units, anchor);
     s.crossing = null;
   } else if (holding) {
     // Anchor near the objective (or the city) on the best defensive ground facing the threat.
@@ -670,6 +703,15 @@ function eagerPush(world: World, f: Faction, s: Front, units: Unit[], anchor: V2
  * Breakthrough: with decisive local superiority, detach a mobile group (tanks + fresh infantry)
  * to drive through the front and seize an enemy settlement behind it — or the enemy capital.
  */
+const SPEAR_MOBILE = new Set(['light_tank', 'medium_tank', 'heavy_tank', 'motor_inf']);
+const spearReady = (u: Unit): boolean => !u.spearhead && !u.manual && !u.routing && u.behavior === 'advance' && u.hp > u.def.maxHp * 0.6;
+/** Fresh tanks and motorized squads free for a thrust. */
+function mobileFresh(units: Unit[]): number {
+  let n = 0;
+  for (const u of units) if (SPEAR_MOBILE.has(u.def.id) && spearReady(u)) n++;
+  return n;
+}
+
 function launchSpearhead(world: World, f: Faction, s: Front, units: Unit[], anchor: V2): void {
   let target: string | null = null;
   let tpos: V2 | null = null;
@@ -703,11 +745,15 @@ function launchSpearhead(world: World, f: Faction, s: Front, units: Unit[], anch
   }
   if (!target || !tpos) return;
   const pool = units
-    .filter((u) => !u.spearhead && !u.manual && !u.routing && u.behavior === 'advance' && u.hp > u.def.maxHp * 0.6
+    .filter((u) => spearReady(u)
       && (u.def.kind === 'vehicle' ? u.def.id !== 'supply_truck' : u.def.id === 'infantry' || u.def.id === 'engineer' || u.def.id === 'motor_inf'))
-    .sort((a, b) => dist(a.pos, anchor) - dist(b.pos, anchor));
-  const size = Math.max(4, Math.round(units.length * 0.3));
-  const group = pool.slice(0, size);
+    // Armour and motorized rifles lead the thrust; then the nearest riflemen.
+    .sort((a, b) => (SPEAR_MOBILE.has(b.def.id) ? 1 : 0) - (SPEAR_MOBILE.has(a.def.id) ? 1 : 0) || dist(a.pos, anchor) - dist(b.pos, anchor));
+  const size = Math.max(4, Math.round(units.length * EAGER.spearShare));
+  // Riflemen to take the objective: at least 3 foot squads ride with an armoured thrust.
+  const head = pool.slice(0, size);
+  const foot = pool.slice(size).filter((u) => u.def.kind === 'infantry').slice(0, Math.max(0, 3 - head.filter((u) => u.def.kind === 'infantry').length));
+  const group = [...head, ...foot];
   if (group.filter((u) => u.def.kind === 'infantry').length < 2) return;
   for (const u of group) u.spearhead = target;
   s.lastSpearhead = world.time;

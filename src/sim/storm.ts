@@ -22,8 +22,11 @@ export const STORM = {
   /** …plus this much value per finished trench / sandbag line within `defenceR`. */
   trenchValue: 160,
   sandbagValue: 80,
+  /** 2.0: finished pillbox / bunker value (the building; its garrison counts as units). */
+  pillboxValue: 300,
+  bunkerValue: 550,
   /** Our value within `massR` of the capital that counts as the storm mass. */
-  massR: 1000,
+  massR: 500,
   /** Storm at mass ≥ massRatio × forecast; after `formMaxS` storm anyway at ≥ minRatio, else dig. */
   massRatio: 1.6,
   minRatio: 1.1,
@@ -108,6 +111,8 @@ export function capitalDefence(world: World, f: number, city: number): number {
     if (w.owner !== city || w.hp <= 0 || w.progress < 1 || dist(w.pos, hq) > STORM.defenceR) continue;
     if (w.kind === 'trench') v += STORM.trenchValue;
     else if (w.kind === 'sandbag') v += STORM.sandbagValue;
+    else if (w.kind === 'pillbox') v += STORM.pillboxValue;
+    else if (w.kind === 'bunker') v += STORM.bunkerValue;
   }
   return v;
 }

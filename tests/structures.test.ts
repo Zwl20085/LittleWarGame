@@ -141,7 +141,8 @@ describe('defensive buildings (structures.ts)', () => {
     expect(absorbHit(w, u, 100, 8, 1)).toBeCloseTo(100 * (1 - data.rules.construction.defensive.garrison.absorb_share));
     expect(fort.hp).toBe(hp0);
     absorbHit(w, u, 400, 140, 1);
-    expect(fort.hp).toBeLessThan(hp0);
+    // 2.0 attack-side round: the concrete takes the tempo multiplier like units do.
+    expect(fort.hp).toBeCloseTo(hp0 - 400 * data.rules.construction.defensive.garrison.absorb_share * (data.rules.proposed_defaults.tempo_damage_multiplier ?? 1), 5);
     // Collapse: thrown out, suppressed and hurt.
     const hp = u.hp;
     damageStructure(w, fort, fort.hp + 1, 1);

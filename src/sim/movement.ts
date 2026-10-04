@@ -103,7 +103,9 @@ export const MOTOR = {
   mountSeconds: 5,
   minTripM: 180,
   safeRadiusM: 450,
-  mountedDamageMul: 1.3,
+  mountedDamageMul: 1.15,
+  /** 2.0 attack-side round: a motorized spearhead stays mounted until known enemies are this close (450 m otherwise). */
+  spearSafeRadiusM: 220,
 } as const;
 
 /** Mount/dismount state machine; true while the squad is getting on or off its trucks. */
@@ -117,7 +119,7 @@ function handleMount(world: World, u: Unit, wantsMove: boolean): boolean {
   if (want) {
     // Any known enemy within the safety radius keeps the squad on foot (early-exit search).
     const f = u.owner;
-    if (world.spatial.findOwner(u.pos.x, u.pos.z, MOTOR.safeRadiusM, hostileMask(world, f), (o) => o.hp > 0 && world.isHostile(f, o.owner) && world.knows(f, o))) want = false;
+    if (world.spatial.findOwner(u.pos.x, u.pos.z, u.spearhead ? MOTOR.spearSafeRadiusM : MOTOR.safeRadiusM, hostileMask(world, f), (o) => o.hp > 0 && world.isHostile(f, o.owner) && world.knows(f, o))) want = false;
   }
   if (want === u.mounted) return false;
   u.mounted = want;

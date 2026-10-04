@@ -3,6 +3,8 @@ import { loadGameData } from '../src/data';
 import { createMatch, step } from '../src/sim/sim';
 import { bombardPoint, capitalDefence, STORM, stormMass } from '../src/sim/storm';
 import { navPost } from '../src/sim/crewai';
+import { deadCapital, runOperation } from '../src/sim/doctrine';
+import { frontUnits } from '../src/sim/fronts';
 import { dist } from '../src/sim/vec';
 
 /** Round 4: the attacker's forecast of a capital's defence and the bombard / post helpers. */
@@ -23,6 +25,10 @@ describe('capital siege-and-storm helpers (storm.ts, crewai.ts)', () => {
     world.forts.push({ id: world.newId(), owner: 0, kind: 'trench', pos: { x: hq.x + 100, z: hq.z }, facing: 0, start: { x: hq.x + 100, z: hq.z - 20 }, end: { x: hq.x + 100, z: hq.z + 20 }, length: 40, hp: 2600, maxHp: 2600, progress: 1, occupant: null });
     expect(capitalDefence(world, 1, 0)).toBeCloseTo(before + STORM.trenchValue, 5);
     expect(stormMass(world, 0, hq)).toBeGreaterThan(0);
+    // 2.0: a finished pillbox adds its building value (its garrison counts as units).
+    const withTrench = capitalDefence(world, 1, 0);
+    world.forts.push({ id: world.newId(), owner: 0, kind: 'pillbox', pos: { x: hq.x - 60, z: hq.z }, facing: 0, hp: 2200, maxHp: 2200, progress: 1, occupant: null, capacity: 1, occupants: [] });
+    expect(capitalDefence(world, 1, 0)).toBeCloseTo(withTrench + STORM.pillboxValue, 5);
   });
 
   it('deploys guns within range of the defenders, on the attacker side', () => {
@@ -39,5 +45,23 @@ describe('capital siege-and-storm helpers (storm.ts, crewai.ts)', () => {
     if (!gun) return;
     const p = navPost(world, gun, world.hqPos(0));
     expect(world.navFor(gun).nearestPassable(p, 1)).not.toBeNull();
+  });
+  it('ends an operation on a capital whose faction is gone (no flank circling a dead capital)', () => {
+    const f = world.factions[1];
+    const s = f.fronts[0];
+    const units = frontUnits(world, 1, s.id);
+    s.targetCity = 0;
+    s.targetPos = { ...world.hqPos(0) };
+    s.targetObjective = null;
+    runOperation(world, f, s, units);
+    expect(s.opPhase).not.toBe('');
+    world.factions[0].alive = false;
+    try {
+      expect(deadCapital(world, s)).toBe(true);
+      runOperation(world, f, s, units);
+      expect(s.opPhase).toBe('');
+    } finally {
+      world.factions[0].alive = true;
+    }
   });
 });

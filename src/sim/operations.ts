@@ -176,7 +176,10 @@ export function planOperations(world: World, f: Faction): void {
   const target = { x: gap.x + Math.cos(dir) * 380, z: gap.z + Math.sin(dir) * 380 };
   if (!world.terrain.inBounds(target.x, target.z)) return;
   const size = Math.max(3, Math.round(mine.length * OPS.raidShare));
-  const pool = mine.filter((u) => u.opRole === 'line' && !u.spearhead && !u.manual && isRaider(u) && u.behavior === 'advance' && u.hp > u.def.maxHp * 0.7)
+  // 2.0 attack-side round: a front storming / besieging a capital keeps its troops (storm diag: 4–7 of
+  // ~40 units of a storming front were off raiding while the assault reached the HQ piecemeal).
+  const besieging = new Set(f.fronts.filter((s) => s.op === 'siege' && s.targetCity !== null && s.opPhase !== '').map((s) => s.id));
+  const pool = mine.filter((u) => u.opRole === 'line' && !u.spearhead && !u.manual && isRaider(u) && u.behavior === 'advance' && u.hp > u.def.maxHp * 0.7 && !besieging.has(u.frontId))
     .sort((a, b) => dist(a.pos, gap) - dist(b.pos, gap)).slice(0, size);
   if (pool.length < 3) return;
   for (const u of pool) {

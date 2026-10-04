@@ -237,7 +237,8 @@ export function absorbHit(world: World, u: Unit, dmg: number, penetration: numbe
 
 export function damageStructure(world: World, fort: Fort, amount: number, attackerOwner: number): void {
   if (fort.hp <= 0 || amount <= 0) return;
-  fort.hp = Math.max(0, fort.hp - amount);
+  // 2.0 attack-side round: concrete takes the same tempo multiplier as units (it was 1.8× tougher than its HP said).
+  fort.hp = Math.max(0, fort.hp - amount * (world.data.rules.proposed_defaults.tempo_damage_multiplier ?? 1));
   if (fort.hp <= 0) collapseStructure(world, fort, attackerOwner);
 }
 

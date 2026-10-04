@@ -172,7 +172,7 @@ export function resolveBlast(
     addSuppression(world, u, suppression * fall * COVER[cover].supp * supMul);
     applyDamage(world, u, dmg, attackerOwner, weaponId, src);
   }
-  for (const f of world.forts) damageFort(world, f, at, radius, damage, attackerOwner);
+  for (const f of world.forts) damageFort(world, f, at, radius, kind === 'ap' ? Math.min(damage, COMBAT.apStructureCap) : damage, attackerOwner);
 }
 
 function damageFort(world: World, f: Fort, at: V3, radius: number, damage: number, attackerOwner: number): void {
