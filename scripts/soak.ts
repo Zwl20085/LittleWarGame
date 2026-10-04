@@ -18,6 +18,7 @@ import type { Unit } from '../src/sim/types';
 import { dist } from '../src/sim/vec';
 import { STRATEGY_AI } from '../src/sim/strategyai';
 import { STORM_AB } from '../src/sim/storm';
+import { THEATRE_AB } from '../src/sim/theatre';
 
 // A/B: HOME_DEFENCE=0 turns the round-3 home defence off (docs/STRATEGY_LAB.md "Round 3").
 if (process.env.HOME_DEFENCE === '0') STRATEGY_AI.homeDefence = false;
@@ -25,6 +26,10 @@ if (process.env.HOME_DEFENCE === '0') STRATEGY_AI.homeDefence = false;
 if (process.env.STORM === '0') STRATEGY_AI.storm = false;
 // A/B: SIEGE=0 turns only the round-4 capital siege off.
 if (process.env.SIEGE === '0') STORM_AB.siege = false;
+// A/B: THEATRE=0 turns the 2.0 AI supreme HQ (dynamic fronts and orders, theatre.ts) off.
+if (process.env.THEATRE === '0') STRATEGY_AI.theatre = false;
+// …or only some of its parts: THEATRE_OFF=stances,structure,counter
+for (const k of (process.env.THEATRE_OFF ?? '').split(',')) if (k === 'stances' || k === 'structure' || k === 'counter') THEATRE_AB[k] = false;
 
 const data = buildGameData(readFileSync('docs/data/units.csv', 'utf8'), readFileSync('docs/data/weapons.csv', 'utf8'), readFileSync('docs/data/rules.json', 'utf8'));
 const minutes = Number(process.argv[2] ?? 60);

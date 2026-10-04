@@ -11,6 +11,8 @@ export const STRATEGY_AI = {
   homeDefence: true,
   /** Round 4: capital siege-and-storm, recall spares assaults, crew weapons deploy where the fighting is (storm.ts, crewai.ts). Off = round 3, for A/B. */
   storm: true,
+  /** 2.0: the AI supreme HQ's dynamic fronts and orders (theatre.ts). Off = the opening fronts stay and pick their own objectives (1.x), for A/B. */
+  theatre: true,
 };
 
 export const ADAPT = {

@@ -128,7 +128,7 @@ export function chooseOperation(world: World, f: Faction, s: Front, units: Unit[
  * Faction level (every front think): if both wing groups go for nearby objectives with
  * enough mobile troops, make it a pincer on the more valuable target.
  */
-export function planPincer(world: World, f: Faction, groups: Unit[][]): void {
+export function planPincer(world: World, f: Faction, groups: ReadonlyMap<number, Unit[]>): void {
   // 2.0: the jaws are the outermost wings (fronts are dynamic; no fixed left/right any more).
   const left = f.fronts.find((s) => s.wing === -1);
   const right = f.fronts.find((s) => s.wing === 1);
@@ -139,13 +139,13 @@ export function planPincer(world: World, f: Faction, groups: Unit[][]): void {
   // Round 2: during the decisive offensive every group already converges on the capital; pincers there
   // mostly failed to form (50 noForce in 3 × 20 min).
   if (eagerOn() && f.command.finishTarget >= 0) return;
-  const mob = (s: Front): number => (groups[s.id] ?? []).filter((u) => MOBILE.has(u.def.id)).length;
+  const mob = (s: Front): number => (groups.get(s.id) ?? []).filter((u) => MOBILE.has(u.def.id)).length;
   if (mob(left) < 3 || mob(right) < 3) return;
   if (dist(left.targetPos, right.targetPos) > 700) return;
   if (adaptive() && left.op !== 'pincer') {
     // Both jaws must be able to form, and a pincer that just failed to form is not re-tried at once.
     if (world.time < (pincerBlockedUntil.get(left) ?? -1) || world.time < (pincerBlockedUntil.get(right) ?? -1)) return;
-    if (maneuverPool(groups[left.id] ?? []) < DOCTRINE.minManeuver || maneuverPool(groups[right.id] ?? []) < DOCTRINE.minManeuver) return;
+    if (maneuverPool(groups.get(left.id) ?? []) < DOCTRINE.minManeuver || maneuverPool(groups.get(right.id) ?? []) < DOCTRINE.minManeuver) return;
   }
   const stL = ops.get(left);
   if (left.op === 'pincer' && right.op === 'pincer' && stL && world.time - stL.startedAt < DOCTRINE.rethinkS) return;

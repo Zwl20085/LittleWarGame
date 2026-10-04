@@ -1,4 +1,5 @@
 import { moveTo, stop } from './movement';
+import { frontById } from './frontref';
 import { safeRear } from './frontai';
 import type { Faction, Front, Unit } from './types';
 import { dist, type V2 } from './vec';
@@ -81,7 +82,7 @@ function pickDestination(world: World, f: Faction, trucks: Unit[]): { front: Fro
   let bestNeed = 0;
   const needs = frontNeeds(world, f);
   for (const s of f.fronts) {
-    const need = needs[s.id] ?? 0;
+    const need = needs.get(s.id) ?? 0;
     const enRoute = trucks.filter((t) => t.truckState === 'out' && t.frontId === s.id).length;
     const score = need / (1 + enRoute * 1.5);
     if (score > bestNeed) {
@@ -97,17 +98,18 @@ function pickDestination(world: World, f: Faction, trucks: Unit[]): { front: Fro
   return bestNeed > 2 ? best : null;
 }
 
-const needCache = new WeakMap<World, { tick: number; byFaction: number[][] }>();
+const needCache = new WeakMap<World, { tick: number; byFaction: Map<number, number>[] }>();
 /** Ammunition need per faction/front, recomputed at most once per second. */
-function frontNeeds(world: World, f: Faction): number[] {
+function frontNeeds(world: World, f: Faction): Map<number, number> {
   let c = needCache.get(world);
   if (!c || world.tick - c.tick >= world.tickHz) {
-    const byFaction = world.factions.map((x) => x.fronts.map(() => 0));
+    // By front id (ids are stable but not indices: fronts are created and dissolved, theatre.ts).
+    const byFaction = world.factions.map(() => new Map<number, number>());
     for (const u of world.units.values()) {
       if (u.hp <= 0 || u.fixed || u.def.id === 'supply_truck') continue;
       if (dist(u.pos, world.hqPos(u.owner)) < world.data.rules.supply.city_local_radius_m) continue;
       const arr = byFaction[u.owner];
-      if (arr && u.frontId < arr.length) arr[u.frontId] += ammoNeed(u) + 0.05 * u.def.supplyDemand; // upkeep so idle groups get visits
+      if (arr) arr.set(u.frontId, (arr.get(u.frontId) ?? 0) + ammoNeed(u) + 0.05 * u.def.supplyDemand); // upkeep so idle groups get visits
     }
     c = { tick: world.tick, byFaction };
     needCache.set(world, c);
@@ -126,7 +128,7 @@ function knownThreatNear(world: World, u: Unit, r: number): boolean {
 export function thinkConvoyTruck(world: World, u: Unit): void {
   const f = world.factions[u.owner];
   // Reload at the depot best placed for this truck's group (capital or a held town/city).
-  const group = f.fronts[u.frontId];
+  const group = frontById(f, u.frontId);
   const depot = bestDepot(world, u.owner, group ? group.front : world.hqPos(u.owner)).pos;
   const trucks = trucksOf(world, u.owner);
   // Threatened away from home: abort and run back (the enemy is hunting the supply line).
@@ -159,7 +161,7 @@ export function thinkConvoyTruck(world: World, u: Unit): void {
         return;
       }
       // Keep following the group's line as it moves.
-      const s = f.fronts[u.frontId];
+      const s = frontById(f, u.frontId);
       if (s) {
         const home = world.hqPos(u.owner);
         const d = dist(home, s.front);

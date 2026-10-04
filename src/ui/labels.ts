@@ -19,6 +19,7 @@ export function localizeParams(world: World, params: Record<string, string | num
   if (typeof params.unit === 'string') out.unit = unitShortName(params.unit);
   if (typeof params.weapon === 'string') out.weapon = weaponName(params.weapon);
   if (typeof params.point === 'string') out.point = objectiveLabel(world, params.point);
+  if (typeof params.into === 'string') out.into = objectiveLabel(world, params.into);
   if (typeof params.city === 'number') out.city = factionLabel(world, params.city);
   if (typeof params.f === 'number') out.f = factionLabel(world, params.f);
   if (typeof params.reason === 'string') out.reason = t(`reason.${params.reason}`);

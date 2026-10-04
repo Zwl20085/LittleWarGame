@@ -157,8 +157,14 @@ export function planOperations(world: World, f: Faction): void {
   } else if (guards.length > wantGuards + 2) {
     for (const u of guards.slice(wantGuards)) u.opRole = 'line';
   }
-  // Re-post guards to the current routes now and then.
-  if (route.length) for (const u of guards) if (!u.opTarget || (world.tick + u.id) % 600 === 0) u.opTarget = guardSpot(world, u, route[(u.id * 7) % route.length]);
+  // Re-post guards to the current routes now and then; a guard that cannot reach its post takes the
+  // next route point (round 6 soak: rear guards 'unreachable' for minutes on a slope / forest post).
+  if (route.length) {
+    for (const u of guards) {
+      if (u.pathFailed) u.opTarget = guardSpot(world, u, route[(u.id * 7 + Math.floor(world.time / 10)) % route.length]);
+      else if (!u.opTarget || (world.tick + u.id) % 600 === 0) u.opTarget = guardSpot(world, u, route[(u.id * 7) % route.length]);
+    }
+  }
   // Raids through the weakest front stretch toward the enemy rear.
   if (!contact || finisher || world.time < f.nextRaidAt) return;
   f.nextRaidAt = world.time + OPS.raidEverySeconds;

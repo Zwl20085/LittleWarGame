@@ -1,6 +1,7 @@
 import { cancelOrder } from './production';
 import type { Match } from './sim';
-import { issueFrontOrder, nearestFront } from './fronts';
+import { issueFrontOrder } from './fronts';
+import { frontForOrder } from './frontops';
 import type { OrderKind, Unit } from './types';
 import type { V2 } from './vec';
 
@@ -131,12 +132,14 @@ function apply(match: Match, env: CommandEnvelope): CommandOutcome {
     case 'frontOrder': {
       if (!ORDERS.includes(c.kind) || !finiteV2(c.a) || (c.b !== undefined && !finiteV2(c.b))) return fail('BAD_VALUE');
       if (!w.terrain.inBounds(c.a.x, c.a.z) || (c.b && !w.terrain.inBounds(c.b.x, c.b.z))) return fail('OUT_OF_BOUNDS');
-      const front = c.frontId === null ? nearestFront(f, c.a) : f.fronts.find((x) => x.id === c.frontId);
-      if (!front) return fail('NO_FRONT');
+      if (c.frontId !== null && !f.fronts.some((x) => x.id === c.frontId)) return fail('NO_FRONT');
       // Infantry must be able to stand there (a point in a lake or on a cliff is no objective).
       const a = w.nav(false, 35).nearestPassable(c.a, 30);
       const b = c.b ? w.nav(false, 35).nearestPassable(c.b, 30) : null;
       if (!a || (c.b && !b)) return fail('UNREACHABLE');
+      // No front given: the nearest one, or a new front for an order far from every front (frontops.ts).
+      const front = c.frontId === null ? frontForOrder(w, f, a) : f.fronts.find((x) => x.id === c.frontId);
+      if (!front) return fail('NO_FRONT');
       issueFrontOrder(w, f, front, { kind: c.kind, a: { ...a }, b: b ? { ...b } : null, issuedAt: w.time, manual: true });
       return OK;
     }

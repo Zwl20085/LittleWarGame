@@ -10,6 +10,8 @@ import { assessFinisher, FINISH } from './storm';
 import { populationCap } from './production';
 import { isCommander } from './formulas';
 import { createHomeThreat, fortifyPlace, homeOn, thinkHomeDefence, thinkHomeGuard, type HomeThreat } from './homeguard';
+import { reassignStale } from './frontops';
+import { thinkTheatre } from './theatre';
 import type { Faction, Objective, Unit } from './types';
 import { dist, headingTo, type V2 } from './vec';
 import type { World } from './world';
@@ -257,6 +259,9 @@ export function thinkHighCommand(world: World, f: Faction): void {
   assignOccupations(world, f, dirs.filter((d) => d.kind === 'occupy'));
   // The UI shows the top few (all three kinds represented when present).
   hc.directives = pickShown(dirs);
+  // 2.0 supreme HQ: units of dissolved fronts rejoin; AI factions set fronts and their orders (theatre.ts).
+  reassignStale(world, f);
+  thinkTheatre(world, f);
 }
 
 /** Units of the army groups currently aimed at `obj` (for the battle-event log only). */

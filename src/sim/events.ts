@@ -1,5 +1,6 @@
 import type { Faction, Objective, OperationKind, Posture, Personality, Front, Unit } from './types';
 import { crossings } from './terrainai';
+import { frontById } from './frontref';
 import { dist, type V2 } from './vec';
 import type { World } from './world';
 
@@ -224,7 +225,8 @@ export function noteHit(world: World, victim: Unit, attackerOwner: number, hp: n
   if (killed) v.killed++;
   tally(e, attackerOwner).dealt += hp;
   if (victim.fixed) return;
-  const sec = world.factions[victim.owner]?.fronts[victim.frontId];
+  const vf = world.factions[victim.owner];
+  const sec = vf ? frontById(vf, victim.frontId) : undefined;
   const op = sec ? log.activeOp.get(sec) : undefined;
   if (op) {
     op.loss += value;

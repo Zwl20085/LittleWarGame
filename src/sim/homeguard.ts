@@ -6,6 +6,8 @@ import { Ground } from './terrain';
 import { navPost } from './crewai';
 import { dig, openWork, startLine, WORKS } from './works';
 import { isCommander } from './formulas';
+import { planPlaceStructure, planStructures } from './fortplans';
+import { counterStrikes, frontById } from './frontref';
 import type { Faction, Front, Unit } from './types';
 import { angleDiff, dist, headingTo, type V2 } from './vec';
 import type { World } from './world';
@@ -80,6 +82,17 @@ export const HOME = {
 
 export const homeOn = (): boolean => eagerOn() && STRATEGY_AI.homeDefence;
 
+/**
+ * 2.0 capital rule (user: "首都区域必须有驻防"): every faction keeps
+ * `rules.command.capital_standing_garrison` home guards from `fromS` on, threat or not: infantry
+ * squads (they dig and man the capital line), nearest the capital first.
+ */
+export const STANDING = {
+  fromS: 120,
+  /** A recall / counter-strike front is taken last by the recall (cost added to its rank). */
+  counterStrikeCost: 3,
+} as const;
+
 /** A group in the middle of an assault, a breakthrough or a siege of its own. */
 const storming = (s: Front): boolean => s.opPhase === 'assault' || s.mode === 'breakthrough' || (s.op === 'siege' && s.opPhase !== '');
 
@@ -128,7 +141,8 @@ const hqKey = (f: number): string => `hq:${f}`;
 /** Does this (enemy) unit head for capital `f`? Spearhead, its group's target, or its destination. */
 function aimedAt(world: World, f: number, u: Unit, hq: V2): boolean {
   if (u.spearhead === hqKey(f)) return true;
-  if (world.factions[u.owner]?.fronts[u.frontId]?.targetCity === f) return true;
+  const owner = world.factions[u.owner];
+  if (owner && frontById(owner, u.frontId)?.targetCity === f) return true;
   return !!u.dest && dist(u.dest, hq) < 400;
 }
 
@@ -138,7 +152,7 @@ interface GroupInfo { value: number; sx: number; sz: number; firing: number; n: 
  * Forecast (O(units), every HQ think): weighted known enemy value approaching the capital, its
  * ETA and bearing, the garrison, and per-group strength / position / engagement for the recall.
  */
-function forecast(world: World, f: Faction, groups: GroupInfo[]): number {
+function forecast(world: World, f: Faction, groups: Map<number, GroupInfo>): number {
   const ht = f.command.homeThreat;
   const hq = world.hqPos(f.id);
   let enemy = 0;
@@ -168,7 +182,7 @@ function forecast(world: World, f: Faction, groups: GroupInfo[]): number {
         guardAway += v;
         continue;
       }
-      const g = groups[u.frontId];
+      const g = groups.get(u.frontId);
       if (!g) continue;
       g.value += v;
       g.sx += u.pos.x;
@@ -209,7 +223,8 @@ function forecast(world: World, f: Faction, groups: GroupInfo[]): number {
   ht.eta = enemy > 0 ? etaW / enemy : far > 0 ? farEtaW / far : -1;
   ht.far = far;
   ht.farEta = far > 0 ? farEtaW / far : -1;
-  ht.level = enemy > 0 ? enemy / (enemy + garrison + HOME.levelPad) : 0;
+  // 2.0: guards on their way home (the standing garrison walking to its posts) count too.
+  ht.level = enemy > 0 ? enemy / (enemy + garrison + guardAway + HOME.levelPad) : 0;
   // No threat known: face the city's exit (the side the front lies on).
   if (bx !== 0 || bz !== 0) ht.bearing = Math.atan2(bz, bx);
   else if (!ht.active) ht.bearing = headingTo(hq, world.cityOf(f.id).exit);
@@ -243,7 +258,7 @@ function updateApproach(world: World, tracks: Map<number, Approach>, acc: Map<nu
 export function thinkHomeDefence(world: World, f: Faction): void {
   if (!homeOn()) return;
   const ht = f.command.homeThreat;
-  const groups: GroupInfo[] = f.fronts.map(() => ({ value: 0, sx: 0, sz: 0, firing: 0, n: 0 }));
+  const groups = new Map<number, GroupInfo>(f.fronts.map((s) => [s.id, { value: 0, sx: 0, sz: 0, firing: 0, n: 0 }]));
   const guardAway = forecast(world, f, groups);
   const now = world.time;
   const wasActive = ht.active;
@@ -276,7 +291,8 @@ export function thinkHomeDefence(world: World, f: Faction): void {
   const guards = homeGuards(world, f.id);
   ht.works = fortifyHome(world, f);
   if (ht.active) recall(world, f, groups, guards, guardAway, !wasActive);
-  else releaseGuards(f, guards);
+  else releaseGuards(world, f, guards);
+  keepStanding(world, f, guards);
   if (ht.fortify) ensureDiggers(world, f, guards);
 }
 
@@ -290,10 +306,10 @@ function nearestEnemy(world: World, f: number, at: V2, r: number): number {
 }
 
 /** Own mobile value within reach of home (groups whose centroid is inside guardRadiusM). */
-function ownNear(groups: GroupInfo[], world: World, f: Faction): number {
+function ownNear(groups: Map<number, GroupInfo>, world: World, f: Faction): number {
   const hq = world.hqPos(f.id);
   let v = 0;
-  for (const g of groups) if (g.n > 0 && dist({ x: g.sx / g.n, z: g.sz / g.n }, hq) < HOME.guardRadiusM) v += g.value;
+  for (const g of groups.values()) if (g.n > 0 && dist({ x: g.sx / g.n, z: g.sz / g.n }, hq) < HOME.guardRadiusM) v += g.value;
   return v;
 }
 
@@ -318,9 +334,10 @@ function toLine(u: Unit): void {
 }
 
 /** Candidate home guards by tier: occupation / quiet garrison detachments, then AT guns and MGs, then free line troops; nearest first. */
-function guardPool(world: World, f: Faction, engineersOnly: boolean, minD: number): Unit[] {
+function guardPool(world: World, f: Faction, engineersOnly: boolean, minD: number, anyFront = false): Unit[] {
   const hq = world.hqPos(f.id);
-  const busy = new Set(f.fronts.filter((s) => (s.op !== 'frontal' && s.opPhase !== '') || s.manualTarget).map((s) => s.id));
+  // The standing garrison (anyFront) is drawn from any front, ordered or busy: the capital is never empty.
+  const busy = new Set(anyFront ? [] : f.fronts.filter((s) => (s.op !== 'frontal' && s.opPhase !== '') || s.manualTarget).map((s) => s.id));
   const tiered: { u: Unit; tier: number; d: number }[] = [];
   for (const u of world.units.values()) {
     if (u.owner !== f.id || u.hp <= 0 || u.fixed || u.manual || u.routing || u.spearhead) continue;
@@ -349,14 +366,14 @@ function guardPool(world: World, f: Faction, engineersOnly: boolean, minD: numbe
  * first) until home strength ≥ overmatch × forecast. Recalled groups stay recalled while the
  * alarm lasts (no yo-yo); they get their old orders back when it ends (fronts.ts).
  */
-function recall(world: World, f: Faction, groups: GroupInfo[], guards: Unit[], guardAway: number, fresh: boolean): void {
+function recall(world: World, f: Faction, groups: Map<number, GroupInfo>, guards: Unit[], guardAway: number, fresh: boolean): void {
   const ht = f.command.homeThreat;
   const hq = world.hqPos(f.id);
   const want = HOME.overmatch * ht.enemy;
   // What is already home or on its way: the garrison (incl. guards and recalled troops arrived),
   // guards still marching, recalled groups' value outside the garrison radius.
   let have = ht.garrison + guardAway;
-  for (const id of ht.recall) have += groups[id]?.value ?? 0;
+  for (const id of ht.recall) have += groups.get(id)?.value ?? 0;
   let sent = 0;
   if (have < want) {
     for (const u of guardPool(world, f, false, HOME.garrisonM)) {
@@ -373,25 +390,27 @@ function recall(world: World, f: Faction, groups: GroupInfo[], guards: Unit[], g
   if (finisher) ht.recall = [];
   const groupsAllowed = !finisher && (!stormOn() || ht.aimed >= HOME.minThreat);
   const centre = (id: number): V2 => {
-    const g = groups[id];
+    const g = groups.get(id);
     return g && g.n > 0 ? { x: g.sx / g.n, z: g.sz / g.n } : hq;
   };
   if (have < want && groupsAllowed) {
     // Only groups that can be home in time; the rest keep the offensive going.
     const window = Math.max(0, ht.eta) + HOME.reachSlackS;
-    const army = ht.garrison + guardAway + groups.reduce((a, g) => a + g.value, 0);
+    let army = ht.garrison + guardAway;
+    for (const g of groups.values()) army += g.value;
     // Round 4: a hopeless defence recalls no further group even at the gates (the army fights on in the
     // field; recalling it made the last capitals unbreakable). Raids never reach this ratio.
     const hopeless = ht.enemy >= army * HOME.hopelessRatio && (stormOn() || ht.eta > HOME.gatesEtaS);
     const maxGroups = hopeless ? ht.recall.length : want >= army * HOME.allGroupsShare ? f.fronts.length : f.fronts.length - 1;
     const cands = f.fronts
-      .filter((s) => !s.manualTarget && !ht.recall.includes(s.id) && (groups[s.id]?.n ?? 0) > 0 && dist(centre(s.id), hq) / HOME.marchMps <= window)
+      .filter((s) => !s.manualTarget && !ht.recall.includes(s.id) && (groups.get(s.id)?.n ?? 0) > 0 && dist(centre(s.id), hq) / HOME.marchMps <= window)
       // Round 4: an assault / storm under way is not called off (op success −3.7 pts in round 3), unless the enemy is at the gates.
       .filter((s) => !stormOn() || !storming(s) || ht.eta <= HOME.gatesEtaS)
       .map((s) => {
-        const g = groups[s.id];
+        const g = groups.get(s.id)!;
         const engaged = g.firing / g.n;
-        const cost = dist(centre(s.id), hq) / 1000 + engaged * 1.5 + (s.opPhase === 'assault' ? 1 : 0) + (s.mode === 'push' || s.mode === 'breakthrough' ? 0.4 : 0);
+        const cost = dist(centre(s.id), hq) / 1000 + engaged * 1.5 + (s.opPhase === 'assault' ? 1 : 0) + (s.mode === 'push' || s.mode === 'breakthrough' ? 0.4 : 0)
+          + (counterStrikes.has(s) ? STANDING.counterStrikeCost : 0);
         return { s, cost };
       })
       .sort((a, b) => a.cost - b.cost || a.s.id - b.s.id);
@@ -399,12 +418,12 @@ function recall(world: World, f: Faction, groups: GroupInfo[], guards: Unit[], g
       if (have >= want || ht.recall.length >= maxGroups) break;
       ht.recall = [...ht.recall, c.s.id];
       ht.recallAt = { ...ht.recallAt, [c.s.id]: world.time };
-      have += groups[c.s.id].value;
+      have += groups.get(c.s.id)?.value ?? 0;
     }
   } else if (ht.recall.length > 0) {
     // Surplus: release the most recently recalled group once the rest clearly suffices.
     const last = ht.recall[ht.recall.length - 1];
-    const v = groups[last]?.value ?? 0;
+    const v = groups.get(last)?.value ?? 0;
     if (world.time - (ht.recallAt[last] ?? 0) >= HOME.minRecallS && have - v >= want * HOME.surplus) {
       ht.recall = ht.recall.slice(0, -1);
       have -= v;
@@ -418,10 +437,39 @@ function recall(world: World, f: Faction, groups: GroupInfo[], guards: Unit[], g
   }
 }
 
-/** No alarm: guards return to their groups once the fortify order has lapsed (they stay to dig and man the works while it lasts). */
-function releaseGuards(f: Faction, guards: Unit[]): void {
+/**
+ * No alarm: guards return to their groups once the fortify order has lapsed (they stay to dig and
+ * man the works while it lasts), except the standing garrison (2.0).
+ */
+function releaseGuards(world: World, f: Faction, guards: Unit[]): void {
   if (f.command.homeThreat.fortify) return;
-  for (const u of guards) toLine(u);
+  const keep = new Set(world.time >= STANDING.fromS ? rankStanding(world, f, guards).slice(0, standingSize(world)) : []);
+  const kept = guards.filter((u) => keep.has(u));
+  for (const u of guards) if (!keep.has(u)) toLine(u);
+  guards.length = 0;
+  guards.push(...kept);
+}
+
+const standingSize = (world: World): number => world.data.rules.command.capital_standing_garrison;
+
+/** Standing-guard preference: infantry (diggers), then crews, then the rest; nearest the capital first. */
+function rankStanding(world: World, f: Faction, units: Unit[]): Unit[] {
+  const hq = world.hqPos(f.id);
+  const rank = (u: Unit): number => (u.def.kind === 'infantry' ? 0 : u.def.kind === 'crew' ? 1 : 2);
+  return [...units].sort((a, b) => rank(a) - rank(b) || dist(a.pos, hq) - dist(b.pos, hq) || a.id - b.id);
+}
+
+/** Top the standing garrison up to `capital_standing_garrison` (from `STANDING.fromS`). */
+function keepStanding(world: World, f: Faction, guards: Unit[]): void {
+  if (world.time < STANDING.fromS) return;
+  const missing = standingSize(world) - guards.length;
+  if (missing <= 0) return;
+  // Squads only (rifle / engineer / motorised): crews posted by the standing garrison sat 'unreachable' (soak seed 13).
+  const pool = rankStanding(world, f, guardPool(world, f, false, 0, true).filter((u) => u.def.kind === 'infantry'));
+  for (const u of pool.slice(0, missing)) {
+    toGuard(u, f.id);
+    guards.push(u);
+  }
 }
 
 /** Engineers first, then infantry, so each open home work has its diggers. */
@@ -455,6 +503,8 @@ const SANDBAG_ANGLES = [-0.22, 0.22, -0.6, 0.6];
  * Returns the number of home works alive.
  */
 function fortifyHome(world: World, f: Faction): number {
+  // 2.0: the standing capital line and the other planned works / buildings (fortplans.ts), every HQ think.
+  planStructures(world, f);
   const ht = f.command.homeThreat;
   const hq = world.hqPos(f.id);
   let trenches = 0;
@@ -514,8 +564,12 @@ export function fortifyPlace(world: World, f: Faction, centre: V2, radius: numbe
     sz += e.pos.z - centre.z;
   }
   if (near <= HOME.noDigM || (sx === 0 && sz === 0)) return;
-  for (const w of world.forts) if (w.owner === f.id && w.hp > 0 && w.kind === 'trench' && dist(w.pos, centre) < r + 40) return;
   const ang = Math.atan2(sz, sx);
+  // 2.0: with the approach trench standing, add a pillbox just inside it when M allows (fortplans.ts).
+  if (world.forts.some((w) => w.owner === f.id && w.hp > 0 && w.kind === 'trench' && dist(w.pos, centre) < r + 40)) {
+    planPlaceStructure(world, f, centre, radius, ang);
+    return;
+  }
   const k = world.data.rules.proposed_defaults.army_scale ?? 1;
   if (f.p < WORKS.trench.costP * k * (1 + HOME.reserveCostMul)) return;
   for (const rr of [r, r - 20, r + 20]) {
@@ -607,7 +661,7 @@ const postAt = (world: World, u: Unit, p: V2): V2 => (stormOn() ? navPost(world,
  * returning fire at targets of opportunity, instead of staying pinned in the old fight.
  */
 export function fallBackHome(world: World, u: Unit, s: Front): boolean {
-  if (s.reason !== 'reason.homeDefence' || u.def.id === 'howitzer' || u.def.id === 'mortar') return false;
+  if (s.reason !== 'reason.homeDefence' || u.def.id === 'howitzer' || u.def.id === 'mortar' || isCommander(u.def)) return false;
   const hq = world.hqPos(u.owner);
   if (dist(u.pos, hq) < HOME.contactM) return false;
   const slot = s.slots[u.id] ?? s.front;

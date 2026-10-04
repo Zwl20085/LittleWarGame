@@ -370,6 +370,7 @@ export function step(match: Match): void {
       const f = world.forts[i];
       if (f.hp <= 0 && f.kind !== 'pontoon') world.forts.splice(i, 1);
       else if (f.occupant !== null && !world.unitAlive(f.occupant)) f.occupant = null;
+      if (f.occupants && f.occupants.some((id) => !world.unitAlive(id))) f.occupants = f.occupants.filter((id) => world.unitAlive(id));
     }
   }
   checkElimination(match);
