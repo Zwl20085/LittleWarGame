@@ -1,15 +1,19 @@
-import { sectorUnits } from '../sim/sectors';
-import type { OperationKind, Posture } from '../sim/types';
+import { frontUnits } from '../sim/fronts';
+import type { OrderKind } from '../sim/types';
 import type { GameContext } from './context';
 import { fmtTime, h } from './dom';
 import { t } from './i18n';
-import { localizeParams } from './labels';
+import { frontLabel, localizeParams } from './labels';
 
-const POSTURES: Posture[] = ['cautious', 'assault', 'hold', 'fortify', 'withdraw'];
-const OPS: OperationKind[] = ['frontal', 'flank', 'pincer', 'infiltrate', 'siege'];
+const ORDERS: OrderKind[] = ['attack', 'defend', 'fortify', 'fallBack', 'auto'];
 
-/** Left column: sector tags (always on) + expandable sector detail + short event strip. */
-export class SectorsPanel {
+/**
+ * Left column (2.0 baseline; the orders UI agent replaces this): the supreme-HQ card, one tag
+ * per front (name, commander, standing order, troops, the commander's current reason) and the
+ * order buttons for the expanded front. Postures, battle plans and shares are no longer shown as
+ * controls — they are the front commander's business.
+ */
+export class FrontsPanel {
   readonly el: HTMLElement;
   private readonly command: HTMLElement;
   private readonly tags: HTMLElement;
@@ -45,9 +49,9 @@ export class SectorsPanel {
       this.detail.style.display = 'none';
       this.command.style.display = 'none';
     } else {
-      const counts = f.sectors.map((s) => sectorUnits(w, f.id, s.id).length);
+      const counts = f.fronts.map((s) => frontUnits(w, f.id, s.id).length);
       const dirs = f.command?.directives ?? [];
-      const sig = JSON.stringify([f.sectors.map((s) => [s.posture, s.reason, s.reasonParams, s.share, s.manualTarget, s.op, s.opPhase, s.opLocked]), f.mainSector, counts, this.expanded, dirs.map((d) => [d.kind, d.obj, d.assigned]), f.command?.homeThreat?.active, Math.round((f.command?.homeThreat?.eta ?? 0) / 10)]);
+      const sig = JSON.stringify([f.fronts.map((s) => [s.id, s.name, s.order.kind, s.reason, s.reasonParams, s.commanderId, s.opPhase, s.mode]), f.mainFront, counts, this.expanded, dirs.map((d) => [d.kind, d.obj, d.assigned]), f.command?.homeThreat?.active, Math.round((f.command?.homeThreat?.eta ?? 0) / 10), this.ctx.mode.kind]);
       if (sig !== this.sig) {
         this.sig = sig;
         this.renderCommand();
@@ -66,7 +70,6 @@ export class SectorsPanel {
     this.command.innerHTML = '';
     this.command.style.display = dirs.length || home?.active ? '' : 'none';
     this.command.append(h('div', { class: 'hq-title' }, t('hq.title')));
-    // Round 3: the capital alarm (homeguard.ts forecast) heads the card.
     if (home?.active) {
       const hq = w.hqPos(this.ctx.playerId);
       this.command.append(h('button', { class: 'hq-row k-defend', title: t('hq.goto'), onclick: () => this.ctx.renderer.rig.lookAt(hq.x, hq.z) },
@@ -83,7 +86,7 @@ export class SectorsPanel {
       },
       h('span', { class: 'hq-kind' }, t(`hq.${d.kind}`)),
       h('span', { class: 'hq-obj' }, localizeParams(w, { point: d.obj }).point as string),
-      h('span', { class: 'hq-n' }, d.assigned > 0 ? t('sector.units', { n: d.assigned }) : ''),
+      h('span', { class: 'hq-n' }, d.assigned > 0 ? t('front.units', { n: d.assigned }) : ''),
       ));
     }
   }
@@ -92,55 +95,48 @@ export class SectorsPanel {
     const w = this.ctx.match.world;
     const f = w.factions[this.ctx.playerId];
     this.tags.innerHTML = '';
-    for (const s of f.sectors) {
-      const main = s.id === f.mainSector;
+    f.fronts.forEach((s, i) => {
+      const main = s.id === f.mainFront;
+      const cmd = w.unitAlive(s.commanderId);
+      const lost = !cmd && s.commanderLostAt >= 0 ? Math.max(0, Math.round(w.data.rules.command.commander_respawn_seconds - (w.time - s.commanderLostAt))) : -1;
       this.tags.append(h('button', {
         class: `sector-tag panel ${this.expanded === s.id ? 'open' : ''} ${main ? 'main' : ''}`,
         onclick: () => this.toggle(s.id),
       },
-      h('div', { class: 'row' }, h('b', {}, t(`sector.${s.key}`)), main ? h('span', { class: 'stamp' }, t('sector.main')) : null, h('span', { class: 'share' }, `${Math.round(s.share * 100)}%`)),
-      h('div', { class: 'row small' }, h('span', { class: `posture p-${s.posture}` }, t(`posture.${s.posture}`)), h('span', {}, t('sector.units', { n: counts[s.id] }))),
-      h('div', { class: 'reason' }, t(s.reason, localizeParams(w, s.reasonParams))),
-      h('div', { class: 'op-line small' }, `${t(`op.${s.op}`)}${s.opPhase ? ` · ${t(`phase.${s.opPhase}`)}` : ''}${s.opLocked ? ' 🔒' : ''}`),
+      h('div', { class: 'row' }, h('b', {}, frontLabel(w, f.id, s.id)), main ? h('span', { class: 'stamp' }, t('front.main')) : null, h('span', { class: 'share' }, `${Math.round(s.share * 100)}%`)),
+      h('div', { class: 'row small' }, h('span', { class: `posture p-${s.order.kind === 'auto' ? 'cautious' : s.order.kind === 'attack' ? 'assault' : 'hold'}` }, t(`order.${s.order.kind}`)), h('span', {}, t('front.units', { n: counts[i] }))),
+      h('div', { class: 'reason' }, lost >= 0 ? t('front.noCommander', { s: lost }) : t(s.reason, localizeParams(w, s.reasonParams))),
+      h('div', { class: 'op-line small' }, `${t(`op.${s.op}`)}${s.opPhase ? ` · ${t(`phase.${s.opPhase}`)}` : ''}`),
       ));
-    }
+    });
   }
 
   private renderDetail(): void {
     const id = this.expanded;
     this.detail.innerHTML = '';
-    this.detail.style.display = id === null ? 'none' : '';
-    if (id === null) return;
-    const f = this.ctx.match.world.factions[this.ctx.playerId];
-    const s = f.sectors[id];
-    const pbtns = POSTURES.map((p) => h('button', { class: `btn ${s.posture === p ? 'on' : ''}`, onclick: () => this.ctx.issue({ type: 'setPosture', sectorId: id, posture: p }) }, t(`posture.${p}`)));
-    const shares = f.sectors.map((x) => x.share);
-    const bump = (d: number): void => {
-      const next = [...shares] as [number, number, number];
-      next[id] = Math.max(0, next[id] + d);
-      this.ctx.issue({ type: 'setShares', shares: next });
-    };
-    // Battle doctrine: AUTO (AI picks) or a locked operation.
-    const obtns = [
-      h('button', { class: `btn ${!s.opLocked ? 'on' : ''}`, title: t('op.autoTip'), onclick: () => this.ctx.issue({ type: 'setOperation', sectorId: id, op: null }) }, t('op.auto')),
-      ...OPS.map((o) => h('button', { class: `btn ${s.opLocked && s.op === o ? 'on' : ''}`, title: t(`op.${o}Tip`), onclick: () => this.ctx.issue({ type: 'setOperation', sectorId: id, op: o }) }, t(`op.${o}`))),
-    ];
+    const w = this.ctx.match.world;
+    const f = w.factions[this.ctx.playerId];
+    const s = id === null ? undefined : f.fronts.find((x) => x.id === id);
+    this.detail.style.display = s ? '' : 'none';
+    if (!s || id === null) return;
+    const picking = this.ctx.mode.kind === 'frontOrder' && this.ctx.mode.frontId === id ? this.ctx.mode.order : null;
+    const obtns = ORDERS.map((o) => h('button', {
+      class: `btn ${s.order.kind === o && !picking ? 'on' : ''} ${picking === o ? 'on' : ''}`,
+      title: t(`order.${o}Tip`),
+      onclick: () => {
+        if (o === 'auto') this.ctx.issue({ type: 'frontOrder', frontId: id, kind: 'auto', a: s.targetPos });
+        else this.ctx.mode = { kind: 'frontOrder', frontId: id, order: o };
+      },
+    }, t(`order.${o}`)));
+    const cmd = w.unitAlive(s.commanderId);
     this.detail.append(
-      h('div', { class: 'title' }, t(`sector.${s.key}`)),
-      h('div', { class: 'btn-grid' }, ...pbtns),
-      h('div', { class: 'lbl' }, t('op.title')),
+      h('div', { class: 'title' }, frontLabel(w, f.id, s.id)),
+      h('div', { class: 'row small' }, h('span', { class: 'lbl' }, t('front.commander')), h('span', {}, cmd ? `${Math.round(cmd.hp)} HP · ${t(cmd.status || 'status.commanderPost')}` : '—')),
+      h('div', { class: 'lbl' }, t('order.title')),
       h('div', { class: 'btn-grid' }, ...obtns),
       h('div', { class: 'row' },
-        h('button', { class: 'btn', onclick: () => { this.ctx.mode = { kind: 'sectorTarget', sectorId: id }; } }, t('sector.setTarget')),
-        h('button', { class: 'btn', disabled: !s.manualTarget, onclick: () => this.ctx.issue({ type: 'setSectorTarget', sectorId: id, pos: null }) }, t('sector.clearTarget'))),
-      h('div', { class: 'row' },
-        h('span', { class: 'lbl' }, t('sector.share')),
-        h('button', { class: 'btn icon', onclick: () => bump(-0.1) }, '−'),
-        h('span', { class: 'num' }, `${Math.round(s.share * 100)}%`),
-        h('button', { class: 'btn icon', onclick: () => bump(0.1) }, '+')),
-      h('div', { class: 'row' },
-        h('button', { class: `btn ${f.mainSector === id ? 'on' : ''}`, onclick: () => this.ctx.issue({ type: 'setMainSector', sectorId: id }) }, `★ ${t('sector.main')}`),
-        h('button', { class: 'btn', onclick: () => this.ctx.issue({ type: 'regroupSector', sectorId: id }) }, t('sector.regroup'))),
+        h('button', { class: `btn ${f.mainFront === id ? 'on' : ''}`, onclick: () => this.ctx.issue({ type: 'setMainFront', frontId: id }) }, `★ ${t('front.main')}`),
+        h('button', { class: 'btn', onclick: () => this.ctx.renderer.rig.lookAt(s.front.x, s.front.z) }, t('hq.goto'))),
     );
   }
 

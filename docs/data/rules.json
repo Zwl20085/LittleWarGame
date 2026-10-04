@@ -170,6 +170,17 @@
       {"id": "at_obstacle", "cost_m": 40, "work_seconds": 25, "max_hp": 600, "squad_capacity": 0}
     ]
   },
+  "command": {
+    "comment": "2.0 command hierarchy (user decision 2026-10-04): the supreme HQ (player or AI) gives each front one order (attack / defend / fortify / fall back / auto); a front commander unit executes it. Commanders are appointed, never produced.",
+    "commander_unit": "commander",
+    "fronts_initial": 3,
+    "fronts_max": 4,
+    "commander_respawn_seconds": 90,
+    "commander_lost_hold_seconds": 60,
+    "commander_post_radius_m": 700,
+    "capital_standing_garrison": 3,
+    "capital_line_works": {"trench": 2, "pillbox": 2}
+  },
   "information": {"default_mode": "open", "supported_modes": ["open", "fog"], "enemy_memory_seconds": 15},
   "manual_control": {
     "move_completion_radius_m": 8,

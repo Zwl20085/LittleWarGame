@@ -10,6 +10,7 @@
 | [性能预算与工具](./PERFORMANCE.md) | 每 tick / 每帧预算、`scripts/perf.ts`、`profile.mjs`、`perf-browser.mjs`、`perf-probe.mjs` 的用法与 1.0 优化记录 |
 | [视觉与交互规格](./VISUAL_UX.md) | 已确认风格、45° 相机建议、分层 HUD、细操与自动任务衔接 |
 | [开发交接说明](./AGENT_HANDOFF.md) | 模块边界、数据约定、开发顺序和功能验收 |
+| [指挥层级 2.0](./COMMAND_V2.md) | 最高统帅部 → 前线指挥官 → 单位：数据模型、命令语义、文件归属与验证（英文） |
 | [单位初始数据](./data/units.csv) | 可导入的单位种子表；字段定义见数值文档 |
 | [武器初始数据](./data/weapons.csv) | 可导入的武器种子表；字段定义见数值文档 |
 | [规则初始数据](./data/rules.json) | 核心常量与开关；尚未确认的配置不应当作用户决定 |

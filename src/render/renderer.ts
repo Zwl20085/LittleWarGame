@@ -26,7 +26,7 @@ export interface Layers {
   front: boolean;
   supply: boolean;
   ranges: boolean;
-  sectors: boolean;
+  fronts: boolean;
   /** Contours, impassable water, fords and steep (vehicle-impassable) slopes. */
   terrain: boolean;
 }
@@ -55,7 +55,7 @@ export class GameRenderer {
   readonly terrainView: TerrainView;
   readonly units: UnitViews;
   readonly effects: Effects;
-  readonly layers: Layers = { front: true, supply: false, ranges: false, sectors: true, terrain: false };
+  readonly layers: Layers = { front: true, supply: false, ranges: false, fronts: true, terrain: false };
   readonly overlay: ScreenOverlay;
   private readonly counters: UnitCounters;
   private readonly sun: THREE.DirectionalLight;
@@ -278,7 +278,7 @@ export class GameRenderer {
       }
       let v = this.fortViews.get(f.id);
       if (!v) {
-        v = fortModel(f.kind);
+        v = fortModel(f.kind === 'field_cover' ? 'field_cover' : 'mg_bunker'); // pillbox / bunker models: works agent
         v.position.set(f.pos.x, w.terrain.heightAt(f.pos.x, f.pos.z), f.pos.z);
         v.rotation.y = -f.facing;
         v.traverse((o) => { o.castShadow = true; o.receiveShadow = true; });
@@ -339,7 +339,7 @@ export class GameRenderer {
 
   /** Rebuild route/supply/range lines a few times a second (not every frame), disposing the old ones. */
   private drawOverlays(realDt: number): void {
-    const key = `${this.layers.sectors}|${this.layers.supply}|${this.layers.ranges}|${[...this.units.selected].join(',')}`;
+    const key = `${this.layers.fronts}|${this.layers.supply}|${this.layers.ranges}|${[...this.units.selected].join(',')}`;
     this.overlayTimer -= realDt;
     if (this.overlayTimer > 0 && key === this.overlayKey) return;
     this.overlayTimer = 0.25;
@@ -368,10 +368,10 @@ export class GameRenderer {
       const n = Math.max(2, Math.ceil(Math.hypot(b.x - a.x, b.z - a.z) / 15));
       return Array.from({ length: n + 1 }, (_, k) => lift({ x: a.x + ((b.x - a.x) * k) / n, z: a.z + ((b.z - a.z) * k) / n }, dy));
     };
-    if (this.layers.sectors && f.alive) {
+    if (this.layers.fronts && f.alive) {
       const exit = w.cityOf(f.id).exit;
-      for (const s of f.sectors) {
-        const main = s.id === f.mainSector;
+      for (const s of f.fronts) {
+        const main = s.id === f.mainFront;
         this.overlayGroup.add(mk(along(exit, s.rally, 3).concat(along(s.rally, s.targetPos, 3)), main ? '#f4ecd9' : '#d8cfb8', true, main ? 0.95 : 0.6));
         const tip = lift(s.targetPos, 3);
         const head = new THREE.Mesh(new THREE.ConeGeometry(4, 9, 3), new THREE.MeshBasicMaterial({ color: '#f4ecd9', depthTest: false, transparent: true, opacity: 0.9 }));
@@ -448,7 +448,7 @@ export class GameRenderer {
     const q = this.quality.profile;
     this.terrainView.scatter.visible = ppm > 1 && q.scatter;
     this.frontLines.update(realDt, ppm);
-    this.opArrows.sync(w, this.playerId, this.spectator, this.layers.sectors);
+    this.opArrows.sync(w, this.playerId, this.spectator, this.layers.fronts);
     this.opArrows.update(ppm);
     FLAG_TIME.value += realDt;
     this.terrainView.uniforms.uOverlayK.value = ppm > 4 ? 0.5 : ppm > 1.5 ? 0.8 : 1;

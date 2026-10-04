@@ -85,7 +85,7 @@ export const FRONTLINE = {
 } as const;
 
 export const AI = {
-  sectorThinkSeconds: 2,
+  frontThinkSeconds: 2,
   cityThinkSeconds: 20,
   unitThinkSeconds: 0.2,
   rallyMinInfantry: 2,

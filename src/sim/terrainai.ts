@@ -173,7 +173,7 @@ export function threatCentre(world: World, f: number, p: V2, r: number): V2 | nu
 }
 
 /**
- * Battle-line slot: units of a sector form ranks perpendicular to the axis of advance
+ * Battle-line slot: units of a front form ranks perpendicular to the axis of advance
  * (`facing` = direction toward the enemy). Front rank infantry/AT, tanks on the line,
  * support behind. Returns a world position for slot `index` of `count`.
  */

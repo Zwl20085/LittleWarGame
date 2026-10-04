@@ -1,35 +1,41 @@
 import { cancelOrder } from './production';
 import type { Match } from './sim';
-import { resetOperation } from './doctrine';
-import type { OperationKind, Posture, Unit } from './types';
+import { issueFrontOrder, nearestFront } from './fronts';
+import type { OrderKind, Unit } from './types';
 import type { V2 } from './vec';
 
-const OPERATIONS: OperationKind[] = ['frontal', 'flank', 'pincer', 'infiltrate', 'siege'];
+const ORDERS: OrderKind[] = ['auto', 'attack', 'defend', 'fortify', 'fallBack'];
 
+/**
+ * Player commands = the supreme HQ's job (2.0): the war effort (production, economy) and one
+ * high-level order per front (attack / defend / fortify / fall back, on a place or a line).
+ * Postures, battle plans, reinforcement shares and group targets are the front commanders'
+ * business and are no longer commands. Unit micro (move / attack-move / focus …) stays optional.
+ */
 export type Command =
   | { type: 'setWeight'; unitId: string; weight: number }
   | { type: 'setCap'; unitId: string; cap: number }
   | { type: 'togglePause'; unitId: string }
-  | { type: 'setUnitSector'; unitId: string; sectorId: number }
-  | { type: 'queueUnit'; unitId: string; sectorId: number }
+  /** One-off production; frontId -1 = the supreme HQ picks the front on roll-out. */
+  | { type: 'queueUnit'; unitId: string; frontId: number }
   | { type: 'cancelOrder'; orderId: number }
   | { type: 'setAlloc'; alloc: [number, number, number] }
   | { type: 'setAuto'; on: boolean }
   | { type: 'setLock'; index: number; locked: boolean }
   | { type: 'resetAlloc' }
-  | { type: 'setPosture'; sectorId: number; posture: Posture }
-  /** Lock a battle doctrine for an army group (null = let the AI choose). */
-  | { type: 'setOperation'; sectorId: number; op: OperationKind | null }
-  | { type: 'setSectorTarget'; sectorId: number; pos: V2 | null }
-  | { type: 'setMainSector'; sectorId: number }
-  | { type: 'setShares'; shares: [number, number, number] }
-  | { type: 'regroupSector'; sectorId: number }
+  /**
+   * Supreme-HQ order for a front. `frontId` null = the front whose line is nearest to `a`.
+   * `b` makes it a line order (defend / fortify / fallBack hold the line a–b; attack assaults along it).
+   */
+  | { type: 'frontOrder'; frontId: number | null; kind: OrderKind; a: V2; b?: V2 }
+  /** The main effort: reinforcement and supply priority. */
+  | { type: 'setMainFront'; frontId: number }
   | { type: 'unitOrder'; unitIds: number[]; order: 'move' | 'moveHold' | 'attackMove' | 'retreat' | 'hold' | 'resume'; pos?: V2; queue?: boolean }
   | { type: 'focus'; unitIds: number[]; targetId: number };
 
 export type CommandFail =
   | 'FACTION_DEAD' | 'NOT_OWNER' | 'STALE_TARGET' | 'UNREACHABLE' | 'BAD_VALUE' | 'ROUTING'
-  | 'LOCKED' | 'INSUFFICIENT_M' | 'OUT_OF_BOUNDS' | 'NO_ORDER';
+  | 'LOCKED' | 'INSUFFICIENT_M' | 'OUT_OF_BOUNDS' | 'NO_ORDER' | 'NO_FRONT';
 
 export interface CommandEnvelope {
   readonly commandId: number;
@@ -76,6 +82,8 @@ function ownedUnits(match: Match, actor: number, ids: number[]): Unit[] {
 const fail = (reason: CommandFail): CommandOutcome => ({ ok: false, reason });
 const OK: CommandOutcome = { ok: true };
 
+const finiteV2 = (p: V2 | undefined): p is V2 => !!p && Number.isFinite(p.x) && Number.isFinite(p.z);
+
 function apply(match: Match, env: CommandEnvelope): CommandOutcome {
   const w = match.world;
   const f = w.factions[env.actor];
@@ -93,13 +101,11 @@ function apply(match: Match, env: CommandEnvelope): CommandOutcome {
     case 'togglePause':
       f.paused = { ...f.paused, [c.unitId]: !f.paused[c.unitId] };
       return OK;
-    case 'setUnitSector':
-      if (c.sectorId !== -1 && !f.sectors[c.sectorId]) return fail('BAD_VALUE');
-      f.unitSector = { ...f.unitSector, [c.unitId]: c.sectorId };
-      return OK;
     case 'queueUnit':
-      if (!w.data.units.has(c.unitId) || !f.sectors[c.sectorId]) return fail('BAD_VALUE');
-      f.manualQueue = [...f.manualQueue, { unitId: c.unitId, sectorId: c.sectorId }];
+      // Front commanders are appointed by the supreme HQ, never bought.
+      if (!w.data.units.has(c.unitId) || c.unitId === w.data.rules.command.commander_unit) return fail('BAD_VALUE');
+      if (c.frontId !== -1 && !f.fronts.some((x) => x.id === c.frontId)) return fail('NO_FRONT');
+      f.manualQueue = [...f.manualQueue, { unitId: c.unitId, frontId: c.frontId }];
       return OK;
     case 'cancelOrder':
       return cancelOrder(w, f, c.orderId) ? OK : fail('NO_ORDER');
@@ -122,71 +128,22 @@ function apply(match: Match, env: CommandEnvelope): CommandOutcome {
     case 'resetAlloc':
       f.alloc = [...w.data.rules.economy.allocation_default] as [number, number, number];
       return OK;
-    case 'setPosture':
-      if (!f.sectors[c.sectorId]) return fail('BAD_VALUE');
-      f.sectors[c.sectorId].posture = c.posture;
-      return OK;
-    case 'setOperation': {
-      const s = Number.isInteger(c.sectorId) && c.sectorId >= 0 ? f.sectors[c.sectorId] : undefined;
-      if (!s || (c.op !== null && !OPERATIONS.includes(c.op))) return fail('BAD_VALUE');
-      s.opLocked = c.op !== null;
-      if (c.op !== null) s.op = c.op;
-      // Start the new plan from scratch on the group's next think.
-      resetOperation(s, [...w.units.values()].filter((u) => u.owner === f.id && u.sectorId === s.id && u.hp > 0));
-      return OK;
-    }
-    case 'setSectorTarget': {
-      const s = f.sectors[c.sectorId];
-      if (!s) return fail('BAD_VALUE');
-      if (c.pos === null) {
-        s.manualTarget = false;
-        s.lastRetarget = -999;
-        return OK;
-      }
-      const p = w.nav(false, 35).nearestPassable(c.pos, 30);
-      if (!p) return fail('UNREACHABLE');
-      s.manualTarget = true;
-      s.targetPos = { ...p };
-      const obj = w.objectives.find((o) => Math.hypot(o.pos.x - p.x, o.pos.z - p.z) < 40);
-      s.targetObjective = obj?.id ?? null;
-      s.targetCity = null;
-      s.reason = 'reason.playerTarget';
-      s.reasonParams = {};
-      const exit = w.cityOf(f.id).exit;
-      s.rally = { x: exit.x + (p.x - exit.x) * 0.35, z: exit.z + (p.z - exit.z) * 0.35 };
+    case 'frontOrder': {
+      if (!ORDERS.includes(c.kind) || !finiteV2(c.a) || (c.b !== undefined && !finiteV2(c.b))) return fail('BAD_VALUE');
+      if (!w.terrain.inBounds(c.a.x, c.a.z) || (c.b && !w.terrain.inBounds(c.b.x, c.b.z))) return fail('OUT_OF_BOUNDS');
+      const front = c.frontId === null ? nearestFront(f, c.a) : f.fronts.find((x) => x.id === c.frontId);
+      if (!front) return fail('NO_FRONT');
+      // Infantry must be able to stand there (a point in a lake or on a cliff is no objective).
+      const a = w.nav(false, 35).nearestPassable(c.a, 30);
+      const b = c.b ? w.nav(false, 35).nearestPassable(c.b, 30) : null;
+      if (!a || (c.b && !b)) return fail('UNREACHABLE');
+      issueFrontOrder(w, f, front, { kind: c.kind, a: { ...a }, b: b ? { ...b } : null, issuedAt: w.time, manual: true });
       return OK;
     }
-    case 'setMainSector':
-      if (!f.sectors[c.sectorId]) return fail('BAD_VALUE');
-      f.mainSector = c.sectorId;
+    case 'setMainFront':
+      if (!f.fronts.some((x) => x.id === c.frontId)) return fail('NO_FRONT');
+      f.mainFront = c.frontId;
       return OK;
-    case 'setShares': {
-      const sum = c.shares.reduce((a, b) => a + b, 0);
-      if (!(sum > 0) || c.shares.some((v) => !Number.isFinite(v) || v < 0)) return fail('BAD_VALUE');
-      f.sectors.forEach((s, i) => (s.share = c.shares[i] / sum));
-      return OK;
-    }
-    case 'regroupSector': {
-      // Re-assign existing units to match shares (only on explicit request, §4.3).
-      const units = [...w.units.values()].filter((u) => u.owner === f.id && u.hp > 0 && !u.fixed);
-      let k = 0;
-      for (const u of units) {
-        const r = (k++ % 20) / 20;
-        let acc = 0;
-        for (const s of f.sectors) {
-          acc += s.share;
-          if (r < acc) {
-            u.sectorId = s.id;
-            break;
-          }
-        }
-        u.behavior = 'rally';
-        u.opRole = 'line';
-        u.opTarget = null;
-        u.opObjective = null;
-      }
-      return OK;
-    }
     case 'unitOrder': {
       const units = ownedUnits(match, env.actor, c.unitIds);
       if (units.length === 0) return fail('NOT_OWNER');

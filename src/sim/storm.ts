@@ -1,6 +1,6 @@
 import { hostileMask } from './spatial';
 import { EAGER, stormOn } from './strategyai';
-import type { Faction, Sector, Unit } from './types';
+import type { Faction, Front, Unit } from './types';
 import { dist, type V2 } from './vec';
 import type { World } from './world';
 
@@ -50,7 +50,7 @@ export const STORM = {
 const value = (u: Unit): number => (u.def.costP + u.def.costM) * (u.hp / (u.fixed ? 1400 : u.def.maxHp));
 
 /** Is this group's target an enemy capital it should besiege (round 4 on)? */
-export const capitalSiege = (s: Sector): boolean => stormOn() && STORM_AB.siege && s.targetCity !== null;
+export const capitalSiege = (s: Front): boolean => stormOn() && STORM_AB.siege && s.targetCity !== null;
 
 /**
  * Round 5 finisher (user: the only victory is occupying every enemy capital). A side whose
@@ -90,7 +90,7 @@ export function assessFinisher(world: World, f: Faction, army: number, known: Ma
 }
 
 /** This group is the finisher's storm on its finish target, with the army to force it. */
-export function forcedStorm(f: Faction, s: Sector): boolean {
+export function forcedStorm(f: Faction, s: Front): boolean {
   return f.command.finisher && s.targetCity !== null && s.targetCity === f.command.finishTarget && f.command.finishArmyRatio >= FINISH.forceArmyRatio;
 }
 
@@ -122,7 +122,7 @@ export function stormMass(world: World, f: number, at: V2): number {
 }
 
 /** Storm slots: an arc around the capital itself, facing our side (the line closes on the HQ instead of creeping with the front). */
-export function stormRing(world: World, f: number, s: Sector, n: number): V2[] {
+export function stormRing(world: World, f: number, s: Front, n: number): V2[] {
   const home = Math.atan2(world.hqPos(f).z - s.targetPos.z, world.hqPos(f).x - s.targetPos.x);
   const out: V2[] = [];
   for (let i = 0; i < n; i++) {
@@ -134,7 +134,7 @@ export function stormRing(world: World, f: number, s: Sector, n: number): V2[] {
 }
 
 /** Should a group start a capital siege now (doctrine.chooseOperation)? */
-export function wantsCapitalSiege(world: World, f: Faction, s: Sector, units: Unit[], groupValue: number): boolean {
+export function wantsCapitalSiege(world: World, f: Faction, s: Front, units: Unit[], groupValue: number): boolean {
   if (!capitalSiege(s) || s.targetCity === null) return false;
   // Round 5: the finisher besieges its finish target whatever the numbers.
   if (f.command.finisher && s.targetCity === f.command.finishTarget) return true;

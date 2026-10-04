@@ -4,7 +4,7 @@ import type { GameContext } from './context';
 import { h } from './dom';
 import { natoSymbol, silhouette } from './icons';
 import { t, unitName, unitShortName } from './i18n';
-import { factionLabel } from './labels';
+import { factionLabel, frontLabel } from './labels';
 
 /** Right detail panel — layer 2, only while something is selected (VISUAL_UX §4.2). */
 export class SelectionPanel {
@@ -75,7 +75,7 @@ export class SelectionPanel {
     if (u.def.setupSeconds > 0) this.el.append(h('div', { class: 'kv' }, h('span', {}, '⚙'), h('b', {}, t(`sel.setup.${u.setup}`))));
     this.el.append(
       h('div', { class: 'kv' }, h('span', {}, t('sel.mode')), h('b', { class: u.manual ? 'manual' : '' }, u.manual ? t('sel.manual') : t('sel.auto'))),
-      h('div', { class: 'kv' }, h('span', {}, t('sel.sector')), h('b', {}, t(`sector.${w.factions[u.owner].sectors[u.sectorId]?.key ?? 'center'}`))),
+      h('div', { class: 'kv' }, h('span', {}, t('sel.front')), h('b', {}, frontLabel(w, u.owner, u.frontId))),
       h('div', { class: 'status' }, u.status ? t(u.status) : '—'),
     );
   }

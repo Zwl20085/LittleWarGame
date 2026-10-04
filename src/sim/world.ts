@@ -176,7 +176,7 @@ export class World {
     return this.visibleTo[f].has(u.id);
   }
 
-  spawnUnit(owner: number, unitId: string, pos: V2, sectorId: number, opts: { fixed?: boolean; facingDeg?: number; mirrorId?: number } = {}): Unit {
+  spawnUnit(owner: number, unitId: string, pos: V2, frontId: number, opts: { fixed?: boolean; facingDeg?: number; mirrorId?: number } = {}): Unit {
     const def = this.data.units.get(unitId);
     if (!def) throw new Error(`unknown unit ${unitId}`);
     const primary = def.primaryWeapon ? this.data.weapons.get(def.primaryWeapon)! : null;
@@ -218,7 +218,7 @@ export class World {
       pathFailed: false,
       moving: false,
       speedNow: 0,
-      sectorId,
+      frontId,
       behavior: opts.fixed ? 'garrison' : 'rally',
       manual: null,
       queue: [],

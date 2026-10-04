@@ -53,7 +53,7 @@ export function homeSampler(w: World): { sample: () => void; result: () => HomeS
       const active = !!f.command.homeThreat?.active;
       if (active && !wasActive[f.id]) st.alarms++;
       wasActive[f.id] = active;
-      st.groupMinutesHome += f.sectors.filter((s) => s.reason === 'reason.defendCity' || s.reason === 'reason.homeDefence').length / 60;
+      st.groupMinutesHome += f.fronts.filter((s) => s.reason === 'reason.defendCity' || s.reason === 'reason.homeDefence').length / 60;
       const p = Math.max(0, ...Object.values(f.hqProgress));
       if (p > 0) st.progressS++;
       if (p > 0 && !inEp[f.id]) {

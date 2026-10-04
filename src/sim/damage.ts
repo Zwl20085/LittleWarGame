@@ -152,7 +152,7 @@ export function resolveBlast(
     const blocked = !world.terrain.los(at.x, at.y + 1, at.z, u.pos.x, u.y + 1, u.pos.z, 1e9);
     const blockMul = blocked ? 0.25 : 1;
     if (kind === 'shell') {
-      const grp = world.factions[u.owner]?.sectors[u.sectorId];
+      const grp = world.factions[u.owner]?.fronts[u.frontId];
       if (grp) grp.shelledAt = world.time;
     }
     // Crowded troops suffer more under shellfire (shock + no room to go to ground).

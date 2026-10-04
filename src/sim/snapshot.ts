@@ -19,7 +19,7 @@ const TRUCK: Unit['truckState'][] = ['load', 'out', 'unload', 'return'];
 /** Field order of the packed unit record. */
 const F = {
   id: 0, owner: 1, def: 2, x: 3, z: 4, px: 5, pz: 6, y: 7, heading: 8, turret: 9, hp: 10, morale: 11, supp: 12,
-  ammo: 13, supplyRatio: 14, setup: 15, flags: 16, moraleState: 17, behavior: 18, target: 19, sector: 20, cargo: 21,
+  ammo: 13, supplyRatio: 14, setup: 15, flags: 16, moraleState: 17, behavior: 18, target: 19, front: 20, cargo: 21,
   truck: 22, fort: 23, cover: 24, vseed: 25, lastDamaged: 26, lastFired: 27, status: 28, speed: 29, lastSupplied: 30,
   setupTimer: 31, fixedFacing: 32,
 } as const;
@@ -110,7 +110,7 @@ export function makeSnapshot(match: Match, cur: SnapshotCursor, observer: number
     buf[o + F.setup] = SETUP.indexOf(u.setup);
     buf[o + F.flags] = (u.moving ? 1 : 0) | (u.routing ? 2 : 0) | (u.wavering ? 4 : 0) | (u.supplied ? 8 : 0) | (u.fixed ? 16 : 0) | (u.pathFailed ? 32 : 0) | (u.mounted ? 64 : 0);
     buf[o + F.moraleState] = MORALE.indexOf(u.moraleState); buf[o + F.behavior] = BEHAVIOR.indexOf(u.behavior);
-    buf[o + F.target] = u.targetId ?? -1; buf[o + F.sector] = u.sectorId; buf[o + F.cargo] = u.cargo;
+    buf[o + F.target] = u.targetId ?? -1; buf[o + F.front] = u.frontId; buf[o + F.cargo] = u.cargo;
     buf[o + F.truck] = TRUCK.indexOf(u.truckState); buf[o + F.fort] = u.fortId ?? -1; buf[o + F.cover] = u.cover;
     buf[o + F.vseed] = u.vseed; buf[o + F.lastDamaged] = u.lastDamagedAt; buf[o + F.lastFired] = u.lastFiredAt;
     buf[o + F.status] = st; buf[o + F.speed] = u.speedNow; buf[o + F.lastSupplied] = u.lastSuppliedAt;
@@ -138,7 +138,7 @@ export function makeSnapshot(match: Match, cur: SnapshotCursor, observer: number
     manual,
     // Faction records (economy, orders, groups) feed the HUD, which refreshes at 5 Hz: sending
     // them with every snapshot (up to 60 Hz) is wasted cloning on both threads.
-    factions: cur.sent % FACTION_EVERY === 0 ? w.factions.map((f) => ({ ...f, command: { ...f.command, attackBias: {}, threatAt: {} }, spent: [], sectors: f.sectors.map((s) => ({ ...s, slots: {}, segment: [], bridgeSite: null })) })) : null,
+    factions: cur.sent % FACTION_EVERY === 0 ? w.factions.map((f) => ({ ...f, command: { ...f.command, attackBias: {}, threatAt: {} }, spent: [], fronts: f.fronts.map((s) => ({ ...s, slots: {}, segment: [], bridgeSite: null })) })) : null,
     objectives: packObjectives(w.objectives),
     projectiles: w.projectiles,
     forts: w.forts,
@@ -170,7 +170,7 @@ export function applySnapshot(match: Match, snap: Snapshot, observer: number): v
     if (!u) {
       const def = w.data.units.get(order[buf[o + F.def]])!;
       const fixed = (buf[o + F.flags] & 16) !== 0;
-      u = w.spawnUnit(buf[o + F.owner], def.id, { x: buf[o + F.x], z: buf[o + F.z] }, buf[o + F.sector], { fixed, mirrorId: id });
+      u = w.spawnUnit(buf[o + F.owner], def.id, { x: buf[o + F.x], z: buf[o + F.z] }, buf[o + F.front], { fixed, mirrorId: id });
     }
     u.pos.x = buf[o + F.x]; u.pos.z = buf[o + F.z]; u.prev.x = buf[o + F.px]; u.prev.z = buf[o + F.pz]; u.y = buf[o + F.y];
     u.heading = buf[o + F.heading]; u.turret = buf[o + F.turret]; u.hp = buf[o + F.hp]; u.morale = buf[o + F.morale];
@@ -179,7 +179,7 @@ export function applySnapshot(match: Match, snap: Snapshot, observer: number): v
     const fl = buf[o + F.flags];
     u.moving = (fl & 1) !== 0; u.routing = (fl & 2) !== 0; u.wavering = (fl & 4) !== 0; u.supplied = (fl & 8) !== 0; u.pathFailed = (fl & 32) !== 0; u.mounted = (fl & 64) !== 0;
     u.moraleState = MORALE[buf[o + F.moraleState]] ?? 'normal'; u.behavior = BEHAVIOR[buf[o + F.behavior]] ?? 'advance';
-    u.targetId = buf[o + F.target] < 0 ? null : buf[o + F.target]; u.sectorId = buf[o + F.sector]; u.cargo = buf[o + F.cargo];
+    u.targetId = buf[o + F.target] < 0 ? null : buf[o + F.target]; u.frontId = buf[o + F.front]; u.cargo = buf[o + F.cargo];
     u.truckState = TRUCK[buf[o + F.truck]] ?? 'load'; u.fortId = buf[o + F.fort] < 0 ? null : buf[o + F.fort];
     u.cover = buf[o + F.cover] as Unit['cover']; u.lastDamagedAt = buf[o + F.lastDamaged]; u.lastFiredAt = buf[o + F.lastFired];
     u.status = statusTable[buf[o + F.status]] ?? ''; u.speedNow = buf[o + F.speed]; u.lastSuppliedAt = buf[o + F.lastSupplied];

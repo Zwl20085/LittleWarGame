@@ -8,49 +8,201 @@ import { bridgeSiteFor } from './engineering';
 import { frontSegments, OPS, spreadAlong, planOperations } from './operations';
 import { defendingHome, homeOn, isRecalled, restoreOrders, saveOrders } from './homeguard';
 import { capitalSiege, stormRing } from './storm';
-import type { Faction, Objective, Sector, Unit } from './types';
+import type { Faction, Objective, Front, Unit } from './types';
 import { dist, headingTo, angleDiff, DEG, type V2 } from './vec';
 import type { World } from './world';
+import { isCommander } from './formulas';
 
-const KEYS: Sector['key'][] = ['left', 'center', 'right'];
+/**
+ * 2.0 command hierarchy (docs/COMMAND_V2.md). A faction's army is split into *fronts*, each led
+ * by a front commander unit. The supreme HQ (the player, or the AI planner) gives a front one
+ * order; the commander (this module + doctrine.ts) does the tactics: objective, posture, battle
+ * plan, battle line and formation slots. Front ids are stable for the match; today a front's id
+ * is also its index in `f.fronts` (use `frontById` so dynamic fronts can change that later).
+ */
 
-/** Assign each sector a primary objective by bearing from the city (left / centre / right). */
-export function initSectors(world: World, f: Faction): void {
+/** New front with no units and an `auto` order, aimed at `target`. */
+export function newFront(world: World, f: Faction, target: Objective, wing: Front['wing'], share: number): Front {
+  const city = world.cityOf(f.id);
+  const id = f.frontSeq++;
+  return {
+    id, name: target.id, wing, commanderId: null, commanderLostAt: -1,
+    order: { kind: 'auto', a: { ...target.pos }, b: null, issuedAt: world.time, manual: false }, line: null,
+    share, posture: 'cautious', targetPos: { ...target.pos }, targetObjective: target.id,
+    targetCity: null, rally: lerpV(city.exit, target.pos, 0.35), reason: 'reason.capturePoint', reasonParams: { point: target.id }, lastRetarget: -999, postureSince: 0,
+    manualTarget: false, gatheredSince: -1, advancing: false,
+    front: { ...target.pos }, facing: headingTo(city.hq, target.pos), slots: {}, crossing: null, stagedSince: -1, lastSpearhead: -999, mode: 'advance', shelledAt: -999, segment: [], bridgeSite: null, bridgeCheckAt: 0,
+    op: 'frontal', opLocked: false, opRoute: [], opPhase: '',
+  };
+}
+
+/** Initial fronts: the nearest forward settlements by bearing from the capital (left … right). */
+export function initFronts(world: World, f: Faction): void {
   const city = world.cityOf(f.id);
   const fwd = city.forwardDeg * DEG;
+  const n = Math.max(1, world.data.rules.command.fronts_initial);
   const scored = world.objectives
     .map((o) => ({ o, ang: angleDiff(fwd, headingTo(city.hq, o.pos)), d: dist(city.hq, o.pos) }))
     .filter((x) => Math.abs(x.ang) < 75 * DEG)
     .sort((a, b) => a.d - b.d);
-  const near = scored.slice(0, 3).sort((a, b) => a.ang - b.ang);
-  // Negative bearing offset = left flank as seen from the city.
+  const near = scored.slice(0, n).sort((a, b) => a.ang - b.ang);
   const shares = world.data.rules.proposed_defaults.sector_reinforcement_shares;
-  // Fallback: maps without forward objectives still get three sectors on the nearest points.
-  const order = near.length > 0 ? near : world.objectives.map((o) => ({ o, ang: 0, d: dist(city.hq, o.pos) })).sort((a, b) => a.d - b.d).slice(0, 3);
-  if (order.length === 0) throw new Error(`map ${world.map.id}: no objectives for sectors`);
-  const centreIdx = order.length === 3 ? 1 : 0;
-  // Biggest share to the centre objective, then left, then right.
-  const shareFor = (i: number): number => (i === centreIdx ? shares[0] : i < centreIdx ? shares[1] : shares[2]);
-  f.sectors = KEYS.map((key, i) => {
-    const target = order[i]?.o ?? order[0].o;
-    const rally = lerpV(city.exit, target.pos, 0.35);
-    return {
-      id: i, key, share: shareFor(i), posture: 'cautious', targetPos: { ...target.pos }, targetObjective: target.id,
-      targetCity: null, rally, reason: 'reason.capturePoint', reasonParams: { point: target.id }, lastRetarget: -999, postureSince: 0,
-      manualTarget: false, gatheredSince: -1, advancing: false,
-      front: { ...target.pos }, facing: headingTo(city.hq, target.pos), slots: {}, crossing: null, stagedSince: -1, lastSpearhead: -999, mode: 'advance', shelledAt: -999, segment: [], bridgeSite: null, bridgeCheckAt: 0,
-      op: 'frontal', opLocked: false, opRoute: [], opPhase: '',
-    };
-  });
-  f.mainSector = centreIdx;
+  // Fallback: maps without forward objectives still get fronts on the nearest points.
+  const order = near.length > 0 ? near : world.objectives.map((o) => ({ o, ang: 0, d: dist(city.hq, o.pos) })).sort((a, b) => a.d - b.d).slice(0, n);
+  if (order.length === 0) throw new Error(`map ${world.map.id}: no objectives for fronts`);
+  const centreIdx = Math.floor((order.length - 1) / 2);
+  // Biggest share to the centre, then the wings (negative bearing = left as seen from the city).
+  const shareFor = (i: number): number => (i === centreIdx ? shares[0] : i < centreIdx ? shares[1] : shares[2]) ?? 1 / order.length;
+  f.frontSeq = 0;
+  f.fronts = order.map((x, i) => newFront(world, f, x.o, i === centreIdx ? 0 : i < centreIdx ? -1 : 1, shareFor(i)));
+  f.mainFront = f.fronts[centreIdx].id;
+  for (const s of f.fronts) appointCommander(world, f, s);
 }
+
+export const frontById = (f: Faction, id: number): Front | undefined => f.fronts[id]?.id === id ? f.fronts[id] : f.fronts.find((s) => s.id === id);
+
+/** The front whose battle line is nearest to `p` (for orders given on the map without a front). */
+export function nearestFront(f: Faction, p: V2): Front | undefined {
+  let best: Front | undefined;
+  let bd = Infinity;
+  for (const s of f.fronts) {
+    const d = s.line ? segmentDistance(p, s.line.a, s.line.b) : Math.min(dist(p, s.front), dist(p, s.targetPos));
+    if (d < bd) { bd = d; best = s; }
+  }
+  return best;
+}
+
+function segmentDistance(p: V2, a: V2, b: V2): number {
+  const vx = b.x - a.x;
+  const vz = b.z - a.z;
+  const l2 = vx * vx + vz * vz;
+  const t = l2 > 0 ? Math.max(0, Math.min(1, ((p.x - a.x) * vx + (p.z - a.z) * vz) / l2)) : 0;
+  return Math.hypot(p.x - (a.x + vx * t), p.z - (a.z + vz * t));
+}
+
+/** Default line length for a point order (a line through the point, square to the capital bearing). */
+const ORDER_LINE_M = 240;
+
+/**
+ * Apply a supreme-HQ order to a front: stores it, derives the line and the objective, and sets
+ * the posture the order implies. The commander keeps refining tactics every think
+ * (`thinkFronts`); `auto` hands the objective choice back to it.
+ */
+export function issueFrontOrder(world: World, f: Faction, s: Front, order: Front['order']): void {
+  s.order = order;
+  const hq = world.hqPos(f.id);
+  if (order.kind === 'auto') {
+    s.line = null;
+    s.manualTarget = false;
+    s.lastRetarget = -999;
+    s.opLocked = false;
+    if (s.posture === 'hold' || s.posture === 'fortify') setPosture(world, s, 'cautious');
+    return;
+  }
+  const a = order.a;
+  const b = order.b ?? (() => {
+    const along = headingTo(hq, a) + Math.PI / 2;
+    return { x: a.x + Math.cos(along) * ORDER_LINE_M, z: a.z + Math.sin(along) * ORDER_LINE_M };
+  })();
+  const a0 = order.b ? a : { x: 2 * a.x - b.x, z: 2 * a.z - b.z };
+  const centre = order.b ? { x: (a.x + b.x) / 2, z: (a.z + b.z) / 2 } : a;
+  s.line = order.kind === 'attack' && !order.b ? null : { a: a0, b };
+  s.manualTarget = true;
+  s.targetPos = { ...centre };
+  const obj = world.objectives.find((o) => dist(o.pos, centre) < Math.max(40, o.radius));
+  s.targetObjective = obj?.id ?? null;
+  s.name = obj?.id ?? s.name;
+  // An enemy capital inside the order is a city assault (the finisher / siege logic keys on targetCity).
+  s.targetCity = null;
+  for (const e of world.factions) if (e.alive && world.isHostile(f.id, e.id) && dist(world.hqPos(e.id), centre) < 60) s.targetCity = e.id;
+  s.lastRetarget = world.time;
+  s.rally = lerpV(world.cityOf(f.id).exit, centre, order.kind === 'attack' ? 0.4 : 0.9);
+  s.reason = `reason.order.${order.kind}`;
+  s.reasonParams = { point: s.targetObjective ?? '' };
+  setPosture(world, s, order.kind === 'attack' ? 'cautious' : order.kind === 'fortify' ? 'fortify' : 'hold');
+  if (s.opPhase !== '') resetOperation(s, frontUnits(world, f.id, s.id), world);
+  if (order.kind === 'fallBack') {
+    // Everyone drops what they are doing and marches back to the new line before fighting again.
+    for (const u of frontUnits(world, f.id, s.id)) {
+      if (u.manual || u.def.id === 'supply_truck') continue;
+      u.spearhead = null;
+      if (u.opRole !== 'garrison') { u.opRole = 'line'; u.opTarget = null; u.opObjective = null; }
+      u.behavior = 'advance';
+    }
+  }
+}
+
+function setPosture(world: World, s: Front, p: Front['posture']): void {
+  if (s.posture === p) return;
+  s.posture = p;
+  s.postureSince = world.time;
+}
+
+/** Does the standing order fix this front's objective (the commander may not retarget on its own)? */
+export const orderedTarget = (s: Front): boolean => s.order.kind !== 'auto';
+
+// ---------------------------------------------------------------- front commanders
+
+/** Nearest own settlement (town / city preferred) within `commander_post_radius_m` of the front, else the capital exit. */
+export function commanderPost(world: World, f: Faction, s: Front): V2 {
+  const r = world.data.rules.command.commander_post_radius_m;
+  const anchor = s.line ? { x: (s.line.a.x + s.line.b.x) / 2, z: (s.line.a.z + s.line.b.z) / 2 } : s.front;
+  let best: V2 | null = null;
+  let bd = Infinity;
+  for (const o of world.objectives) {
+    if (o.owner !== f.id || o.kind === 'point') continue;
+    const d = dist(o.pos, anchor) * (o.kind === 'village' ? 1.3 : 1);
+    if (d < bd && d < r) { bd = d; best = o.pos; }
+  }
+  return best ?? world.cityOf(f.id).exit;
+}
+
+/** Spawn a front commander at the capital exit (free of charge at the start, P-paid later). */
+function appointCommander(world: World, f: Faction, s: Front): void {
+  const id = world.data.rules.command.commander_unit;
+  if (!world.data.units.has(id)) return;
+  const exit = world.cityOf(f.id).exit;
+  const spread = ((s.id * 2654435761) % 1000) / 1000 - 0.5;
+  const nav = world.nav(false, 35);
+  const p = nav.nearestPassable({ x: exit.x + spread * 30, z: exit.z + spread * 20 }, 40) ?? exit;
+  const u = world.spawnUnit(f.id, id, p, s.id);
+  u.behavior = 'advance';
+  u.opRole = 'line';
+  s.commanderId = u.id;
+  s.commanderLostAt = -1;
+}
+
+/**
+ * Every front think: note a lost commander (the front holds for `commander_lost_hold_seconds`),
+ * and appoint a replacement after `commander_respawn_seconds` if the faction can pay for one.
+ */
+export function upkeepCommander(world: World, f: Faction, s: Front): void {
+  const rules = world.data.rules.command;
+  const alive = world.unitAlive(s.commanderId);
+  if (alive) return;
+  if (s.commanderId !== null) {
+    s.commanderId = null;
+    s.commanderLostAt = world.time;
+    world.note(f.id, 'log.commanderLost', { point: s.name }, 'alert');
+  }
+  if (s.commanderLostAt >= 0 && world.time - s.commanderLostAt < rules.commander_respawn_seconds) return;
+  const def = world.data.units.get(rules.commander_unit);
+  if (!def || f.p < def.costP) return;
+  f.p -= def.costP;
+  appointCommander(world, f, s);
+  world.note(f.id, 'log.commanderAppointed', { point: s.name }, 'info');
+}
+
+/** A front without its commander fights on, but holds its ground until the replacement arrives. */
+export const leaderless = (world: World, s: Front): boolean =>
+  s.commanderId === null && s.commanderLostAt >= 0 && world.time - s.commanderLostAt < world.data.rules.command.commander_lost_hold_seconds;
 
 export const lerpV = (a: V2, b: V2, t: number): V2 => ({ x: a.x + (b.x - a.x) * t, z: a.z + (b.z - a.z) * t });
 
 function knownEnemyStrength(world: World, f: number, at: V2, r: number): number {
   let s = 0;
   for (const u of world.spatial.queryOwners(at.x, at.z, r, hostileMask(world, f))) {
-    if (u.hp > 0 && world.isHostile(f, u.owner) && world.knows(f, u)) s += (u.def.costP + u.def.costM) * (u.hp / (u.fixed ? 1400 : u.def.maxHp));
+    if (u.hp > 0 && world.isHostile(f, u.owner) && world.knows(f, u) && !isCommander(u.def)) s += (u.def.costP + u.def.costM) * (u.hp / (u.fixed ? 1400 : u.def.maxHp));
   }
   return s;
 }
@@ -66,11 +218,11 @@ function fightingEnemyStrength(world: World, f: number, at: V2, r: number): numb
   return s;
 }
 
-/** Reason text describing the sector's current goal (not a temporary gate). */
-function setGoalReason(s: Sector): void {
-  if (s.manualTarget) {
-    s.reason = 'reason.playerTarget';
-    s.reasonParams = {};
+/** Reason text describing the front's current goal (not a temporary gate). */
+function setGoalReason(s: Front): void {
+  if (orderedTarget(s)) {
+    s.reason = `reason.order.${s.order.kind}`;
+    s.reasonParams = { point: s.targetObjective ?? '' };
   } else if (s.targetCity !== null) {
     s.reason = 'reason.assaultCity';
     s.reasonParams = { city: s.targetCity };
@@ -80,18 +232,18 @@ function setGoalReason(s: Sector): void {
   }
 }
 
-export function sectorUnits(world: World, f: number, sectorId: number): Unit[] {
+export function frontUnits(world: World, f: number, frontId: number): Unit[] {
   const out: Unit[] = [];
-  for (const u of world.units.values()) if (u.owner === f && u.sectorId === sectorId && u.hp > 0 && !u.fixed) out.push(u);
+  for (const u of world.units.values()) if (u.owner === f && u.frontId === frontId && u.hp > 0 && !u.fixed) out.push(u);
   return out;
 }
 
 function strengthOf(units: Unit[]): number {
-  return units.reduce((s, u) => s + (u.def.costP + u.def.costM) * (u.hp / u.def.maxHp), 0);
+  return units.reduce((s, u) => s + (isCommander(u.def) ? 0 : (u.def.costP + u.def.costM) * (u.hp / u.def.maxHp)), 0);
 }
 
-/** Next objective for a sector once its own is secured: closest not-owned point, else weakest enemy city. */
-function nextTarget(world: World, f: Faction, s: Sector): { pos: V2; obj: Objective | null; city: number | null } {
+/** Next objective for a front once its own is secured: closest not-owned point, else weakest enemy city. */
+function nextTarget(world: World, f: Faction, s: Front): { pos: V2; obj: Objective | null; city: number | null } {
   const from = s.targetPos;
   // Round 2 decisive offensive: every group goes for the chosen enemy capital (command.ts chooseFinishTarget).
   const fin = eagerOn() ? f.command.finishTarget : -1;
@@ -100,8 +252,8 @@ function nextTarget(world: World, f: Faction, s: Sector): { pos: V2; obj: Object
   if (own && own.owner !== f.id) return { pos: own.pos, obj: own, city: null };
   // Score open objectives: near our current front, weakly held, not already another group's target,
   // and penalise ones behind a river (crossings are costly).
-  const mine = strengthOf(sectorUnits(world, f.id, s.id)) + 1;
-  const taken = new Set(f.sectors.filter((x) => x.id !== s.id).map((x) => x.targetObjective ?? (x.targetCity !== null ? `hq:${x.targetCity}` : null)));
+  const mine = strengthOf(frontUnits(world, f.id, s.id)) + 1;
+  const taken = new Set(f.fronts.filter((x) => x.id !== s.id).map((x) => x.targetObjective ?? (x.targetCity !== null ? `hq:${x.targetCity}` : null)));
   let best: Objective | null = null;
   let bestScore = -Infinity;
   for (const o of world.objectives) {
@@ -141,8 +293,8 @@ function nextTarget(world: World, f: Faction, s: Sector): { pos: V2; obj: Object
   return { pos: world.hqPos(enemies[0].id), obj: null, city: enemies[0].id };
 }
 
-/** Sector planner (2 s): target choice, gather/advance gate, city-defence override. */
-export function thinkSectors(world: World, f: Faction): void {
+/** Front planner (2 s): target choice, gather/advance gate, city-defence override. */
+export function thinkFronts(world: World, f: Faction): void {
   const hq = world.hqPos(f.id);
   // Round 3: graded recall decided by the high command (homeguard.ts); else the old all-or-nothing rule.
   const graded = homeOn();
@@ -150,12 +302,13 @@ export function thinkSectors(world: World, f: Faction): void {
   const ht = f.command.homeThreat;
   // Each group owns a stretch of the front so the whole line is held, not one point.
   const segs = frontSegments(world, f, world.frontInfo[f.id]?.cells ?? []);
-  f.sectors.forEach((s, i) => (s.segment = segs[i] ?? []));
+  f.fronts.forEach((s, i) => (s.segment = segs[i] ?? []));
   planOperations(world, f);
-  const groups = f.sectors.map((s) => sectorUnits(world, f.id, s.id));
+  const groups = f.fronts.map((s) => frontUnits(world, f.id, s.id));
   planPincer(world, f, groups);
-  for (const s of f.sectors) {
-    const units = groups[s.id] ?? sectorUnits(world, f.id, s.id);
+  for (const s of f.fronts) {
+    const units = groups[s.id] ?? frontUnits(world, f.id, s.id);
+    upkeepCommander(world, f, s);
     const recalled = graded ? isRecalled(f, s) : threat > 300 && !s.manualTarget;
     if (graded && !recalled && defendingHome(s)) {
       // Threat passed: the group gets its previous orders back.
@@ -176,7 +329,7 @@ export function thinkSectors(world: World, f: Faction): void {
       planFront(world, f, s, units, true);
       continue;
     }
-    // Strategy changes slowly: a sector keeps its objective at least 60 s (user: AI was too fast).
+    // Strategy changes slowly: a front keeps its objective at least 60 s (user: AI was too fast).
     // (an assault already under way on a nearby place is finished first)
     const finishNow = eagerOn() && f.command.finishTarget >= 0 && s.targetCity !== f.command.finishTarget && s.opPhase !== 'assault';
     if (!s.manualTarget && !maneuvering(s) && (world.time - s.lastRetarget > 60 || finishNow)) {
@@ -192,11 +345,12 @@ export function thinkSectors(world: World, f: Faction): void {
     }
     // Battle doctrine for this group's attack (flank, pincer, infiltration, siege …).
     runOperation(world, f, s, units);
-    // Losing badly near target → pause the push (avoid suicidal trickle). Count the whole sector,
+    // Losing badly near target → pause the push (avoid suicidal trickle). Count the whole front,
     // including units waiting at the rally point, so the gate cannot deadlock.
     const mine = strengthOf(units);
     const theirs = knownEnemyStrength(world, f.id, s.targetPos, 220);
-    const outmatched = theirs > mine * 1.6 && s.posture !== 'assault';
+    // A front that has just lost its commander holds its ground until the replacement arrives.
+    const outmatched = (theirs > mine * 1.6 && s.posture !== 'assault') || leaderless(world, s);
     const gatherAtRally = units.filter((u) => u.behavior === 'rally' && dist(u.pos, s.rally) < 60);
     const inf = gatherAtRally.filter((u) => u.def.kind === 'infantry').length;
     if (gatherAtRally.length > 0 && s.gatheredSince < 0) s.gatheredSince = world.time;
@@ -222,7 +376,7 @@ export function thinkSectors(world: World, f: Faction): void {
  * holding or outmatched; when attacking across a river, stage before the crossing until the
  * group has massed, then push through. Units get formation slots on the line.
  */
-function planFront(world: World, f: Faction, s: Sector, units: Unit[], defensive: boolean): void {
+function planFront(world: World, f: Faction, s: Front, units: Unit[], defensive: boolean): void {
   const centroid = units.length > 0
     ? { x: units.reduce((a, u) => a + u.pos.x, 0) / units.length, z: units.reduce((a, u) => a + u.pos.z, 0) / units.length }
     : world.cityOf(f.id).exit;
@@ -331,7 +485,7 @@ function planFront(world: World, f: Faction, s: Sector, units: Unit[], defensive
   front = s.front;
   facing = s.facing;
   // Formation slots by rank (front-line troops, AT/MG line behind, support further back).
-  const liners = units.filter((u) => u.behavior === 'advance' && !u.manual && !u.spearhead && u.opRole === 'line' && !['howitzer', 'mortar', 'supply_truck', 'recon'].includes(u.def.id))
+  const liners = units.filter((u) => u.behavior === 'advance' && !u.manual && !u.spearhead && u.opRole === 'line' && !['howitzer', 'mortar', 'supply_truck', 'recon', 'commander'].includes(u.def.id))
     .sort((a, b) => unitDepthRank(a) - unitDepthRank(b) || a.id - b.id);
   const byRank = new Map<number, Unit[]>();
   for (const u of liners) {
@@ -342,7 +496,15 @@ function planFront(world: World, f: Faction, s: Sector, units: Unit[], defensive
   }
   const slots: Record<number, V2> = {};
   // Round 2: in contact, only the stretches of the segment with known enemies near get the screen.
-  const seg = eagerOn() && contact ? activeSegment(world, f.id, s.segment) : s.segment;
+  // 2.0: a line order (defend / fortify / fall back) is held along the ordered line itself.
+  const ordered = s.line && s.order.kind !== 'attack' && !defendingHome(s);
+  if (ordered && s.line) {
+    s.front = { x: (s.line.a.x + s.line.b.x) / 2, z: (s.line.a.z + s.line.b.z) / 2 };
+    s.facing = headingTo(world.hqPos(f.id), s.front);
+    front = s.front;
+    facing = s.facing;
+  }
+  const seg = ordered && s.line ? lineCells(s.line, FRONTLINE.cell) : eagerOn() && contact ? activeSegment(world, f.id, s.segment) : s.segment;
   const home = world.hqPos(f.id);
   // Spacing doctrine: spread wider once enemy shells land among the group.
   const spacing = world.time - s.shelledAt < OPS.shelledMemorySeconds ? OPS.shelledSpacing : OPS.minSpacing;
@@ -393,6 +555,14 @@ function planFront(world: World, f: Faction, s: Sector, units: Unit[], defensive
     });
   }
   s.slots = slots;
+}
+
+/** An ordered line sampled every `cell` metres (same shape as a front segment). */
+function lineCells(line: { a: V2; b: V2 }, cell: number): V2[] {
+  const n = Math.max(1, Math.round(dist(line.a, line.b) / cell));
+  const out: V2[] = [];
+  for (let k = 0; k <= n; k++) out.push(lerpV(line.a, line.b, k / n));
+  return out;
 }
 
 /**
@@ -451,7 +621,7 @@ function massSlot(centre: V2, facing: number, i: number, n: number, rank: number
 
 /** Round 2 per-group push bookkeeping (not shipped to the UI / snapshot). */
 interface EagerState { holdSince: number; pushUntil: number; massSince: number; massed: number; massNeed: number }
-const eager = new WeakMap<Sector, EagerState>();
+const eager = new WeakMap<Front, EagerState>();
 
 /**
  * Round 2 push decision on top of the ratio threshold:
@@ -462,7 +632,7 @@ const eager = new WeakMap<Sector, EagerState>();
  * - frontal attacks mass first: hold near the anchor until `frontalMassShare` of the mass is within
  *   `massRadius` (or `massWaitS` passed) instead of trickling forward unit by unit.
  */
-function eagerPush(world: World, f: Faction, s: Sector, units: Unit[], anchor: V2, ratio: number, groupRatio: number, wantsPush: boolean, pushing: boolean): boolean {
+function eagerPush(world: World, f: Faction, s: Front, units: Unit[], anchor: V2, ratio: number, groupRatio: number, wantsPush: boolean, pushing: boolean): boolean {
   const now = world.time;
   let st = eager.get(s);
   if (!st) {
@@ -506,7 +676,7 @@ function eagerPush(world: World, f: Faction, s: Sector, units: Unit[], anchor: V
  * Breakthrough: with decisive local superiority, detach a mobile group (tanks + fresh infantry)
  * to drive through the front and seize an enemy settlement behind it — or the enemy capital.
  */
-function launchSpearhead(world: World, f: Faction, s: Sector, units: Unit[], anchor: V2): void {
+function launchSpearhead(world: World, f: Faction, s: Front, units: Unit[], anchor: V2): void {
   let target: string | null = null;
   let tpos: V2 | null = null;
   let best = Infinity;

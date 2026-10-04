@@ -5,7 +5,8 @@ import { eagerOn, stormOn, STRATEGY_AI } from './strategyai';
 import { Ground } from './terrain';
 import { navPost } from './crewai';
 import { dig, openWork, startLine, WORKS } from './works';
-import type { Faction, Sector, Unit } from './types';
+import { isCommander } from './formulas';
+import type { Faction, Front, Unit } from './types';
 import { angleDiff, dist, headingTo, type V2 } from './vec';
 import type { World } from './world';
 
@@ -80,7 +81,7 @@ export const HOME = {
 export const homeOn = (): boolean => eagerOn() && STRATEGY_AI.homeDefence;
 
 /** A group in the middle of an assault, a breakthrough or a siege of its own. */
-const storming = (s: Sector): boolean => s.opPhase === 'assault' || s.mode === 'breakthrough' || (s.op === 'siege' && s.opPhase !== '');
+const storming = (s: Front): boolean => s.opPhase === 'assault' || s.mode === 'breakthrough' || (s.op === 'siege' && s.opPhase !== '');
 
 export interface HomeThreat {
   /** Risk to the capital, 0 … 1. */
@@ -118,7 +119,7 @@ export function createHomeThreat(): HomeThreat {
 }
 
 /** Recalled to the capital (new graded rule or the old all-or-nothing one). */
-export const defendingHome = (s: Sector): boolean => s.reason === 'reason.defendCity' || s.reason === 'reason.homeDefence';
+export const defendingHome = (s: Front): boolean => s.reason === 'reason.defendCity' || s.reason === 'reason.homeDefence';
 
 const clamp01 = (x: number): number => Math.max(0, Math.min(1, x));
 const valueOf = (u: Unit): number => (u.def.costP + u.def.costM) * (u.hp / (u.fixed ? 1400 : u.def.maxHp));
@@ -127,7 +128,7 @@ const hqKey = (f: number): string => `hq:${f}`;
 /** Does this (enemy) unit head for capital `f`? Spearhead, its group's target, or its destination. */
 function aimedAt(world: World, f: number, u: Unit, hq: V2): boolean {
   if (u.spearhead === hqKey(f)) return true;
-  if (world.factions[u.owner]?.sectors[u.sectorId]?.targetCity === f) return true;
+  if (world.factions[u.owner]?.fronts[u.frontId]?.targetCity === f) return true;
   return !!u.dest && dist(u.dest, hq) < 400;
 }
 
@@ -153,7 +154,7 @@ function forecast(world: World, f: Faction, groups: GroupInfo[]): number {
   const tracks = approachOf(f);
   const acc = new Map<number, { dv: number; v: number }>();
   for (const u of world.units.values()) {
-    if (u.hp <= 0 || u.def.id === 'supply_truck') continue;
+    if (u.hp <= 0 || u.def.id === 'supply_truck' || isCommander(u.def)) continue;
     const d = dist(u.pos, hq);
     if (u.owner === f.id) {
       const v = valueOf(u);
@@ -167,7 +168,7 @@ function forecast(world: World, f: Faction, groups: GroupInfo[]): number {
         guardAway += v;
         continue;
       }
-      const g = groups[u.sectorId];
+      const g = groups[u.frontId];
       if (!g) continue;
       g.value += v;
       g.sx += u.pos.x;
@@ -179,7 +180,7 @@ function forecast(world: World, f: Faction, groups: GroupInfo[]): number {
     if (u.fixed || d > HOME.farM || !world.isHostile(f.id, u.owner) || !world.knows(f.id, u)) continue;
     const v = valueOf(u);
     // Per enemy group: value-weighted distance to our capital (closing speed from think to think).
-    const gk = u.owner * 64 + u.sectorId;
+    const gk = u.owner * 64 + u.frontId;
     const a = acc.get(gk) ?? { dv: 0, v: 0 };
     a.dv += d * v;
     a.v += v;
@@ -242,7 +243,7 @@ function updateApproach(world: World, tracks: Map<number, Approach>, acc: Map<nu
 export function thinkHomeDefence(world: World, f: Faction): void {
   if (!homeOn()) return;
   const ht = f.command.homeThreat;
-  const groups: GroupInfo[] = f.sectors.map(() => ({ value: 0, sx: 0, sz: 0, firing: 0, n: 0 }));
+  const groups: GroupInfo[] = f.fronts.map(() => ({ value: 0, sx: 0, sz: 0, firing: 0, n: 0 }));
   const guardAway = forecast(world, f, groups);
   const now = world.time;
   const wasActive = ht.active;
@@ -319,12 +320,12 @@ function toLine(u: Unit): void {
 /** Candidate home guards by tier: occupation / quiet garrison detachments, then AT guns and MGs, then free line troops; nearest first. */
 function guardPool(world: World, f: Faction, engineersOnly: boolean, minD: number): Unit[] {
   const hq = world.hqPos(f.id);
-  const busy = new Set(f.sectors.filter((s) => (s.op !== 'frontal' && s.opPhase !== '') || s.manualTarget).map((s) => s.id));
+  const busy = new Set(f.fronts.filter((s) => (s.op !== 'frontal' && s.opPhase !== '') || s.manualTarget).map((s) => s.id));
   const tiered: { u: Unit; tier: number; d: number }[] = [];
   for (const u of world.units.values()) {
     if (u.owner !== f.id || u.hp <= 0 || u.fixed || u.manual || u.routing || u.spearhead) continue;
     if (u.behavior !== 'advance' && u.behavior !== 'rally') continue;
-    if (u.def.id === 'supply_truck' || u.def.id === 'howitzer' || u.def.id === 'mortar' || u.def.id === 'recon') continue;
+    if (u.def.id === 'supply_truck' || u.def.id === 'howitzer' || u.def.id === 'mortar' || u.def.id === 'recon' || isCommander(u.def)) continue;
     if (engineersOnly && u.def.id !== 'engineer') continue;
     const d = dist(u.pos, hq);
     if (d > HOME.guardRadiusM || d < minD) continue;
@@ -335,7 +336,7 @@ function guardPool(world: World, f: Faction, engineersOnly: boolean, minD: numbe
     }
     else if (u.opRole === 'garrison' && u.opObjective && !u.opObjective.startsWith('hq:')
       && world.time - (f.command.threatAt[u.opObjective] ?? -1e9) > 20) tier = 0;
-    else if (u.opRole !== 'line' || busy.has(u.sectorId)) continue;
+    else if (u.opRole !== 'line' || busy.has(u.frontId)) continue;
     else tier = u.def.id === 'at_gun' || u.def.id === 'mg' ? 1 : 2;
     tiered.push({ u, tier, d });
   }
@@ -346,7 +347,7 @@ function guardPool(world: World, f: Faction, engineersOnly: boolean, minD: numbe
 /**
  * Graded recall: home-guard detachments first, then whole army groups (nearest / least engaged
  * first) until home strength ≥ overmatch × forecast. Recalled groups stay recalled while the
- * alarm lasts (no yo-yo); they get their old orders back when it ends (sectors.ts).
+ * alarm lasts (no yo-yo); they get their old orders back when it ends (fronts.ts).
  */
 function recall(world: World, f: Faction, groups: GroupInfo[], guards: Unit[], guardAway: number, fresh: boolean): void {
   const ht = f.command.homeThreat;
@@ -382,8 +383,8 @@ function recall(world: World, f: Faction, groups: GroupInfo[], guards: Unit[], g
     // Round 4: a hopeless defence recalls no further group even at the gates (the army fights on in the
     // field; recalling it made the last capitals unbreakable). Raids never reach this ratio.
     const hopeless = ht.enemy >= army * HOME.hopelessRatio && (stormOn() || ht.eta > HOME.gatesEtaS);
-    const maxGroups = hopeless ? ht.recall.length : want >= army * HOME.allGroupsShare ? f.sectors.length : f.sectors.length - 1;
-    const cands = f.sectors
+    const maxGroups = hopeless ? ht.recall.length : want >= army * HOME.allGroupsShare ? f.fronts.length : f.fronts.length - 1;
+    const cands = f.fronts
       .filter((s) => !s.manualTarget && !ht.recall.includes(s.id) && (groups[s.id]?.n ?? 0) > 0 && dist(centre(s.id), hq) / HOME.marchMps <= window)
       // Round 4: an assault / storm under way is not called off (op success −3.7 pts in round 3), unless the enemy is at the gates.
       .filter((s) => !stormOn() || !storming(s) || ht.eta <= HOME.gatesEtaS)
@@ -605,7 +606,7 @@ const postAt = (world: World, u: Unit, p: V2): V2 => (stormOn() ? navPost(world,
  * Recalled group, far from home: fall back in good order — march to the slot near the capital,
  * returning fire at targets of opportunity, instead of staying pinned in the old fight.
  */
-export function fallBackHome(world: World, u: Unit, s: Sector): boolean {
+export function fallBackHome(world: World, u: Unit, s: Front): boolean {
   if (s.reason !== 'reason.homeDefence' || u.def.id === 'howitzer' || u.def.id === 'mortar') return false;
   const hq = world.hqPos(u.owner);
   if (dist(u.pos, hq) < HOME.contactM) return false;
@@ -616,19 +617,19 @@ export function fallBackHome(world: World, u: Unit, s: Sector): boolean {
   return true;
 }
 
-// ---------------------------------------------------------------- saved orders (sectors.ts)
+// ---------------------------------------------------------------- saved orders (fronts.ts)
 
 interface SavedOrders { targetPos: V2; targetObjective: string | null; targetCity: number | null; rally: V2; lastRetarget: number }
-const saved = new WeakMap<Sector, SavedOrders>();
+const saved = new WeakMap<Front, SavedOrders>();
 
 /** Remember a group's orders before it is recalled (first recall only). */
-export function saveOrders(s: Sector): void {
+export function saveOrders(s: Front): void {
   if (saved.has(s) || defendingHome(s)) return;
   saved.set(s, { targetPos: { ...s.targetPos }, targetObjective: s.targetObjective, targetCity: s.targetCity, rally: { ...s.rally }, lastRetarget: s.lastRetarget });
 }
 
 /** Give a released group its old orders back (returns false if it had none saved). */
-export function restoreOrders(s: Sector): boolean {
+export function restoreOrders(s: Front): boolean {
   const o = saved.get(s);
   if (!o) return false;
   saved.delete(s);
@@ -640,4 +641,4 @@ export function restoreOrders(s: Sector): boolean {
   return true;
 }
 
-export const isRecalled = (f: Faction, s: Sector): boolean => !s.manualTarget && f.command.homeThreat.recall.includes(s.id);
+export const isRecalled = (f: Faction, s: Front): boolean => !s.manualTarget && f.command.homeThreat.recall.includes(s.id);

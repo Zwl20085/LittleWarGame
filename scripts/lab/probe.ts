@@ -31,7 +31,7 @@ export interface FactionPoint {
   held: number; village: number; town: number; city: number;
   /** Combat units with opRole occupy/garrison (territory directives). */
   occupyFrac: number;
-  /** Size-weighted mean distance of each group (sector) centroid to the nearest capturable settlement. */
+  /** Size-weighted mean distance of each group (front) centroid to the nearest capturable settlement. */
   groupDist: number;
   retreatFrac: number; firingFrac: number; hpFrac: number;
   slotsBusy: number;
@@ -119,11 +119,11 @@ function groupDistance(world: World, f: Faction, units: Unit[]): number {
   if (targets.length === 0 || units.length === 0) return 0;
   const groups = new Map<number, { x: number; z: number; n: number }>();
   for (const u of units) {
-    const g = groups.get(u.sectorId) ?? { x: 0, z: 0, n: 0 };
+    const g = groups.get(u.frontId) ?? { x: 0, z: 0, n: 0 };
     g.x += u.pos.x;
     g.z += u.pos.z;
     g.n++;
-    groups.set(u.sectorId, g);
+    groups.set(u.frontId, g);
   }
   let sum = 0;
   let n = 0;

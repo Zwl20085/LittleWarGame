@@ -4,7 +4,8 @@ import { fallBackHome } from './homeguard';
 import { dig, openWork } from './works';
 import { FORT } from './config';
 import { moveTo, stop } from './movement';
-import { lerpV } from './sectors';
+import { commanderPost, lerpV } from './fronts';
+import { hostileMask } from './spatial';
 import { trySpend } from './economy';
 import { ESCORT_REACT_S } from './damage';
 import { availableM } from './production';
@@ -15,7 +16,7 @@ import { enemyConvoyTargets } from './operations';
 import { EAGER, eagerOn, stormOn } from './strategyai';
 import { crewPost, gunPost, holdAfterFire } from './crewai';
 import { coverSpot, threatCentre } from './terrainai';
-import type { Sector, Unit } from './types';
+import type { Front, Unit } from './types';
 import { dist, headingTo, type V2 } from './vec';
 import type { World } from './world';
 
@@ -26,7 +27,7 @@ function spread(u: Unit, radius: number): V2 {
   return { x: Math.cos(a) * r, z: Math.sin(a) * r };
 }
 
-/** Point `back` metres from `front` toward home along the sector axis. */
+/** Point `back` metres from `front` toward home along the front axis. */
 function behind(world: World, u: Unit, front: V2, back: V2, metres: number): V2 {
   const d = dist(front, back);
   if (d < 1) return front;
@@ -75,7 +76,7 @@ function readyToReturn(world: World, u: Unit): boolean {
 export function thinkUnit(world: World, u: Unit): void {
   if (u.hp <= 0) return;
   const f = world.factions[u.owner];
-  const s = f.sectors[u.sectorId] ?? f.sectors[0];
+  const s = f.fronts[u.frontId] ?? f.fronts[0];
   if (u.fixed) {
     selectTarget(world, u, null);
     return;
@@ -150,7 +151,7 @@ export function thinkUnit(world: World, u: Unit): void {
     // Round 2: the rally point is laid out from the capital, but units spawn at the forward town
     // nearest the front — they walked back to it, waited, and walked forward again. Units already
     // nearer the objective than the rally point, and reinforcements of a group in contact, join the
-    // line directly (the frontal-massing gate in sectors.eagerPush keeps attacks from trickling).
+    // line directly (the frontal-massing gate in fronts.eagerPush keeps attacks from trickling).
     if (eagerOn() && s.posture !== 'withdraw' && s.reason !== 'reason.outmatched'
       && (s.mode === 'hold' || s.mode === 'push' || dist(u.pos, s.targetPos) < dist(s.rally, s.targetPos) - 50)) u.behavior = 'advance';
     return;
@@ -163,12 +164,13 @@ export function thinkUnit(world: World, u: Unit): void {
     case 'mg': case 'at_gun': return thinkCrewWeapon(world, u, s);
     case 'recon': return thinkRecon(world, u, s);
     case 'engineer': if (thinkEngineer(world, u, s)) return; break;
+    case 'commander': return thinkCommander(world, u, s);
     default: break;
   }
   thinkAssault(world, u, s);
 }
 
-function thinkAssault(world: World, u: Unit, s: Sector): void {
+function thinkAssault(world: World, u: Unit, s: Front): void {
   const hq = world.hqPos(u.owner);
   selectTarget(world, u, s.targetPos);
   const t = world.unitAlive(u.targetId);
@@ -237,7 +239,7 @@ function thinkAssault(world: World, u: Unit, s: Sector): void {
  * leg reuses one cached flow field per group instead of one per slot (units now join the line
  * directly instead of gathering at the shared rally point).
  */
-function approachPoint(u: Unit, s: Sector, p: V2): V2 {
+function approachPoint(u: Unit, s: Front, p: V2): V2 {
   // Round 4: a capital siege / storm goes straight for its ring slot (the front point sat at a river
   // 1.2–1.9 km out and held the whole besieging army there).
   if (stormOn() && s.op === 'siege' && s.targetCity !== null && s.opPhase !== '') return p;
@@ -258,7 +260,7 @@ function slotCover(world: World, u: Unit, slot: V2, faceFrom: V2): V2 {
 }
 
 /** The unit's place on its group's battle line (falls back to a spread around the target). */
-function objectivePoint(u: Unit, s: Sector): V2 {
+function objectivePoint(u: Unit, s: Front): V2 {
   const slot = s.slots[u.id];
   if (slot) return slot;
   const off = spread(u, s.targetCity !== null ? 18 : 22);
@@ -269,7 +271,7 @@ function homeFor(world: World, u: Unit): V2 {
   return world.cityOf(u.owner).exit;
 }
 
-function thinkArtillery(world: World, u: Unit, s: Sector): void {
+function thinkArtillery(world: World, u: Unit, s: Front): void {
   const w = u.primary!;
   const how = u.def.id === 'howitzer';
   // Round 2: guns sat 0.55–0.6 × range behind the line and ≥300 / 180 m from enemy ground, so the
@@ -312,7 +314,7 @@ function thinkArtillery(world: World, u: Unit, s: Sector): void {
   else stop(u);
 }
 
-function thinkCrewWeapon(world: World, u: Unit, s: Sector): void {
+function thinkCrewWeapon(world: World, u: Unit, s: Front): void {
   const back = u.def.id === 'mg' ? 45 : u.def.id === 'at_gun' ? 60 : 130;
   const front = s.front;
   const slot = s.slots[u.id];
@@ -349,7 +351,7 @@ function thinkCrewWeapon(world: World, u: Unit, s: Sector): void {
   }
 }
 
-function thinkRecon(world: World, u: Unit, s: Sector): void {
+function thinkRecon(world: World, u: Unit, s: Front): void {
   selectTarget(world, u, s.targetPos);
   const threatNear = world.spatial.query(u.pos.x, u.pos.z, 110).some((o) => o.hp > 0 && world.isHostile(u.owner, o.owner) && world.knows(u.owner, o));
   const obs = behind(world, u, s.front, homeFor(world, u), threatNear ? 140 : 40);
@@ -360,8 +362,36 @@ function thinkRecon(world: World, u: Unit, s: Sector): void {
   u.status = 'status.observing';
 }
 
+/**
+ * 2.0 front commander: posts at the nearest own settlement behind its front (town or city
+ * preferred) and stays there; it fights only in self-defence. Losing it costs the front its
+ * cohesion for a while (fronts.leaderless), so it is a target worth protecting.
+ */
+function thinkCommander(world: World, u: Unit, s: Front): void {
+  const f = world.factions[u.owner];
+  const post = commanderPost(world, f, s);
+  const off = spread(u, 14);
+  const want = { x: post.x + off.x, z: post.z + off.z };
+  const near = world.spatial.findOwner(u.pos.x, u.pos.z, 160, hostileMask(world, u.owner), (o) => o.hp > 0 && !!o.primary && world.knows(u.owner, o));
+  if (near && dist(u.pos, post) < 60) {
+    // Enemies at the post: fall back toward the capital exit rather than fight it out.
+    const exit = world.cityOf(u.owner).exit;
+    moveTo(world, u, lerpV(post, exit, 0.35));
+    u.status = 'status.commanderWithdraw';
+  } else if (dist(u.pos, want) > 10) {
+    moveTo(world, u, want);
+    u.status = 'status.commanderMove';
+  } else {
+    stop(u);
+    const c = findCover(world, u, u.pos, 20, s.targetPos);
+    if (c && dist(c, u.pos) > 3) moveTo(world, u, c);
+    u.status = 'status.commanderPost';
+  }
+  selectTarget(world, u, null);
+}
+
 /** Siege: riflemen and engineers dig the trench line at their ring position unless the enemy is close. */
-function siegeDig(world: World, u: Unit, s: Sector, t: Unit | null): boolean {
+function siegeDig(world: World, u: Unit, s: Front, t: Unit | null): boolean {
   if (s.op !== 'siege' || s.opPhase !== 'dig' || u.def.kind !== 'infantry' || u.moraleState !== 'normal') return false;
   if (t && dist(t.pos, u.pos) < 150) return false;
   const work = openWork(world, u.owner, objectivePoint(u, s), 90);
@@ -369,7 +399,7 @@ function siegeDig(world: World, u: Unit, s: Sector, t: Unit | null): boolean {
 }
 
 /** Engineers build field cover near held objectives when posture is fortify/hold. Returns true if busy. */
-function thinkEngineer(world: World, u: Unit, s: Sector): boolean {
+function thinkEngineer(world: World, u: Unit, s: Front): boolean {
   if (s.bridgeSite && thinkBridgeBuilder(world, u, s, s.bridgeSite)) return true;
   if (siegeDig(world, u, s, world.unitAlive(u.targetId))) return true;
   if (s.posture !== 'fortify' && s.posture !== 'hold') return false;
@@ -583,7 +613,7 @@ function thinkManeuver(world: World, u: Unit): boolean {
 }
 
 /** Siege work party: dig the open trench nearest its ring post, otherwise man the post. */
-function thinkSiegeParty(world: World, u: Unit, s: Sector): boolean {
+function thinkSiegeParty(world: World, u: Unit, s: Front): boolean {
   if (u.routing || u.manual || !u.opTarget || s.op !== 'siege') {
     u.opRole = 'line';
     return false;

@@ -1,7 +1,7 @@
 import { frontAnchor } from './frontai';
 import { weakestPoint } from './operations';
 import { hostileMask } from './spatial';
-import type { Faction, OperationKind, Sector, Unit } from './types';
+import type { Faction, OperationKind, Front, Unit } from './types';
 import { DEG, dist, headingTo, type V2 } from './vec';
 import { recordOp } from './stats';
 import { noteOpEnd, noteOpPhase, noteOpStart, type OpOutcome } from './events';
@@ -15,7 +15,7 @@ import { capitalDefence, capitalSiege, forcedStorm, STORM, stormMass, wantsCapit
  * Battle doctrines (user request): 正面推进 frontal, 侧面迂回 flank, 钳形攻势 pincer,
  * 武装渗透 infiltrate, 筑垒围攻 siege. Each army group runs one operation toward its
  * objective; the AI picks it from the force mix, the target and its doctrine (personality),
- * the player may lock one per group. Work per group is O(group size) every sector think.
+ * the player may lock one per group. Work per group is O(group size) every front think.
  */
 export const DOCTRINE = {
   /** Flank waypoint: angle off the front→target axis and distance factor. */
@@ -42,7 +42,7 @@ export const DOCTRINE = {
   rethinkS: 75,
 } as const;
 
-/** Per-group operation bookkeeping (kept on the sector, not shipped to the UI). */
+/** Per-group operation bookkeeping (kept on the front, not shipped to the UI). */
 interface OpState {
   key: string; // target key the operation was planned for
   startedAt: number;
@@ -55,9 +55,9 @@ interface OpState {
   checkAt?: number;
 }
 
-const ops = new WeakMap<Sector, OpState>();
+const ops = new WeakMap<Front, OpState>();
 /** Adaptive layer: a pincer that could not form is not re-tried before this time. */
-const pincerBlockedUntil = new WeakMap<Sector, number>();
+const pincerBlockedUntil = new WeakMap<Front, number>();
 
 const MOBILE = new Set(['light_tank', 'medium_tank', 'heavy_tank', 'motor_inf', 'recon']);
 const FOOT = new Set(['infantry', 'engineer', 'motor_inf']);
@@ -73,7 +73,7 @@ function enemyValueNear(world: World, f: number, at: V2, r: number): number {
 }
 
 /** Is the group's objective a defended settlement worth a siege? */
-function siegeWorthy(world: World, f: number, s: Sector, groupValue: number): boolean {
+function siegeWorthy(world: World, f: number, s: Front, groupValue: number): boolean {
   const o = s.targetObjective ? world.objectives.find((x) => x.id === s.targetObjective) : null;
   const isPlace = s.targetCity !== null || (o !== null && o !== undefined && (o.kind === 'town' || o.kind === 'city'));
   if (!isPlace) return false;
@@ -97,7 +97,7 @@ function infiltrationPool(units: Unit[]): number {
 }
 
 /** AI doctrine choice for one group (deterministic: uses rngAi). */
-export function chooseOperation(world: World, f: Faction, s: Sector, units: Unit[]): OperationKind {
+export function chooseOperation(world: World, f: Faction, s: Front, units: Unit[]): OperationKind {
   const value = units.reduce((a, u) => a + valueOf(u), 0) + 1;
   // Round 2: no slow siege of the capital chosen for the decisive offensive (it gave the defender time).
   const finishing = eagerOn() && s.targetCity !== null && s.targetCity === f.command.finishTarget;
@@ -125,12 +125,13 @@ export function chooseOperation(world: World, f: Faction, s: Sector, units: Unit
 }
 
 /**
- * Faction level (every sector think): if both wing groups go for nearby objectives with
+ * Faction level (every front think): if both wing groups go for nearby objectives with
  * enough mobile troops, make it a pincer on the more valuable target.
  */
 export function planPincer(world: World, f: Faction, groups: Unit[][]): void {
-  const left = f.sectors.find((s) => s.key === 'left');
-  const right = f.sectors.find((s) => s.key === 'right');
+  // 2.0: the jaws are the outermost wings (fronts are dynamic; no fixed left/right any more).
+  const left = f.fronts.find((s) => s.wing === -1);
+  const right = f.fronts.find((s) => s.wing === 1);
   if (!left || !right || left.opLocked || right.opLocked || left.manualTarget || right.manualTarget) return;
   if (left.op === 'siege' || right.op === 'siege') return;
   // Round 3: a wing recalled to the capital is no jaw (151 pincer 'noForce' in the first build).
@@ -138,7 +139,7 @@ export function planPincer(world: World, f: Faction, groups: Unit[][]): void {
   // Round 2: during the decisive offensive every group already converges on the capital; pincers there
   // mostly failed to form (50 noForce in 3 × 20 min).
   if (eagerOn() && f.command.finishTarget >= 0) return;
-  const mob = (s: Sector): number => (groups[s.id] ?? []).filter((u) => MOBILE.has(u.def.id)).length;
+  const mob = (s: Front): number => (groups[s.id] ?? []).filter((u) => MOBILE.has(u.def.id)).length;
   if (mob(left) < 3 || mob(right) < 3) return;
   if (dist(left.targetPos, right.targetPos) > 700) return;
   if (adaptive() && left.op !== 'pincer') {
@@ -162,7 +163,7 @@ export function planPincer(world: World, f: Faction, groups: Unit[][]): void {
 }
 
 /** Run this group's operation: phases, manoeuvre roles, route for the map arrow. */
-export function runOperation(world: World, f: Faction, s: Sector, units: Unit[]): void {
+export function runOperation(world: World, f: Faction, s: Front, units: Unit[]): void {
   const key = `${Math.round(s.targetPos.x)},${Math.round(s.targetPos.z)}`;
   let st = ops.get(s);
   // Re-plan when the objective changes, or (unlocked) once the current operation has run its course.
@@ -193,7 +194,7 @@ export function runOperation(world: World, f: Faction, s: Sector, units: Unit[])
       stepSiege(world, f, s, units, st);
       break;
     default:
-      // Round 2: a frontal attack masses near the anchor first (sectors.eagerPush) — phase 'form'.
+      // Round 2: a frontal attack masses near the anchor first (fronts.eagerPush) — phase 'form'.
       // Marching to a far target out of contact is phase 'move' (no 75 s rethink churn on the way).
       s.opPhase = s.mode === 'push' || s.mode === 'breakthrough' ? 'assault'
         : eagerOn() && s.mode === 'hold' && s.reason === 'reason.waitGroup' ? 'form'
@@ -212,11 +213,12 @@ function releaseAll(units: Unit[]): void {
 }
 
 function freeLine(u: Unit): boolean {
+  if (u.def.id === 'commander') return false;
   return u.opRole === 'line' && !u.spearhead && !u.manual && !u.routing && u.behavior === 'advance';
 }
 
 /** Pick the flanking side with less known enemy along the way (pincers: left wing −, right +). */
-function flankWaypoint(world: World, s: Sector, from: V2, side: 1 | -1): V2 {
+function flankWaypoint(world: World, s: Front, from: V2, side: 1 | -1): V2 {
   const axis = headingTo(s.targetPos, from);
   const r = dist(from, s.targetPos) * DOCTRINE.flankReach + 120;
   const a = axis + side * DOCTRINE.flankAngle;
@@ -226,11 +228,11 @@ function flankWaypoint(world: World, s: Sector, from: V2, side: 1 | -1): V2 {
   return world.nav(false, 35).nearestPassable(c, 120) ?? c;
 }
 
-function launch(world: World, f: Faction, s: Sector, units: Unit[], st: OpState): void {
+function launch(world: World, f: Faction, s: Front, units: Unit[], st: OpState): void {
   const pool = units.filter(freeLine);
   if (s.op === 'flank' || s.op === 'pincer') {
     const from = frontAnchor(world, f.id, s.targetPos) ?? s.front;
-    if (s.op === 'pincer') st.side = s.key === 'left' ? -1 : 1;
+    if (s.op === 'pincer') st.side = s.wing === -1 ? -1 : 1;
     else {
       const l = enemyValueNear(world, f.id, flankWaypoint(world, s, from, -1), 300);
       const r = enemyValueNear(world, f.id, flankWaypoint(world, s, from, 1), 300);
@@ -271,14 +273,14 @@ function launch(world: World, f: Faction, s: Sector, units: Unit[], st: OpState)
   }
 }
 
-function setPhase(world: World, s: Sector, st: OpState, phase: string): void {
+function setPhase(world: World, s: Front, st: OpState, phase: string): void {
   if (s.opPhase === phase) return;
   s.opPhase = phase;
   st.phaseAt = world.time;
   noteOpPhase(world, s, phase);
 }
 
-function stepManeuver(world: World, f: Faction, s: Sector, units: Unit[], st: OpState, from: V2): void {
+function stepManeuver(world: World, f: Faction, s: Front, units: Unit[], st: OpState, from: V2): void {
   const group = units.filter((u) => u.opRole === 'maneuver');
   const wp = flankWaypoint(world, s, from, st.side);
   s.opRoute = [from, wp, s.targetPos];
@@ -291,7 +293,7 @@ function stepManeuver(world: World, f: Faction, s: Sector, units: Unit[], st: Op
     let ready = arrived >= DOCTRINE.formRatio || world.time - st.phaseAt > DOCTRINE.formTimeoutS;
     if (ready && s.op === 'pincer') {
       // Wait for the other wing (or its timeout) so both jaws close together.
-      const other = f.sectors.find((x) => x.id !== s.id && x.op === 'pincer');
+      const other = f.fronts.find((x) => x.id !== s.id && x.op === 'pincer');
       const os = other ? ops.get(other) : undefined;
       if (other && os && other.opPhase === 'form' && world.time - os.phaseAt < DOCTRINE.formTimeoutS) ready = false;
     }
@@ -309,7 +311,7 @@ function stepManeuver(world: World, f: Faction, s: Sector, units: Unit[], st: Op
   else if (s.opPhase === 'assault' && world.time - st.phaseAt > DOCTRINE.assaultTimeoutS) endOp(world, s, st, units, 'timeout');
 }
 
-function stepInfiltrate(world: World, f: Faction, s: Sector, units: Unit[], st: OpState, from: V2): void {
+function stepInfiltrate(world: World, f: Faction, s: Front, units: Unit[], st: OpState, from: V2): void {
   const team = units.filter((u) => u.opRole === 'infiltrate');
   const cells = world.frontInfo[f.id]?.cells ?? [];
   const gap = (cells.length ? weakestPoint(world, f.id, cells.filter((c) => dist(c, from) < 700)) : null) ?? from;
@@ -331,13 +333,13 @@ function stepInfiltrate(world: World, f: Faction, s: Sector, units: Unit[], st: 
  * Adaptive: the attack has bled out against stronger defenders — stop feeding it
  * (lab: timed-out / spent ops cost ~1 100 value each and captured nothing).
  */
-function hopeless(world: World, f: Faction, s: Sector, st: OpState, left: number): boolean {
+function hopeless(world: World, f: Faction, s: Front, st: OpState, left: number): boolean {
   if (!adaptive() || world.time - st.phaseAt < ADAPT.abortGraceS || left >= st.initial * ADAPT.abortLeft) return false;
   return enemyValueNear(world, f.id, s.targetPos, 260) > left * ADAPT.abortRatio;
 }
 
 /** Ring of positions (arc facing our side) around the besieged place. */
-export function siegeRing(world: World, f: number, s: Sector, n: number): V2[] {
+export function siegeRing(world: World, f: number, s: Front, n: number): V2[] {
   const o = s.targetObjective ? world.objectives.find((x) => x.id === s.targetObjective) : null;
   const r = (o?.radius ?? 120) + DOCTRINE.siegeStandoffM;
   const home = headingTo(s.targetPos, world.hqPos(f));
@@ -350,7 +352,7 @@ export function siegeRing(world: World, f: number, s: Sector, n: number): V2[] {
   return out;
 }
 
-function stepSiege(world: World, f: Faction, s: Sector, units: Unit[], st: OpState): void {
+function stepSiege(world: World, f: Faction, s: Front, units: Unit[], st: OpState): void {
   if (capitalSiege(s)) return stepCapitalSiege(world, f, s, units, st);
   const ring = siegeRing(world, f.id, s, 9);
   s.opRoute = ring;
@@ -385,7 +387,7 @@ function stepSiege(world: World, f: Faction, s: Sector, units: Unit[], st: OpSta
 }
 
 /** Lay trench lines along the ring facing the place, one at a time, centre of the arc first. */
-function digRing(world: World, f: Faction, s: Sector, ring: V2[]): void {
+function digRing(world: World, f: Faction, s: Front, ring: V2[]): void {
   const site = world.forts.filter((x) => x.owner === f.id && x.kind === 'trench' && x.hp > 0 && dist(x.pos, s.targetPos) < 700);
   if (site.length < WORKS.maxPerSite && !site.some((x) => x.progress < 1)) {
     const order = [4, 3, 5, 2, 6, 1, 7, 0, 8];
@@ -413,7 +415,7 @@ function unitGoal(world: World, u: Unit, p: V2): V2 {
  * storm at ≥ 2× the forecast defence; a stalled storm falls back to dig in and bombard, then storms
  * again once the garrison is worn down.
  */
-function stepCapitalSiege(world: World, f: Faction, s: Sector, units: Unit[], st: OpState): void {
+function stepCapitalSiege(world: World, f: Faction, s: Front, units: Unit[], st: OpState): void {
   const city = s.targetCity ?? -1;
   s.opRoute = siegeRing(world, f.id, s, 9);
   if (!world.factions[city]?.alive) {
@@ -470,7 +472,7 @@ function stepCapitalSiege(world: World, f: Faction, s: Sector, units: Unit[], st
 }
 
 /** Finish this attempt: release the roles; an unlocked group falls back to frontal. */
-function endOp(world: World, s: Sector, st: OpState, units: Unit[], outcome: OpOutcome): void {
+function endOp(world: World, s: Front, st: OpState, units: Unit[], outcome: OpOutcome): void {
   noteOpEnd(world, s, outcome);
   releaseAll(units);
   if (!s.opLocked) s.op = 'frontal';
@@ -478,7 +480,7 @@ function endOp(world: World, s: Sector, st: OpState, units: Unit[], outcome: OpO
 }
 
 /** Drop any running operation of a group (player re-plan, home defence, regroup). */
-export function resetOperation(s: Sector, units: Unit[], world?: World): void {
+export function resetOperation(s: Front, units: Unit[], world?: World): void {
   if (world) noteOpEnd(world, s, 'reset');
   ops.delete(s);
   releaseAll(units);
@@ -487,6 +489,6 @@ export function resetOperation(s: Sector, units: Unit[], world?: World): void {
 }
 
 /** Is this group in the middle of a flank / pincer (its target must not change under it)? */
-export function maneuvering(s: Sector): boolean {
+export function maneuvering(s: Front): boolean {
   return (s.op === 'pincer' || s.op === 'flank') && s.opPhase !== '';
 }

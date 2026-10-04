@@ -27,7 +27,7 @@ export class MinimapPanel {
     const layers = h('div', { class: 'layers' });
     // Layers are a plain flag bag on the renderer; 'terrain' appears once the renderer supports it.
     this.layerState = ctx.renderer.layers as unknown as Record<string, boolean>;
-    const keys = ['front', 'supply', 'ranges', 'sectors', 'terrain'].filter((k) => k in this.layerState);
+    const keys = ['front', 'supply', 'ranges', 'fronts', 'terrain'].filter((k) => k in this.layerState);
     for (const key of keys) {
       const el = h('button', { class: 'btn tag', 'aria-pressed': 'false', onclick: () => {
         this.layerState[key] = !this.layerState[key];

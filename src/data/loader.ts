@@ -98,5 +98,6 @@ export function buildGameData(unitsCsv: string, weaponsCsv: string, rulesJson: s
   for (const id of Object.keys(rules.proposed_defaults.production_unit_weights)) {
     if (!units.has(id)) throw new Error(`rules.json: production weight for unknown unit "${id}"`);
   }
+  if (!rules.command || !units.has(rules.command.commander_unit)) throw new Error('rules.json: command.commander_unit must name a unit in units.csv');
   return { units, weapons, rules, unitOrder: unitList.map((u) => u.id) };
 }

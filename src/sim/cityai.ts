@@ -42,10 +42,10 @@ export function thinkCity(world: World, f: Faction): void {
     w.medium_tank = (w.medium_tank ?? 0) * 1.2;
   }
   f.weights = w;
-  // Postures: strongest sector assaults, others push cautiously; hold freshly taken points.
-  const strength = f.sectors.map((s) => {
+  // Postures: strongest front assaults, others push cautiously; hold freshly taken points.
+  const strength = f.fronts.map((s) => {
     let v = 0;
-    for (const u of world.units.values()) if (u.owner === f.id && u.sectorId === s.id && u.hp > 0) v += u.def.costP + u.def.costM;
+    for (const u of world.units.values()) if (u.owner === f.id && u.frontId === s.id && u.hp > 0) v += u.def.costP + u.def.costM;
     return v;
   });
   const best = strength.indexOf(Math.max(...strength));
@@ -62,7 +62,7 @@ export function thinkCity(world: World, f: Faction): void {
     const pop = populationOf(world, f);
     surplus = f.p > world.data.rules.economy.cap_p * 0.5 && pop.present + pop.reserved >= populationCap(world, f) * 0.9;
   }
-  for (const s of f.sectors) {
+  for (const s of f.fronts) {
     const own = world.objectives.find((o) => o.id === s.targetObjective);
     let next = s.posture;
     const attacking = !own || own.owner !== f.id;
@@ -76,7 +76,7 @@ export function thinkCity(world: World, f: Faction): void {
       s.postureSince = world.time;
     }
   }
-  f.mainSector = best;
+  f.mainFront = best;
   balanceReserves(world, f, strength);
 }
 
@@ -87,14 +87,14 @@ export function thinkCity(world: World, f: Faction): void {
  */
 function balanceReserves(world: World, f: Faction, strength: number[]): void {
   const base = world.data.rules.proposed_defaults.sector_reinforcement_shares;
-  const pressure = f.sectors.map((s, i) => {
+  const pressure = f.fronts.map((s, i) => {
     let enemy = 0;
     for (const u of world.spatial.queryOwners(s.front.x, s.front.z, 450, hostileMask(world, f.id))) {
       if (u.hp > 0 && world.knows(f.id, u)) enemy += u.def.costP + u.def.costM;
     }
     return enemy / (strength[i] + 1);
   });
-  const sorted = [...f.sectors].sort((a, b) => a.id - b.id);
+  const sorted = [...f.fronts].sort((a, b) => a.id - b.id);
   const raw = sorted.map((s, i) => (base[i] ?? 0.33) * (0.6 + Math.min(1.5, pressure[s.id])));
   const sum = raw.reduce((a, b) => a + b, 0) || 1;
   sorted.forEach((s, i) => (s.share = raw[i] / sum));
@@ -108,11 +108,11 @@ function balanceReserves(world: World, f: Faction, strength: number[]): void {
   if (hot === calm || pressure[hot] < 1.2 || pressure[calm] > 0.5) return;
   const movable: Unit[] = [];
   for (const u of world.units.values()) {
-    if (u.owner === f.id && u.sectorId === calm && u.hp > 0 && !u.fixed && !u.manual && !u.spearhead && u.opRole === 'line'
-      && u.behavior === 'advance' && u.def.id !== 'supply_truck' && u.def.id !== 'howitzer') movable.push(u);
+    if (u.owner === f.id && u.frontId === calm && u.hp > 0 && !u.fixed && !u.manual && !u.spearhead && u.opRole === 'line'
+      && u.behavior === 'advance' && u.def.id !== 'supply_truck' && u.def.id !== 'howitzer' && u.def.id !== 'commander') movable.push(u);
   }
   const n = Math.floor(movable.length * 0.1);
   movable.sort((a, b) => a.id - b.id);
-  for (const u of movable.slice(0, n)) u.sectorId = hot;
+  for (const u of movable.slice(0, n)) u.frontId = hot;
   if (n > 0) world.note(f.id, 'log.reservesShifted', { n }, 'info');
 }

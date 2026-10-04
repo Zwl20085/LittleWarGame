@@ -165,6 +165,21 @@ export interface Rules {
     readonly city_morale_regen_per_second: number;
     readonly auto_retreat_hp_ratio: number;
   };
+  /** 2.0 command hierarchy: supreme HQ orders executed by front commander units (docs/COMMAND_V2.md). */
+  readonly command: {
+    /** Unit id of the front commander (appointed by the supreme HQ, never produced). */
+    readonly commander_unit: string;
+    readonly fronts_initial: number;
+    readonly fronts_max: number;
+    /** A lost commander is replaced after this long; until then the front holds without cohesion. */
+    readonly commander_respawn_seconds: number;
+    readonly commander_lost_hold_seconds: number;
+    /** The commander posts at the nearest own settlement within this of the front's line. */
+    readonly commander_post_radius_m: number;
+    /** Squads always kept at the capital, and the works its engineers build there early (user rule). */
+    readonly capital_standing_garrison: number;
+    readonly capital_line_works: Record<string, number>;
+  };
   readonly information: { readonly enemy_memory_seconds: number };
   readonly manual_control: {
     readonly move_completion_radius_m: number;

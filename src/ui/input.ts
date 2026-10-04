@@ -76,9 +76,9 @@ export class InputController {
       const ids = [...this.ctx.renderer.units.selected];
       this.ctx.issue({ type: 'unitOrder', unitIds: ids, order: 'attackMove', pos: p, queue: e.shiftKey });
       this.ctx.renderer.orderMarker(p, '#e08050');
-    } else if (m.kind === 'sectorTarget') {
-      this.ctx.issue({ type: 'setSectorTarget', sectorId: m.sectorId, pos: p });
-      this.ctx.renderer.orderMarker(p, '#f4ecd9');
+    } else if (m.kind === 'frontOrder') {
+      this.ctx.issue({ type: 'frontOrder', frontId: m.frontId, kind: m.order, a: p });
+      this.ctx.renderer.orderMarker(p, m.order === 'attack' ? '#e08050' : '#f4ecd9');
     }
   }
 
@@ -226,9 +226,11 @@ export class InputController {
         else if (this.ctx.renderer.units.selected.size > 0) this.ctx.renderer.units.selected.clear();
         else this.onEscape?.();
         break;
-      case '1': case '2': case '3':
-        if (!this.ctx.spectator) this.hud.sectors.toggle(Number(k) - 1);
+      case '1': case '2': case '3': case '4': {
+        const fr = this.ctx.match.world.factions[this.ctx.playerId]?.fronts[Number(k) - 1];
+        if (!this.ctx.spectator && fr) this.hud.fronts.toggle(fr.id);
         break;
+      }
       default:
         break;
     }
