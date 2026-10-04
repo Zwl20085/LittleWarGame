@@ -85,7 +85,32 @@ export function holdTerrainScore(world: World, p: V2, ux: number, uz: number): n
  * approach, cover and edges (holdTerrainScore), and a river between us and the enemy; never
  * in water or inside a building.
  */
-export function defensivePosition(world: World, around: V2, threat: V2, radius = 220): { pos: V2; score: number; river: boolean; height: number } {
+type DefensiveSpot = { pos: V2; score: number; river: boolean; height: number };
+/**
+ * defensivePosition scans ~360 candidates × ~40 terrain samples; the line planners ask for the
+ * same anchor and bearing every 2 s. Terrain is static (pontoons aside), so answers are kept for
+ * DEF_TTL_S per anchor cell / bearing step / radius (2.0 profile: 1.5 % of sim CPU → ~0).
+ */
+const DEF_TTL_S = 20;
+const DEF_CELL_M = 16;
+const DEF_BEARING_STEP = 0.2;
+const DEF_CACHE_MAX = 1024;
+const defCache = new WeakMap<World, Map<string, { t: number; v: DefensiveSpot }>>();
+
+export function defensivePosition(world: World, around: V2, threat: V2, radius = 220): DefensiveSpot {
+  const bearing = Math.atan2(threat.z - around.z, threat.x - around.x);
+  const key = `${Math.round(around.x / DEF_CELL_M)},${Math.round(around.z / DEF_CELL_M)},${Math.round(bearing / DEF_BEARING_STEP)},${radius}`;
+  let cache = defCache.get(world);
+  if (!cache) defCache.set(world, (cache = new Map()));
+  const hit = cache.get(key);
+  if (hit && world.time - hit.t < DEF_TTL_S) return hit.v;
+  const v = scanDefensivePosition(world, around, threat, radius);
+  if (cache.size >= DEF_CACHE_MAX) cache.clear();
+  cache.set(key, { t: world.time, v });
+  return v;
+}
+
+function scanDefensivePosition(world: World, around: V2, threat: V2, radius: number): DefensiveSpot {
   const t = world.terrain;
   const dx = threat.x - around.x;
   const dz = threat.z - around.z;

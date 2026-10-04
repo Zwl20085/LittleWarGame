@@ -34,7 +34,7 @@ export function coverAgainst(world: World, u: Unit, from: V2 | null, buildings =
     return Math.abs(angleDiff(u.fixedFacing, headingTo(u.pos, from))) <= 60 * DEG ? 3 : 0;
   }
   if (u.fortId !== null) {
-    const f = world.forts.find((x) => x.id === u.fortId);
+    const f = world.fortById(u.fortId);
     if (f && f.progress >= 1 && f.hp > 0) {
       const lvl: CoverLevel = f.kind === 'mg_bunker' ? 3 : 2;
       if (!from || Math.abs(angleDiff(f.facing, headingTo(f.pos, from))) <= 60 * DEG) return lvl;
@@ -77,7 +77,7 @@ export function applyDamage(world: World, u: Unit, dmg: number, attackerOwner: n
   world.emit({ t: 'death', pos: { x: u.pos.x, y: u.y, z: u.pos.z }, vehicle: u.def.kind === 'vehicle', unitType: u.def.id });
   world.note(u.owner, 'log.unitLost', { unit: u.def.id, weapon: weaponId, by: attackerOwner }, u.def.kind === 'vehicle' ? 'warn' : 'info');
   if (u.fortId !== null) {
-    const fort = world.forts.find((x) => x.id === u.fortId);
+    const fort = world.fortById(u.fortId);
     if (fort && isStructure(fort.kind)) leaveStructure(world, u);
     else if (fort) fort.occupant = null;
   }

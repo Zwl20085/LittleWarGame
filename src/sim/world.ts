@@ -160,6 +160,27 @@ export class World {
     if (this.log.length > 400) this.log.splice(0, this.log.length - 400);
   }
 
+  private fortIndex: Map<number, Fort> | null = null;
+  private fortIndexTick = -1;
+  private fortIndexN = -1;
+
+  /**
+   * Fort by id through a per-tick index (hits, garrison checks and builders looked the list up
+   * linearly; with 100+ works late in a war that was a measurable share of hit resolution).
+   */
+  fortById(id: number | null): Fort | undefined {
+    if (id === null) return undefined;
+    if (!this.fortIndex || this.fortIndexTick !== this.tick || this.fortIndexN !== this.forts.length) {
+      const m = this.fortIndex ?? new Map<number, Fort>();
+      m.clear();
+      for (const f of this.forts) m.set(f.id, f);
+      this.fortIndex = m;
+      this.fortIndexTick = this.tick;
+      this.fortIndexN = this.forts.length;
+    }
+    return this.fortIndex.get(id);
+  }
+
   unitAlive(id: number | null): Unit | null {
     if (id === null) return null;
     const u = this.units.get(id);

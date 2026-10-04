@@ -385,7 +385,7 @@ export function updateHeight(world: World, u: Unit): void {
 function updateGarrison(world: World, u: Unit): void {
   if (u.def.kind === 'vehicle' || u.fixed) return;
   if (u.fortId !== null) {
-    const f = world.forts.find((x) => x.id === u.fortId);
+    const f = world.fortById(u.fortId);
     if (f && isStructure(f.kind)) return; // pillbox / bunker occupancy: structures.ts
     if (!f || f.hp <= 0 || dist(f.pos, u.pos) > 7) {
       if (f && f.occupant === u.id) f.occupant = null;

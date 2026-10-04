@@ -83,7 +83,7 @@ function pickDestination(world: World, f: Faction, trucks: Unit[]): { front: Fro
   const needs = frontNeeds(world, f);
   for (const s of f.fronts) {
     const need = needs.get(s.id) ?? 0;
-    const enRoute = trucks.filter((t) => t.truckState === 'out' && t.frontId === s.id).length;
+    const enRoute = trucks.filter((t) => t.hp > 0 && t.truckState === 'out' && t.frontId === s.id).length;
     const score = need / (1 + enRoute * 1.5);
     if (score > bestNeed) {
       bestNeed = score;
@@ -202,7 +202,8 @@ function trucksOf(world: World, f: number): Unit[] {
     c = { tick: world.tick, byFaction };
     truckCache.set(world, c);
   }
-  return c.byFaction[f].filter((t) => t.hp > 0);
+  // The list is rebuilt every second; callers skip dead trucks themselves.
+  return c.byFaction[f];
 }
 
 /** Once per second: depot production, loading and hand-over of ammunition. */

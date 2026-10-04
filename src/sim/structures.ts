@@ -150,7 +150,7 @@ function enter(world: World, u: Unit, fort: Fort, def: DefensiveStructureDef): v
 export function leaveStructure(world: World, u: Unit): void {
   const g = garrisons.get(u);
   garrisons.delete(u);
-  const fort = g?.fort ?? (u.fortId !== null ? world.forts.find((x) => x.id === u.fortId) : undefined);
+  const fort = g?.fort ?? world.fortById(u.fortId);
   u.fortId = null;
   if (fort) prune(world, fort);
 }
@@ -209,7 +209,7 @@ export function updateStructureGarrison(world: World, u: Unit): void {
 
 /** Rebuild the cache entry from `fortId` (e.g. after a snapshot restore). */
 function rebind(world: World, u: Unit): Garrison | null {
-  const fort = world.forts.find((x) => x.id === u.fortId);
+  const fort = world.fortById(u.fortId);
   if (!fort || !isStructure(fort.kind)) return null;
   if (fort.hp <= 0 || !(fort.occupants ?? []).includes(u.id)) {
     u.fortId = null;
@@ -483,7 +483,7 @@ export function structureDuty(world: World, u: Unit, s: Front): boolean {
   const onCall = u.opRole === 'line' || (u.opRole === 'garrison' && u.opObjective === `hq:${u.owner}`);
   if (jobId !== null && !onCall) dropJob(u);
   else if (jobId !== null && !u.routing && !u.spearhead && !u.manual) {
-    const fort = world.forts.find((x) => x.id === jobId);
+    const fort = world.fortById(jobId);
     if (!fort || fort.hp <= 0 || fort.progress >= 1 || enemyNear(world, u.owner, fort.pos, STRUCT.noBuildEnemyM)) dropJob(u);
     else if (work(world, u, fort)) {
       selectTarget(world, u, null);

@@ -1,6 +1,6 @@
 import { selectTarget, hasIndirectSolution } from './combat';
 import { thinkGarrison, thinkOccupy } from './command';
-import { fallBackHome } from './homeguard';
+import { fallBackHome, hqDuty } from './homeguard';
 import { dig, openWork } from './works';
 import { FORT } from './config';
 import { moveTo, stop } from './movement';
@@ -126,6 +126,8 @@ export function thinkUnit(world: World, u: Unit): void {
     return;
   }
   // 2.0 defensive buildings (structures.ts, works agent): man a pillbox / bunker, work an assigned site, or go to a free building.
+  // Round 7: HQ-point holders and breach responders before structure duty (a pillbox off the point must not hold them).
+  if (u.opRole === 'garrison' && hqDuty(world, u)) return;
   if (u.def.id !== 'supply_truck' && structureDuty(world, u, s)) return;
   if (u.def.id === 'supply_truck') return thinkConvoyTruck(world, u);
   if (u.spearhead && thinkSpearhead(world, u)) return;
@@ -363,8 +365,8 @@ function thinkRecon(world: World, u: Unit, s: Front): void {
   const obs = behind(world, u, s.front, homeFor(world, u), threatNear ? 140 : 40);
   const off = spread(u, 30);
   const pos = { x: obs.x + off.x, z: obs.z + off.z };
-  const c = findCover(world, u, pos, 30, s.targetPos);
-  moveTo(world, u, c ?? pos);
+  // Cover search cached until the observation post moves (2.0 profile: recon was 3.8 % of sim CPU).
+  moveTo(world, u, slotCover(world, u, pos, s.targetPos));
   u.status = 'status.observing';
 }
 
