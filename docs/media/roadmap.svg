@@ -1,0 +1,142 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 500" width="960" height="500" role="img" aria-labelledby="t d">
+  <title id="t">LITTLE WAR roadmap</title>
+  <desc id="d">A war-map road from version 0.4 through 0.5, 1.0 and 1.1 to 2.0 (this release), then dashed planned stops 2.1, 2.2, 2.3 and 2.x. Planned items are plans, not promises.</desc>
+  <defs>
+    <filter id="paper" x="0" y="0" width="100%" height="100%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="3" seed="7" result="n"/>
+      <feColorMatrix in="n" type="matrix" values="0 0 0 0 0.42  0 0 0 0 0.36  0 0 0 0 0.24  0 0 0 0.10 0" result="grain"/>
+      <feComposite in="grain" in2="SourceGraphic" operator="in" result="g2"/>
+      <feBlend in="SourceGraphic" in2="g2" mode="multiply"/>
+    </filter>
+    <filter id="rough" x="-5%" y="-5%" width="110%" height="110%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.035" numOctaves="2" seed="3" result="w"/>
+      <feDisplacementMap in="SourceGraphic" in2="w" scale="3.2"/>
+    </filter>
+    <radialGradient id="vig" cx="50%" cy="48%" r="70%">
+      <stop offset="62%" stop-color="#000" stop-opacity="0"/>
+      <stop offset="100%" stop-color="#3a2a12" stop-opacity="0.28"/>
+    </radialGradient>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M40 0H0V40" fill="none" stroke="#8a6a2c" stroke-opacity="0.13" stroke-width="1"/>
+    </pattern>
+    <g id="star"><path d="M0-11 3.2-3.5 11-3.4 4.8 1.6 7 9.5 0 4.9-7 9.5-4.8 1.6-11-3.4-3.2-3.5Z"/></g>
+  </defs>
+
+  <!-- paper sheet (opaque, so it reads the same on light and dark GitHub themes) -->
+  <rect x="6" y="6" width="948" height="488" rx="10" fill="#1f1b14"/>
+  <rect x="12" y="12" width="936" height="476" rx="6" fill="#e8dcbc" filter="url(#paper)"/>
+  <rect x="12" y="12" width="936" height="476" rx="6" fill="url(#grid)"/>
+  <rect x="12" y="12" width="936" height="476" rx="6" fill="url(#vig)"/>
+  <rect x="22" y="22" width="916" height="456" rx="3" fill="none" stroke="#3a3326" stroke-width="1.4" stroke-dasharray="1 0" opacity="0.55"/>
+
+  <!-- map dressing: contour lines and a river -->
+  <g fill="none" stroke="#8a6a2c" stroke-opacity="0.28" stroke-width="1.2" filter="url(#rough)">
+    <path d="M610 60c40 20 90 16 130 6s80 4 110 26"/>
+    <path d="M620 80c38 16 84 14 122 6s76 6 104 24"/>
+    <path d="M60 420c50-14 96-6 140 8"/>
+    <path d="M70 440c46-10 88-4 128 8"/>
+  </g>
+  <path d="M520 488c10-40 -16-70 6-110s52-46 40-90-28-70 6-110" fill="none" stroke="#5f7f8c" stroke-opacity="0.45" stroke-width="7" stroke-linecap="round" filter="url(#rough)"/>
+
+  <!-- title block -->
+  <g font-family="'Stencil','Black Ops One','Impact','Arial Black',sans-serif" fill="#2b261c">
+    <text x="44" y="68" font-size="34" letter-spacing="6">ROADMAP</text>
+    <text x="268" y="68" font-size="22" letter-spacing="3" fill="#a63f36">作战路线图</text>
+  </g>
+  <text x="46" y="92" font-family="'Courier New',Courier,monospace" font-size="13.5" fill="#4a4232">Shipped milestones and the planned 2.x stops. Planned stops are plans, not promises.</text>
+
+  <!-- legend -->
+  <g font-family="'Courier New',Courier,monospace" font-size="12.5" fill="#3a3326">
+    <circle cx="690" cy="52" r="7" fill="#3a3326"/><text x="704" y="56">shipped 已发布</text>
+    <circle cx="690" cy="76" r="7" fill="#a63f36"/><text x="704" y="80">this release 本版</text>
+    <circle cx="830" cy="52" r="7" fill="#e8dcbc" stroke="#3a3326" stroke-width="2" stroke-dasharray="3 2"/><text x="844" y="56">planned 计划</text>
+  </g>
+
+  <!-- the road: inked where travelled, dashed where planned -->
+  <path d="M60 300 C130 300 150 250 210 250 S300 310 360 300 S450 240 520 250" fill="none" stroke="#3a3326" stroke-opacity="0.18" stroke-width="22" stroke-linecap="round"/>
+  <path d="M60 300 C130 300 150 250 210 250 S300 310 360 300 S450 240 520 250" fill="none" stroke="#3a3326" stroke-width="6" stroke-linecap="round" filter="url(#rough)"/>
+  <path d="M520 250 C560 262 590 296 620 300 S680 318 705 312 S770 262 800 262 S858 288 880 290 L906 294" fill="none" stroke="#3a3326" stroke-width="3.5" stroke-linecap="round" stroke-dasharray="10 9" filter="url(#rough)"/>
+  <!-- arrowhead at the far end -->
+  <path d="M908 285 926 295 908 305" fill="none" stroke="#3a3326" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- shipped milestones -->
+  <g font-family="'Stencil','Black Ops One','Impact','Arial Black',sans-serif" text-anchor="middle">
+    <g transform="translate(70 300)"><circle r="15" fill="#3a3326"/><text y="5.5" font-size="14" fill="#e8dcbc">0.4</text></g>
+    <g transform="translate(210 250)"><circle r="15" fill="#3a3326"/><text y="5.5" font-size="14" fill="#e8dcbc">0.5</text></g>
+    <g transform="translate(360 300)"><circle r="15" fill="#3a3326"/><text y="5.5" font-size="14" fill="#e8dcbc">1.0</text></g>
+    <g transform="translate(450 268)"><circle r="15" fill="#3a3326"/><text y="5.5" font-size="14" fill="#e8dcbc">1.1</text></g>
+  </g>
+  <!-- 2.0: this release, a star stamp with a flag -->
+  <g transform="translate(520 250)">
+    <circle r="27" fill="#a63f36" opacity="0.18"/>
+    <circle r="21" fill="#a63f36"/>
+    <use href="#star" fill="#e8dcbc" transform="scale(1.15)"/>
+    <path d="M0-21V-66" stroke="#2b261c" stroke-width="2.5"/>
+    <path d="M0-66h40l-8 9 8 9H0Z" fill="#a63f36"/>
+    <text x="17" y="-52" font-family="'Stencil','Black Ops One','Impact','Arial Black',sans-serif" font-size="13" fill="#e8dcbc" text-anchor="middle">2.0</text>
+  </g>
+
+  <!-- planned stops -->
+  <g font-family="'Stencil','Black Ops One','Impact','Arial Black',sans-serif" text-anchor="middle" font-size="13" fill="#3a3326">
+    <g transform="translate(620 300)"><circle r="14" fill="#e8dcbc" stroke="#3a3326" stroke-width="2.4" stroke-dasharray="4 3"/><text y="5">2.1</text></g>
+    <g transform="translate(705 312)"><circle r="14" fill="#e8dcbc" stroke="#3a3326" stroke-width="2.4" stroke-dasharray="4 3"/><text y="5">2.2</text></g>
+    <g transform="translate(800 262)"><circle r="14" fill="#e8dcbc" stroke="#3a3326" stroke-width="2.4" stroke-dasharray="4 3"/><text y="5">2.3</text></g>
+    <g transform="translate(880 290)"><circle r="14" fill="#e8dcbc" stroke="#3a3326" stroke-width="2.4" stroke-dasharray="4 3"/><text y="5">2.x</text></g>
+  </g>
+
+  <!-- shipped captions (alternating above / below the road) -->
+  <g font-family="'Courier New',Courier,monospace" fill="#2b261c" font-size="12.5">
+    <g transform="translate(70 340)" text-anchor="middle">
+      <text font-weight="bold" font-size="13.5">FIRST DIORAMA</text>
+      <text y="17">desktop app ·</text><text y="32">generated maps</text></g>
+    <g transform="translate(210 186)" text-anchor="middle">
+      <text font-weight="bold" font-size="13.5">BATTLE PLANS</text>
+      <text y="17">sieges · field works</text><text y="32">doctrines</text></g>
+    <g transform="translate(330 340)" text-anchor="middle">
+      <text font-weight="bold" font-size="13.5">SOLDIERS, NOT TOKENS</text>
+      <text y="17">terrain fights ·</text><text y="32">orchestral score</text></g>
+    <g transform="translate(430 186)" text-anchor="middle">
+      <text font-weight="bold" font-size="13.5">ARTILLERY &amp;</text>
+      <text y="16" font-weight="bold" font-size="13.5">HOME DEFENCE</text>
+      <text y="32">capital-only victory</text></g>
+  </g>
+  <!-- 2.0 caption plate -->
+  <g transform="translate(520 300)">
+    <rect x="-82" y="0" width="164" height="70" rx="3" fill="#2b261c"/>
+    <rect x="-78" y="4" width="156" height="62" rx="2" fill="none" stroke="#e8dcbc" stroke-opacity="0.5"/>
+    <g font-family="'Courier New',Courier,monospace" fill="#e8dcbc" text-anchor="middle" font-size="12">
+      <text y="22" font-family="'Stencil','Black Ops One','Impact','Arial Black',sans-serif" font-size="14" letter-spacing="1.5">SUPREME HQ</text>
+      <text y="39">front commanders ·</text>
+      <text y="54">pillboxes · armour</text>
+    </g>
+  </g>
+  <g transform="translate(520 386) rotate(-4)">
+    <rect x="-58" y="-13" width="116" height="24" rx="3" fill="none" stroke="#a63f36" stroke-width="2.4"/>
+    <text y="4" font-family="'Stencil','Black Ops One','Impact','Arial Black',sans-serif" font-size="13" letter-spacing="2" fill="#a63f36" text-anchor="middle">THIS RELEASE</text>
+  </g>
+
+  <!-- planned captions -->
+  <g font-family="'Courier New',Courier,monospace" fill="#4a4232" font-size="12" text-anchor="middle">
+    <g transform="translate(622 150)">
+      <text font-weight="bold" font-size="13" fill="#2b261c">SHARPER AI</text>
+      <text y="16">fog-of-war challenge</text><text y="30">harder difficulties</text>
+      <path d="M0 40V132" stroke="#3a3326" stroke-width="1.2" stroke-dasharray="2 3"/></g>
+    <g transform="translate(705 352)">
+      <text font-weight="bold" font-size="13" fill="#2b261c">FORTRESS WAR</text>
+      <text y="16">AT-gun bunkers ·</text><text y="30">captured works ·</text><text y="44">buildings block moves</text></g>
+    <g transform="translate(800 150)">
+      <text font-weight="bold" font-size="13" fill="#2b261c">RIVERS &amp; RECORDS</text>
+      <text y="16">crossings under fire</text><text y="30">save · replay a war</text>
+      <path d="M0 40V94" stroke="#3a3326" stroke-width="1.2" stroke-dasharray="2 3"/></g>
+    <g transform="translate(868 352)">
+      <text font-weight="bold" font-size="13" fill="#2b261c">CAMPAIGN</text>
+      <text y="16">linked maps ·</text><text y="30">achievements ·</text><text y="44">more languages ·</text><text y="58">mod-friendly data</text></g>
+  </g>
+
+  <!-- footer stamp -->
+  <text x="44" y="466" font-family="'Courier New',Courier,monospace" font-size="11.5" fill="#5a5040">LITTLE WAR · 小小战争 — order of stops may change; dashed = not yet built</text>
+  <g transform="translate(866 448) rotate(-8)" opacity="0.8">
+    <rect x="-56" y="-16" width="112" height="30" rx="4" fill="none" stroke="#6b7a3a" stroke-width="2.2"/>
+    <text y="5" font-family="'Stencil','Black Ops One','Impact','Arial Black',sans-serif" font-size="14" letter-spacing="2.5" fill="#6b7a3a" text-anchor="middle">PLAN 计划</text>
+  </g>
+</svg>
