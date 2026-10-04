@@ -2,6 +2,14 @@ import type { UnitDef } from '../data/types';
 import { COMBAT, COVER, type CoverLevel } from './config';
 import { angleDiff, clamp, DEG } from './vec';
 
+/**
+ * 2.0: the front commander is staff, not a fighting unit. Strength sums (garrisons, threat
+ * forecasts, group ratios) skip it so three commanders at the capital are not "a garrison".
+ * Must match rules.command.commander_unit (the loader checks the unit exists).
+ */
+export const COMMANDER_ID = 'commander';
+export const isCommander = (def: UnitDef): boolean => def.id === COMMANDER_ID;
+
 /** Direct-fire hit probability (BALANCE_SPEC §4.1). */
 export function hitProbability(args: {
   baseAccuracy: number;

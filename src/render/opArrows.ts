@@ -1,10 +1,10 @@
 import * as THREE from 'three';
-import type { OperationKind, Sector } from '../sim/types';
+import type { OperationKind, Front } from '../sim/types';
 import type { V2 } from '../sim/vec';
 import type { World } from '../sim/world';
 
 /**
- * Operation arrows: each army group's manoeuvre (`Sector.opRoute`) drawn as a big hand-inked
+ * Operation arrows: each army group's manoeuvre (`Front.opRoute`) drawn as a big hand-inked
  * war-map arrow draped on the terrain in the faction colour — straight and thick for a frontal
  * push, bowed for a flank, thin and dashed for infiltration, a hatched siege line (ticks toward
  * the target) for an investment. Pincers are simply two converging arrows.
@@ -126,7 +126,8 @@ export class OpArrows {
   update(ppm: number): void {
     // Full strength on the operational map, faint once the camera is down among the troops.
     const t = Math.min(1, Math.max(0, (ppm - 1.5) / 3));
-    this.uniforms.uAlpha.value = 1 - 0.82 * t;
+    // Subordinate to the supreme-HQ order lines (render/orderLines.ts) drawn over it.
+    this.uniforms.uAlpha.value = (1 - 0.82 * t) * 0.6;
     this.uniforms.uScale.value = Math.min(3, Math.max(1, MIN_PX / (this.minWidth * Math.max(0.02, ppm))));
   }
 
@@ -138,7 +139,7 @@ export class OpArrows {
     for (const f of w.factions) {
       if (!spectator && f.id !== playerId) continue;
       if (!f.alive) continue;
-      for (const s of f.sectors) {
+      for (const s of f.fronts) {
         const r = s.opRoute;
         if (!r || r.length < 2) continue;
         h = mix(h, f.id * 16 + s.id);
@@ -164,7 +165,7 @@ export class OpArrows {
     for (const f of w.factions) {
       if ((!spectator && f.id !== playerId) || !f.alive) continue;
       const col = new THREE.Color(f.color);
-      for (const s of f.sectors) {
+      for (const s of f.fronts) {
         if (!s.opRoute || s.opRoute.length < 2) continue;
         const width = WIDTH[s.op] * (spectator ? 0.65 : 1);
         minW = Math.min(minW, width);
@@ -189,7 +190,7 @@ export class OpArrows {
   }
 
   /** The route as an evenly sampled smooth curve (flat x,z); flanks bow out if given a straight line. */
-  private curve(s: Sector): V2[] {
+  private curve(s: Front): V2[] {
     const raw: V2[] = [];
     for (const p of s.opRoute) {
       const last = raw[raw.length - 1];
@@ -200,7 +201,7 @@ export class OpArrows {
     const e = raw[raw.length - 1];
     const span = Math.hypot(e.x - a.x, e.z - a.z);
     if (s.op === 'flank' && raw.length === 2) {
-      const side = s.key === 'right' ? -1 : 1;
+      const side = s.wing === 1 ? -1 : 1;
       const k = 0.22 * side;
       raw.splice(1, 0, { x: (a.x + e.x) / 2 - ((e.z - a.z) / 1) * k, z: (a.z + e.z) / 2 + ((e.x - a.x) / 1) * k });
     }
@@ -292,7 +293,7 @@ export class OpArrows {
 }
 
 /** Not yet under way: drawn paler, as a plan rather than an executing move. */
-function isPlanning(s: Sector): boolean {
+function isPlanning(s: Front): boolean {
   return s.opPhase === 'form';
 }
 

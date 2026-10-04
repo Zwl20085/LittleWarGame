@@ -27,7 +27,7 @@ for (let i = 0; i < 20 * secs; i++) {
     const inc = w.factions.map((f) => `${Math.round(f.incomeP)}p${Math.round(f.incomeM)}m`).join(' ');
     const arty = w.log.filter((l) => l.key === 'log.unitLost' && (l.params.unit === 'howitzer' || l.params.unit === 'mortar')).length;
     const spear = w.log.filter((l) => l.key === 'log.spearhead').length;
-    const modes = w.factions.map((f) => f.sectors.map((s) => s.mode[0]).join('')).join(' ');
+    const modes = w.factions.map((f) => f.fronts.map((s) => s.mode[0]).join('')).join(' ');
     let stuck = 0, stuckFord = 0, stuckWater = 0;
     for (const u of w.units.values()) {
       if (u.fixed || u.hp <= 0) continue;

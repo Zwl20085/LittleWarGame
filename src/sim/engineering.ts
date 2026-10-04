@@ -3,7 +3,7 @@ import { moveTo, stop } from './movement';
 import { availableM } from './production';
 import { crossings } from './terrainai';
 import { Ground } from './terrain';
-import type { Fort, Sector, Unit } from './types';
+import type { Fort, Front, Unit } from './types';
 import { dist, headingTo, type V2 } from './vec';
 import type { World } from './world';
 
@@ -50,7 +50,7 @@ export function waterSpan(world: World, from: V2, to: V2): BridgeSite | null {
  * Does this group need a bridge? True when its route to the target crosses deep water and the
  * nearest existing crossing (bridge, ford, finished or planned pontoon) is a long detour.
  */
-export function bridgeSiteFor(world: World, s: Sector, from: V2): BridgeSite | null {
+export function bridgeSiteFor(world: World, s: Front, from: V2): BridgeSite | null {
   const span = waterSpan(world, from, s.targetPos);
   if (!span) return null;
   const nearestCrossing = crossings(world).filter((c) => c.kind !== 'pass').reduce((m, c) => Math.min(m, dist(c.pos, span.mid)), Infinity);
@@ -60,7 +60,7 @@ export function bridgeSiteFor(world: World, s: Sector, from: V2): BridgeSite | n
 }
 
 /** Engineer task: go to the site and build; pauses when suppressed. Returns true while busy. */
-export function thinkBridgeBuilder(world: World, u: Unit, s: Sector, site: BridgeSite): boolean {
+export function thinkBridgeBuilder(world: World, u: Unit, s: Front, site: BridgeSite): boolean {
   const f = world.factions[u.owner];
   const k = world.data.rules.proposed_defaults.army_scale ?? 1;
   let fort = world.forts.find((x) => x.kind === 'pontoon' && x.hp > 0 && dist(x.pos, site.mid) < 40);

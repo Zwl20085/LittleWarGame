@@ -1,5 +1,5 @@
 import { parseCsv, num, bool, type CsvRow } from './csv';
-import type { FireMode, GameData, Rules, UnitDef, UnitKind, WeaponDef, Facility } from './types';
+import type { DefensiveRules, FireMode, GameData, Rules, UnitDef, UnitKind, WeaponDef, Facility } from './types';
 
 const KINDS: readonly UnitKind[] = ['infantry', 'crew', 'vehicle'];
 const FACILITIES: readonly Facility[] = ['barracks', 'vehicle', 'support'];
@@ -98,5 +98,27 @@ export function buildGameData(unitsCsv: string, weaponsCsv: string, rulesJson: s
   for (const id of Object.keys(rules.proposed_defaults.production_unit_weights)) {
     if (!units.has(id)) throw new Error(`rules.json: production weight for unknown unit "${id}"`);
   }
+  if (!rules.command || !units.has(rules.command.commander_unit)) throw new Error('rules.json: command.commander_unit must name a unit in units.csv');
+  validateDefensive(rules.construction?.defensive, units, weapons);
   return { units, weapons, rules, unitOrder: unitList.map((u) => u.id) };
+}
+
+/** rules.json `construction.defensive`: unique ids, positive HP / work, known units and weapons. */
+function validateDefensive(d: DefensiveRules | undefined, units: Map<string, UnitDef>, weapons: Map<string, WeaponDef>): void {
+  if (!d || !Array.isArray(d.structures)) throw new Error('rules.json: construction.defensive.structures is required');
+  const seen = new Set<string>();
+  for (const s of d.structures) {
+    if (s.id !== 'pillbox' && s.id !== 'bunker') throw new Error(`rules.json: unknown defensive structure "${s.id}"`);
+    if (seen.has(s.id)) throw new Error(`rules.json: duplicate defensive structure "${s.id}"`);
+    seen.add(s.id);
+    if (!(s.max_hp > 0) || !(s.work_seconds > 0)) throw new Error(`rules.json: ${s.id} needs max_hp > 0 and work_seconds > 0`);
+    if (s.cost_p < 0 || s.cost_m < 0) throw new Error(`rules.json: ${s.id} has a negative cost`);
+    if (!(s.capacity >= 1) || s.max_crews < 0 || s.max_crews > s.capacity) throw new Error(`rules.json: ${s.id} capacity / max_crews invalid`);
+    if (s.weapon !== null && !weapons.has(s.weapon)) throw new Error(`rules.json: ${s.id} references unknown weapon "${s.weapon}"`);
+    for (const id of s.accepts) if (!units.has(id)) throw new Error(`rules.json: ${s.id} accepts unknown unit "${id}"`);
+  }
+  const g = d.garrison;
+  if (!g || !(g.enter_radius_m > 0) || !(g.leave_radius_m >= g.enter_radius_m) || g.absorb_share < 0 || g.absorb_share > 1) {
+    throw new Error('rules.json: construction.defensive.garrison invalid');
+  }
 }

@@ -1,8 +1,10 @@
 import { populationCap, populationOf } from './production';
-import type { Faction, Personality, Unit } from './types';
+import type { Faction, Front, Personality, Posture, Unit } from './types';
 import { hostileMask } from './spatial';
 import { EAGER, eagerOn } from './strategyai';
 import { defendingHome } from './homeguard';
+import { isCommander } from './formulas';
+import { THEATRE } from './theatre';
 import type { World } from './world';
 
 const PERSONALITY_MUL: Record<Personality, Record<string, number>> = {
@@ -42,13 +44,16 @@ export function thinkCity(world: World, f: Faction): void {
     w.medium_tank = (w.medium_tank ?? 0) * 1.2;
   }
   f.weights = w;
-  // Postures: strongest sector assaults, others push cautiously; hold freshly taken points.
-  const strength = f.sectors.map((s) => {
-    let v = 0;
-    for (const u of world.units.values()) if (u.owner === f.id && u.sectorId === s.id && u.hp > 0) v += u.def.costP + u.def.costM;
-    return v;
-  });
-  const best = strength.indexOf(Math.max(...strength));
+  // Postures: strongest front assaults, others push cautiously; hold freshly taken points.
+  // Value per front id (ids are stable, not indices: theatre.ts creates and dissolves fronts).
+  const strength = new Map<number, number>(f.fronts.map((s) => [s.id, 0]));
+  for (const u of world.units.values()) {
+    if (u.owner !== f.id || u.hp <= 0 || isCommander(u.def)) continue;
+    const v = strength.get(u.frontId);
+    if (v !== undefined) strength.set(u.frontId, v + u.def.costP + u.def.costM);
+  }
+  let best = f.fronts[0]?.id ?? 0;
+  for (const s of f.fronts) if ((strength.get(s.id) ?? 0) > (strength.get(best) ?? 0)) best = s.id;
   const assaultAt = 900 * (world.data.rules.proposed_defaults.army_scale ?? 1);
   // Round 2: the old trigger (P stock > cap_p/2 and pop ≥ 90 % cap) never fired once stocks were
   // tuned down. Aggression (command.ts assessMood) = army fullness × strength vs the neighbour
@@ -62,57 +67,75 @@ export function thinkCity(world: World, f: Faction): void {
     const pop = populationOf(world, f);
     surplus = f.p > world.data.rules.economy.cap_p * 0.5 && pop.present + pop.reserved >= populationCap(world, f) * 0.9;
   }
-  for (const s of f.sectors) {
+  for (const s of f.fronts) {
     const own = world.objectives.find((o) => o.id === s.targetObjective);
     let next = s.posture;
     const attacking = !own || own.owner !== f.id;
+    const ordered = orderPosture(s);
     if (defendingHome(s)) next = 'hold';
-    else if ((surplus && attacking) || (s.id === best && (mainAssault || strength[best] > assaultAt))) next = 'assault';
+    else if (ordered) next = ordered;
+    else if ((surplus && attacking) || (s.id === best && (mainAssault || (strength.get(best) ?? 0) > assaultAt))) next = 'assault';
     else if (own && own.owner === f.id) next = f.personality === 'infantry' ? 'fortify' : 'hold';
     else next = 'cautious';
     // Hold a posture ≥45 s unless the city is threatened.
-    if (next !== s.posture && (world.time - s.postureSince >= 45 || defendingHome(s))) {
+    if (next !== s.posture && (world.time - s.postureSince >= 45 || defendingHome(s) || ordered)) {
       s.posture = next;
       s.postureSince = world.time;
     }
   }
-  f.mainSector = best;
+  f.mainFront = best;
   balanceReserves(world, f, strength);
 }
 
+/** Posture a line order dictates (the supreme HQ's defend / fortify / fall back), else null. */
+function orderPosture(s: Front): Posture | null {
+  const k = s.order.kind;
+  return k === 'defend' || k === 'fallBack' ? 'hold' : k === 'fortify' ? 'fortify' : null;
+}
+
 /**
- * Dynamic reserves (AI only): reinforcement shares lean toward groups under pressure, and every
- * minute a quiet group sends up to 10% of its line troops to a clearly outmatched one.
- * Pressure = known enemy value near the group's front ÷ own group value.
+ * Supreme-HQ reinforcement allocation (AI only, 2.0): every front's share of new units follows its
+ * need — pressure (known enemy value near its line ÷ its own value), the main effort and a fresh
+ * front that has yet to fill up — instead of the 1.x fixed 45 / 35 / 20 % per sector. Every minute
+ * a quiet front also sends up to 10 % of its line troops to a clearly outmatched one.
  */
-function balanceReserves(world: World, f: Faction, strength: number[]): void {
-  const base = world.data.rules.proposed_defaults.sector_reinforcement_shares;
-  const pressure = f.sectors.map((s, i) => {
+function balanceReserves(world: World, f: Faction, strength: ReadonlyMap<number, number>): void {
+  if (f.fronts.length === 0) return;
+  const pressure = new Map<number, number>();
+  let total = 0;
+  for (const s of f.fronts) {
     let enemy = 0;
     for (const u of world.spatial.queryOwners(s.front.x, s.front.z, 450, hostileMask(world, f.id))) {
       if (u.hp > 0 && world.knows(f.id, u)) enemy += u.def.costP + u.def.costM;
     }
-    return enemy / (strength[i] + 1);
-  });
-  const sorted = [...f.sectors].sort((a, b) => a.id - b.id);
-  const raw = sorted.map((s, i) => (base[i] ?? 0.33) * (0.6 + Math.min(1.5, pressure[s.id])));
-  const sum = raw.reduce((a, b) => a + b, 0) || 1;
-  sorted.forEach((s, i) => (s.share = raw[i] / sum));
-  if (Math.floor(world.time / 60) === Math.floor((world.time - 20) / 60)) return; // once a minute
-  let hot = 0;
-  let calm = 0;
-  for (let i = 1; i < pressure.length; i++) {
-    if (pressure[i] > pressure[hot]) hot = i;
-    if (pressure[i] < pressure[calm]) calm = i;
+    const own = strength.get(s.id) ?? 0;
+    pressure.set(s.id, enemy / (own + 1));
+    total += own;
   }
-  if (hot === calm || pressure[hot] < 1.2 || pressure[calm] > 0.5) return;
+  const mean = total / f.fronts.length;
+  const raw = f.fronts.map((s) => {
+    const need = Math.min(1.5, pressure.get(s.id) ?? 0);
+    // A front well below the mean strength (new, or bled) gets topped up first.
+    const thin = mean > 0 ? Math.max(0, 1 - (strength.get(s.id) ?? 0) / mean) : 0;
+    return (0.6 + need + THEATRE.shareThin * thin) * (s.id === f.mainFront ? THEATRE.shareMain : 1);
+  });
+  const sum = raw.reduce((a, b) => a + b, 0) || 1;
+  f.fronts.forEach((s, i) => (s.share = raw[i] / sum));
+  if (Math.floor(world.time / 60) === Math.floor((world.time - 20) / 60)) return; // once a minute
+  let hot = f.fronts[0];
+  let calm = f.fronts[0];
+  for (const s of f.fronts) {
+    if ((pressure.get(s.id) ?? 0) > (pressure.get(hot.id) ?? 0)) hot = s;
+    if ((pressure.get(s.id) ?? 0) < (pressure.get(calm.id) ?? 0)) calm = s;
+  }
+  if (hot === calm || (pressure.get(hot.id) ?? 0) < 1.2 || (pressure.get(calm.id) ?? 0) > 0.5) return;
   const movable: Unit[] = [];
   for (const u of world.units.values()) {
-    if (u.owner === f.id && u.sectorId === calm && u.hp > 0 && !u.fixed && !u.manual && !u.spearhead && u.opRole === 'line'
-      && u.behavior === 'advance' && u.def.id !== 'supply_truck' && u.def.id !== 'howitzer') movable.push(u);
+    if (u.owner === f.id && u.frontId === calm.id && u.hp > 0 && !u.fixed && !u.manual && !u.spearhead && u.opRole === 'line'
+      && u.behavior === 'advance' && u.def.id !== 'supply_truck' && u.def.id !== 'howitzer' && !isCommander(u.def)) movable.push(u);
   }
   const n = Math.floor(movable.length * 0.1);
   movable.sort((a, b) => a.id - b.id);
-  for (const u of movable.slice(0, n)) u.sectorId = hot;
+  for (const u of movable.slice(0, n)) u.frontId = hot.id;
   if (n > 0) world.note(f.id, 'log.reservesShifted', { n }, 'info');
 }

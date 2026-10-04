@@ -1,8 +1,14 @@
 import * as THREE from 'three';
-import type { Unit } from '../sim/types';
+import { ORDER_COLOR } from '../render/orderLines';
+import { frontById, nearestFront } from '../sim/fronts';
+import type { OrderKind, Unit } from '../sim/types';
+import type { V2 } from '../sim/vec';
 import type { GameContext } from './context';
 import type { Hud } from './hud';
 import { TerrainTip } from './terrainTip';
+
+/** Supreme-HQ order hotkeys (A/H/R/G/F/U/Q/E/W/S/D/Tab/Space/1-4 are taken). */
+export const ORDER_KEYS: Record<string, OrderKind> = { z: 'attack', x: 'defend', c: 'fortify', v: 'fallBack', b: 'auto' };
 
 /** Mouse/keyboard → camera moves and CommandBus commands. Never mutates the sim directly. */
 export class InputController {
@@ -13,6 +19,9 @@ export class InputController {
   private readonly off: (() => void)[] = [];
   private lastPointer = new THREE.Vector2();
   private readonly terrainTip: TerrainTip;
+  /** Supreme-HQ order being placed: mousedown point (screen + ground); drag = line. */
+  private orderDrag: { x: number; y: number; a: V2 } | null = null;
+  private previewOn = false;
 
   constructor(private readonly canvas: HTMLCanvasElement, private readonly ctx: GameContext, private readonly hud: Hud) {
     this.box = document.createElement('div');
@@ -58,6 +67,11 @@ export class InputController {
       return;
     }
     if (e.button === 0) {
+      if (this.ctx.mode.kind === 'frontOrder') {
+        const a = this.ctx.renderer.groundAt(this.ndc(e));
+        if (a) this.orderDrag = { x: e.clientX, y: e.clientY, a };
+        return;
+      }
       if (this.ctx.mode.kind !== 'normal') {
         this.modeClick(e);
         return;
@@ -76,15 +90,54 @@ export class InputController {
       const ids = [...this.ctx.renderer.units.selected];
       this.ctx.issue({ type: 'unitOrder', unitIds: ids, order: 'attackMove', pos: p, queue: e.shiftKey });
       this.ctx.renderer.orderMarker(p, '#e08050');
-    } else if (m.kind === 'sectorTarget') {
-      this.ctx.issue({ type: 'setSectorTarget', sectorId: m.sectorId, pos: p });
-      this.ctx.renderer.orderMarker(p, '#f4ecd9');
     }
+  }
+
+  /** Drag shorter than this (CSS px) is a point order, longer draws a line. */
+  private static readonly LINE_DRAG_PX = 25;
+
+  /** Finish placing a supreme-HQ order: point (click) or line (drag a–b). Shift keeps the mode. */
+  private finishOrder(e: MouseEvent): void {
+    const drag = this.orderDrag;
+    this.orderDrag = null;
+    const m = this.ctx.mode;
+    if (!drag || m.kind !== 'frontOrder') return;
+    const line = Math.hypot(e.clientX - drag.x, e.clientY - drag.y) >= InputController.LINE_DRAG_PX;
+    const b = line ? this.ctx.renderer.groundAt(this.ndc(e)) : null;
+    this.ctx.issue({ type: 'frontOrder', frontId: m.frontId, kind: m.order, a: drag.a, ...(b ? { b } : {}) });
+    const col = ORDER_COLOR[m.order];
+    this.ctx.renderer.orderMarker(drag.a, col);
+    if (b) this.ctx.renderer.orderMarker(b, col);
+    this.hud.fronts.ordered(m.frontId, m.order);
+    if (!e.shiftKey) this.ctx.mode = { kind: 'normal' };
+    this.clearPreview();
+  }
+
+  /** Ghost of the order under the cursor (point) or being dragged (line). */
+  private previewOrder(a: V2, b: V2 | null): void {
+    const m = this.ctx.mode;
+    if (m.kind !== 'frontOrder') return;
+    const w = this.ctx.match.world;
+    const f = w.factions[this.ctx.playerId];
+    if (!f) return;
+    const s = m.frontId !== null ? frontById(f, m.frontId) : nearestFront(f, a);
+    this.ctx.renderer.orderLines.setPreview({ kind: m.order, a, b, from: s?.front ?? null, home: w.hqPos(f.id), color: f.color });
+    this.previewOn = true;
+    this.hud.fronts.previewTarget = s?.id ?? null;
+  }
+
+  private clearPreview(): void {
+    this.orderDrag = null;
+    if (!this.previewOn) return;
+    this.previewOn = false;
+    this.ctx.renderer.orderLines.setPreview(null);
+    this.hud.fronts.previewTarget = null;
   }
 
   private rightClick(e: MouseEvent): void {
     if (this.ctx.mode.kind !== 'normal') {
       this.ctx.mode = { kind: 'normal' };
+      this.clearPreview();
       return;
     }
     const ids = [...this.ctx.renderer.units.selected];
@@ -113,6 +166,15 @@ export class InputController {
       this.ctx.renderer.rig.pan(-dx * k * 0.5, dy * k * 0.7);
       return;
     }
+    if (this.ctx.mode.kind === 'frontOrder' && (this.orderDrag || e.target === this.canvas)) {
+      const p = this.ctx.renderer.groundAt(this.lastPointer);
+      const drag = this.orderDrag;
+      if (drag) {
+        const line = Math.hypot(e.clientX - drag.x, e.clientY - drag.y) >= InputController.LINE_DRAG_PX;
+        this.previewOrder(drag.a, line ? p : null);
+      } else if (p) this.previewOrder(p, null);
+      return;
+    }
     if (this.dragStart) {
       const x0 = Math.min(this.dragStart.x, e.clientX);
       const y0 = Math.min(this.dragStart.y, e.clientY);
@@ -130,6 +192,10 @@ export class InputController {
   private up(e: MouseEvent): void {
     if (e.button === 1) {
       this.panDrag = null;
+      return;
+    }
+    if (e.button === 0 && this.orderDrag) {
+      this.finishOrder(e);
       return;
     }
     if (e.button !== 0 || !this.dragStart) return;
@@ -221,14 +287,22 @@ export class InputController {
       case 'u':
         this.ctx.hudHidden = !this.ctx.hudHidden;
         break;
+      case 'z': case 'x': case 'c': case 'v': case 'b':
+        if (!this.ctx.spectator) this.hud.fronts.pickOrder(ORDER_KEYS[k]);
+        break;
       case 'escape':
-        if (this.ctx.mode.kind !== 'normal') this.ctx.mode = { kind: 'normal' };
+        if (this.ctx.mode.kind !== 'normal') {
+          this.ctx.mode = { kind: 'normal' };
+          this.clearPreview();
+        }
         else if (this.ctx.renderer.units.selected.size > 0) this.ctx.renderer.units.selected.clear();
         else this.onEscape?.();
         break;
-      case '1': case '2': case '3':
-        if (!this.ctx.spectator) this.hud.sectors.toggle(Number(k) - 1);
+      case '1': case '2': case '3': case '4': {
+        const fr = this.ctx.match.world.factions[this.ctx.playerId]?.fronts[Number(k) - 1];
+        if (!this.ctx.spectator && fr) this.hud.fronts.toggle(fr.id);
         break;
+      }
       default:
         break;
     }
@@ -238,6 +312,7 @@ export class InputController {
 
   /** Continuous keyboard panning; call each frame. */
   update(dt: number): void {
+    if (this.previewOn && this.ctx.mode.kind !== 'frontOrder') this.clearPreview();
     const rig = this.ctx.renderer.rig;
     const sp = (420 * dt) / rig.zoom;
     let right = 0;

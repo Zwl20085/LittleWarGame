@@ -1,6 +1,7 @@
 import { moveTo, stop } from './movement';
+import { frontById } from './frontref';
 import { safeRear } from './frontai';
-import type { Faction, Sector, Unit } from './types';
+import type { Faction, Front, Unit } from './types';
 import { dist, type V2 } from './vec';
 import type { World } from './world';
 
@@ -76,13 +77,13 @@ function bestDepot(world: World, f: number, target: V2): Depot {
 }
 
 /** Group most in need of ammunition, discounted by trucks already heading there. */
-function pickDestination(world: World, f: Faction, trucks: Unit[]): { sector: Sector; pos: V2 } | null {
-  let best: { sector: Sector; pos: V2 } | null = null;
+function pickDestination(world: World, f: Faction, trucks: Unit[]): { front: Front; pos: V2 } | null {
+  let best: { front: Front; pos: V2 } | null = null;
   let bestNeed = 0;
-  const needs = sectorNeeds(world, f);
-  for (const s of f.sectors) {
-    const need = needs[s.id] ?? 0;
-    const enRoute = trucks.filter((t) => t.truckState === 'out' && t.sectorId === s.id).length;
+  const needs = frontNeeds(world, f);
+  for (const s of f.fronts) {
+    const need = needs.get(s.id) ?? 0;
+    const enRoute = trucks.filter((t) => t.hp > 0 && t.truckState === 'out' && t.frontId === s.id).length;
     const score = need / (1 + enRoute * 1.5);
     if (score > bestNeed) {
       bestNeed = score;
@@ -91,23 +92,24 @@ function pickDestination(world: World, f: Faction, trucks: Unit[]): { sector: Se
       const t = d > 0 ? Math.max(0, (d - CONVOY.standoff) / d) : 0;
       const p = { x: home.x + (s.front.x - home.x) * t, z: home.z + (s.front.z - home.z) * t };
       const safe = safeRear(world, f.id, p, home, 170);
-      best = { sector: s, pos: world.nav(true, 22).nearestPassable(safe, 60) ?? safe };
+      best = { front: s, pos: world.nav(true, 22).nearestPassable(safe, 60) ?? safe };
     }
   }
   return bestNeed > 2 ? best : null;
 }
 
-const needCache = new WeakMap<World, { tick: number; byFaction: number[][] }>();
-/** Ammunition need per faction/sector, recomputed at most once per second. */
-function sectorNeeds(world: World, f: Faction): number[] {
+const needCache = new WeakMap<World, { tick: number; byFaction: Map<number, number>[] }>();
+/** Ammunition need per faction/front, recomputed at most once per second. */
+function frontNeeds(world: World, f: Faction): Map<number, number> {
   let c = needCache.get(world);
   if (!c || world.tick - c.tick >= world.tickHz) {
-    const byFaction = world.factions.map((x) => x.sectors.map(() => 0));
+    // By front id (ids are stable but not indices: fronts are created and dissolved, theatre.ts).
+    const byFaction = world.factions.map(() => new Map<number, number>());
     for (const u of world.units.values()) {
       if (u.hp <= 0 || u.fixed || u.def.id === 'supply_truck') continue;
       if (dist(u.pos, world.hqPos(u.owner)) < world.data.rules.supply.city_local_radius_m) continue;
       const arr = byFaction[u.owner];
-      if (arr && u.sectorId < arr.length) arr[u.sectorId] += ammoNeed(u) + 0.05 * u.def.supplyDemand; // upkeep so idle groups get visits
+      if (arr) arr.set(u.frontId, (arr.get(u.frontId) ?? 0) + ammoNeed(u) + 0.05 * u.def.supplyDemand); // upkeep so idle groups get visits
     }
     c = { tick: world.tick, byFaction };
     needCache.set(world, c);
@@ -126,7 +128,7 @@ function knownThreatNear(world: World, u: Unit, r: number): boolean {
 export function thinkConvoyTruck(world: World, u: Unit): void {
   const f = world.factions[u.owner];
   // Reload at the depot best placed for this truck's group (capital or a held town/city).
-  const group = f.sectors[u.sectorId];
+  const group = frontById(f, u.frontId);
   const depot = bestDepot(world, u.owner, group ? group.front : world.hqPos(u.owner)).pos;
   const trucks = trucksOf(world, u.owner);
   // Threatened away from home: abort and run back (the enemy is hunting the supply line).
@@ -148,7 +150,7 @@ export function thinkConvoyTruck(world: World, u: Unit): void {
         if (dest) {
           u.truckState = 'out';
           u.truckDest = dest.pos;
-          u.sectorId = dest.sector.id;
+          u.frontId = dest.front.id;
         }
       }
       return;
@@ -159,7 +161,7 @@ export function thinkConvoyTruck(world: World, u: Unit): void {
         return;
       }
       // Keep following the group's line as it moves.
-      const s = f.sectors[u.sectorId];
+      const s = frontById(f, u.frontId);
       if (s) {
         const home = world.hqPos(u.owner);
         const d = dist(home, s.front);
@@ -200,7 +202,8 @@ function trucksOf(world: World, f: number): Unit[] {
     c = { tick: world.tick, byFaction };
     truckCache.set(world, c);
   }
-  return c.byFaction[f].filter((t) => t.hp > 0);
+  // The list is rebuilt every second; callers skip dead trucks themselves.
+  return c.byFaction[f];
 }
 
 /** Once per second: depot production, loading and hand-over of ammunition. */

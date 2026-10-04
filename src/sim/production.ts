@@ -5,6 +5,7 @@ import type { World } from './world';
 import { dist, type V2 } from './vec';
 import { recordBuilt } from './stats';
 import { hostileMask } from './spatial';
+import { frontById } from './frontref';
 
 export type OrderBlock =
   | 'LOCKED'
@@ -41,8 +42,8 @@ export function productionSites(world: World, f: Faction, facility: string): V2[
 }
 
 /** Safe site closest to the destination group's front (reinforcements come from the territory). */
-function pickSpawn(world: World, f: Faction, facility: string, sectorId: number): V2 {
-  const front = f.sectors[sectorId]?.front ?? world.cityOf(f.id).exit;
+function pickSpawn(world: World, f: Faction, facility: string, frontId: number): V2 {
+  const front = frontById(f, frontId)?.front ?? world.cityOf(f.id).exit;
   let best = world.cityOf(f.id).exit;
   let bd = Infinity;
   for (const p of productionSites(world, f, facility)) {
@@ -66,6 +67,8 @@ export function unitCount(world: World, f: Faction, unitId: string): number {
 
 export function populationOf(world: World, f: Faction): { present: number; reserved: number } {
   let present = 0;
+  // Buildings cost no population; the squads manning them keep theirs (lead decision 2.0: taking
+  // garrisons off the count let a heavily fortified side over-produce).
   for (const u of world.units.values()) if (u.owner === f.id && u.hp > 0 && !u.fixed) present += u.def.population;
   let reserved = 0;
   for (const o of f.orders) reserved += world.data.units.get(o.unitId)!.population;
@@ -135,38 +138,39 @@ function freeSlot(world: World, f: Faction, facility: string): number {
   return -1;
 }
 
-function startOrder(world: World, f: Faction, def: UnitDef, slot: number, manual: boolean, sectorId: number): ProductionOrder | null {
+function startOrder(world: World, f: Faction, def: UnitDef, slot: number, manual: boolean, frontId: number): ProductionOrder | null {
   const res = trySpend(f, def.costP, def.costM);
   if (!res.ok) return null;
   const mul = economyRates(f.alloc, world.data.rules).buildTimeMul;
   const total = def.buildSeconds * mul;
   const order: ProductionOrder = {
-    id: world.newId(), unitId: def.id, facility: def.facility, slot, manual, sectorId,
+    id: world.newId(), unitId: def.id, facility: def.facility, slot, manual, frontId,
     remaining: total, total, costP: def.costP, costM: def.costM, blocked: false,
-    spawn: pickSpawn(world, f, def.facility, sectorId),
+    spawn: pickSpawn(world, f, def.facility, frontId),
   };
   f.orders.push(order);
   f.spent.push({ tick: world.tick, unitId: def.id, value: def.costP + def.costM });
   return order;
 }
 
-/** Choose the sector for a new unit: per-unit override, else by reinforcement shares deficit. */
-export function pickSector(world: World, f: Faction, unitId: string): number {
-  const fixed = f.unitSector[unitId];
-  if (fixed !== undefined && fixed >= 0) return fixed;
-  const counts = f.sectors.map(() => 0);
-  for (const u of world.units.values()) if (u.owner === f.id && u.hp > 0 && !u.fixed) counts[u.sectorId] = (counts[u.sectorId] ?? 0) + u.def.population;
-  for (const o of f.orders) counts[o.sectorId] += world.data.units.get(o.unitId)!.population;
-  const total = counts.reduce((a, b) => a + b, 0) + 1;
-  let best = 0;
+/** Choose the front (id) for a new unit by reinforcement-share deficit (the supreme HQ's allocation, theatre.ts). */
+export function pickFront(world: World, f: Faction): number {
+  // By front id: ids are stable but not indices (fronts are created and dissolved).
+  const counts = new Map<number, number>();
+  const add = (id: number, n: number): void => { counts.set(id, (counts.get(id) ?? 0) + n); };
+  for (const u of world.units.values()) if (u.owner === f.id && u.hp > 0 && !u.fixed) add(u.frontId, u.def.population);
+  for (const o of f.orders) add(o.frontId, world.data.units.get(o.unitId)!.population);
+  let total = 1;
+  for (const s of f.fronts) total += counts.get(s.id) ?? 0;
+  let best = f.fronts[0]?.id ?? 0;
   let bestD = -Infinity;
-  f.sectors.forEach((s, i) => {
-    const d = s.share - counts[i] / total;
+  for (const s of f.fronts) {
+    const d = s.share - (counts.get(s.id) ?? 0) / total;
     if (d > bestD) {
       bestD = d;
-      best = i;
+      best = s.id;
     }
-  });
+  }
   return best;
 }
 
@@ -180,7 +184,7 @@ export function scheduleProduction(world: World, f: Faction): void {
     const def = world.data.units.get(q.unitId)!;
     const slot = freeSlot(world, f, def.facility);
     if (slot < 0 || canStart(world, f, def, true) !== null) continue;
-    if (startOrder(world, f, def, slot, true, q.sectorId)) {
+    if (startOrder(world, f, def, slot, true, q.frontId >= 0 && f.fronts.some((x) => x.id === q.frontId) ? q.frontId : pickFront(world, f))) {
       f.manualQueue.splice(i, 1);
       i--;
     }
@@ -207,7 +211,7 @@ export function scheduleProduction(world: World, f: Faction): void {
     const reserve = prot && prot.unitId !== def.id ? reserveFor(world, prot.unitId) : { p: 0, m: 0 };
     const block = canStart(world, f, def, false, reserve);
     if (block === null) {
-      startOrder(world, f, def, slot, false, pickSector(world, f, def.id));
+      startOrder(world, f, def, slot, false, pickFront(world, f));
       if (prot?.unitId === def.id) f.protectedOrder = null;
       facilitiesDone.add(def.facility);
       continue;
@@ -269,7 +273,8 @@ export function advanceProduction(world: World, f: Faction, seconds: number): vo
       const atOk = nav.nearestPassable(at, 40);
       jitter = atOk && nav.connected(atOk, exit) ? atOk : (nav.nearestPassable({ x: exit.x + world.rngAi.range(-12, 12), z: exit.z + world.rngAi.range(-12, 12) }, 40) ?? exit);
     }
-    const u = world.spawnUnit(f.id, o.unitId, jitter, o.sectorId);
+    // The order's front may have been dissolved while it was in production (theatre.ts).
+    const u = world.spawnUnit(f.id, o.unitId, jitter, frontById(f, o.frontId) ? o.frontId : pickFront(world, f));
     u.behavior = 'rally';
     recordBuilt(world.stats, u);
     f.producedUnits++;

@@ -10,11 +10,19 @@ import type { World } from './world';
  */
 export interface FrontInfo {
   readonly cells: V2[];
+  /** Metres to the nearest hostile-held cell, on a grid `ED_COARSE`× coarser than the field (2.0 perf). */
   readonly enemyDist: Float32Array;
   readonly nx: number;
   readonly nz: number;
   readonly cell: number;
 }
+
+/**
+ * The distance transform runs on a grid this many times coarser than the 16 m field: its
+ * consumers compare against 120–400 m thresholds, and the chamfer + two full-grid passes were
+ * 4.6 % of sim CPU at 16 m (2.0 profile). The front cells themselves stay at field resolution.
+ */
+const ED_COARSE = 2;
 
 export function buildFrontInfo(world: World, field: FrontlineField): FrontInfo[] {
   return world.factions.map((f) => buildFrontInfoFor(world, field, f.id));
@@ -23,12 +31,13 @@ export function buildFrontInfo(world: World, field: FrontlineField): FrontInfo[]
 /** One faction's front info (the per-faction work is staggered over ticks to avoid a burst). */
 export function buildFrontInfoFor(world: World, field: FrontlineField, factionId: number): FrontInfo {
   const { nx, nz, cell, owner } = field;
-  const n = nx * nz;
   const nf = world.factions.length;
   const f = world.factions[factionId];
   {
     const cells: V2[] = [];
-    const ed = new Float32Array(n);
+    const cnx = Math.ceil(nx / ED_COARSE);
+    const cnz = Math.ceil(nz / ED_COARSE);
+    const ed = new Float32Array(cnx * cnz);
     const BIG = 1e6;
     // Per-owner lookup tables instead of isHostile()/isFoe() per cell (owner codes are -2..nf-1).
     const hostileTo = new Uint8Array(nf);
@@ -39,26 +48,28 @@ export function buildFrontInfoFor(world: World, field: FrontlineField, factionId
     }
     foe[CONTESTED + 2] = isFoe(world, f.id, CONTESTED) ? 1 : 0;
     foe[NEUTRAL + 2] = isFoe(world, f.id, NEUTRAL) ? 1 : 0;
-    for (let k = 0; k < n; k++) {
-      const o = owner[k];
-      ed[k] = o >= 0 && hostileTo[o] === 1 ? 0 : BIG;
-    }
-    if (f.alive) {
-      const me = f.id;
-      for (let j = 0; j < nz; j++) {
-        for (let i = 0; i < nx; i++) {
-          const k = j * nx + i;
-          if (owner[k] !== me) continue;
+    // One pass over the field: a coarse cell is hostile ground when any of its fine cells is, and
+    // an own cell touching foe / contested ground is a front cell.
+    ed.fill(BIG);
+    const me = f.alive ? f.id : -3;
+    for (let j = 0; j < nz; j++) {
+      const crow = Math.floor(j / ED_COARSE) * cnx;
+      const row = j * nx;
+      for (let i = 0; i < nx; i++) {
+        const k = row + i;
+        const o = owner[k];
+        if (o === me) {
           const touch = (i > 0 && foe[owner[k - 1] + 2] === 1) || (i < nx - 1 && foe[owner[k + 1] + 2] === 1)
             || (j > 0 && foe[owner[k - nx] + 2] === 1) || (j < nz - 1 && foe[owner[k + nx] + 2] === 1);
           if (touch) cells.push({ x: (i + 0.5) * cell, z: (j + 0.5) * cell });
-        }
+        } else if (o >= 0 && hostileTo[o] === 1) ed[crow + Math.floor(i / ED_COARSE)] = 0;
       }
     }
-    // Two-pass chamfer distance (3-4 weights) in cell units, then metres.
-    chamfer(ed, nx, nz);
-    for (let k = 0; k < n; k++) ed[k] = Math.min(BIG, ed[k] * cell);
-    return { cells, enemyDist: ed, nx, nz, cell };
+    // Two-pass chamfer distance (3-4 weights) in coarse cell units, then metres.
+    chamfer(ed, cnx, cnz);
+    const cc = cell * ED_COARSE;
+    for (let k = 0; k < ed.length; k++) ed[k] = Math.min(BIG, ed[k] * cc);
+    return { cells, enemyDist: ed, nx: cnx, nz: cnz, cell: cc };
   }
 }
 

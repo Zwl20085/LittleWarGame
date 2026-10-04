@@ -7,6 +7,7 @@ import type { Projectile, Unit, V3 } from './types';
 import { revealBattery } from './operations';
 import { recordShot } from './stats';
 import { sightLine } from './buildings';
+import { garrisonBlind, garrisonRaise, weaponOf } from './structures';
 import { forestConcealed, hasHighObserver, shotTerrainMul } from './terrainrules';
 import { hostileMask } from './spatial';
 import { angleDiff, DEG, dist, headingTo, turnToward, type V2 } from './vec';
@@ -24,7 +25,8 @@ const SC_OBSERVER: Unit[] = [];
 const SC_RECON: Unit[] = [];
 const SC_AP: Unit[] = [];
 
-export const muzzleHeight = (u: Unit): number => (u.def.kind === 'vehicle' ? 2.4 : u.def.kind === 'crew' ? 1.3 : 1.6);
+/** Muzzle / eye height; occupants of a pillbox / bunker fire from its raised embrasure (structures.ts). */
+export const muzzleHeight = (u: Unit): number => (u.def.kind === 'vehicle' ? 2.4 : u.def.kind === 'crew' ? 1.3 : 1.6) + garrisonRaise(u);
 export const centerHeight = (u: Unit): number => (u.def.kind === 'vehicle' ? 1.5 : 0.9);
 const hitRadius = (u: Unit): number => (u.def.kind === 'vehicle' ? 3.2 : 4.5);
 
@@ -51,6 +53,8 @@ export function canEngage(world: World, u: Unit, w: WeaponDef, t: Unit): FireBlo
     if (w.penetration <= COMBAT.smallArmsPenCutoff && t.def.armorSide > COMBAT.smallArmsArmorCutoff) return 'NO_DAMAGE';
     // Forest hides units that hold fire; garrisons fire through windows (BALANCE_SPEC §7.1).
     if (forestConcealed(world, u.pos, t)) return 'NO_LOS';
+    // Pillbox embrasures do not cover its rear arc.
+    if (garrisonBlind(u, t.pos)) return 'NO_LOS';
     if (!sightLine(world, u, muzzleHeight(u), t, centerHeight(t))) return 'NO_LOS';
   }
   return null;
@@ -88,7 +92,7 @@ function threatOf(t: Unit, me: Unit): number {
 
 /** Pick a target with the weighted score + 20 % switch margin + 2 s hold. */
 export function selectTarget(world: World, u: Unit, objective: V2 | null): void {
-  const w = u.primary;
+  const w = weaponOf(u);
   if (!w) {
     u.targetId = null;
     return;
@@ -181,7 +185,8 @@ export function updateWeapons(world: World, u: Unit): void {
   u.cooldown1 = Math.max(0, u.cooldown1 - world.dt);
   u.cooldown2 = Math.max(0, u.cooldown2 - world.dt);
   if (u.routing) return;
-  const w = u.primary;
+  // A pillbox occupant fires the pillbox's built-in MG instead of its own weapon (structures.ts).
+  const w = weaponOf(u);
   if (w) {
     const t = world.unitAlive(u.targetId);
     if (t) {

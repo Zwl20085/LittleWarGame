@@ -682,3 +682,219 @@ Strategy lab, 6 seeds × 60 min, `--ab storm` (same tree):
   capital, and an op against a capital only counts as won when that capital falls.
 - Perf, paired 300 s: 1.3 vs 1.3 ms/tick. `npx vitest run` passes 51 tests.
 
+
+## Round 6: command hierarchy 2.0 (AI supreme HQ, dynamic fronts, capital garrison)
+
+User decisions (2026-10-04): "新设指挥层级，最高统帅部-前线指挥官-unit，最高统帅部仅负责全局战略设置，前线指挥官负责具体战术";
+"取消左中右三路设计"; "首都区域必须有驻防"; and "in some game I just let all units attack the
+capital, then it wins". Spec: docs/COMMAND_V2.md. Measured on the shared `feat/command-v2`
+working tree, so the works agent's capital line (trench + pillboxes) is in every "after" number.
+"Before" is HEAD 4a77d0a (foundation commit) exported to a scratch copy.
+
+### Design
+
+**AI supreme HQ** (`theatre.ts`, every HQ think = 5 s, AI factions only):
+
+1. *Structure*: axes = neighbouring enemy capitals (≤ 1.3 × the nearest; the finish target always)
+   plus clusters (700 m) of settlements the HQ wants to attack. At most one change per 30 s:
+   dissolve a front empty for 30 s; merge two fronts on the same objective, or with objectives
+   within 300 m and troops within 500 m when there are more fronts than needed; merge the weakest
+   when fronts > the kept count; open a front for an uncovered axis when fronts < wanted and
+   the new front gets ≥ 20 troops. Wanted = strong axes (≥ 0.45 × top), ≤ troops / 20, ≤
+   `fronts_max`. Kept = axes ≥ 0.25 × top, troops / 12 (hysteresis). The floor is
+   min(`fronts_initial`, troops / 25). Fronts on an enemy capital, in a siege, assault or
+   manoeuvre, recalled, or younger than 120 s are never merged. The front commander's commander
+   is paid (`commander_unit` P) when a front opens.
+2. *Orders* through the player API (`issueFrontOrder`, `manual: false`):
+   - `attack` on the objective `fronts.nextTarget` picks, so rounds 1–5 keep working.
+     Retargeting still waits ≥ 60 s, except for the finish target.
+   - `defend` a line in front of a freshly held town / city when known enemies within 500 m are
+     ≥ 0.8 × the front. After 90 s under pressure the order becomes `fortify`.
+   - `fallBack` to the nearest own town ≥ 400 m nearer home when ≥ 40 % of the front routs, or the
+     enemy at its line is ≥ 3 × the front. When still pressed, this becomes `defend`.
+   - A stance is released after 20 s of calm (enemy < 0.5 × front), or after 180 s once the front
+     is no longer outmatched.
+3. *Counter-strike*: an enemy with ≥ 40 % of its known army within 1.4 km of our capital, and
+   its own capital held by ≤ 30 % of that army, is struck by our strongest non-recalled front.
+   That front must be within 3.2 km and have ≥ 2 × the capital's forecast defence. Home recall
+   takes counter-strike fronts last (`STANDING.counterStrikeCost`).
+
+**Reinforcement** (`cityai.balanceReserves`): the fixed 45 / 35 / 20 % shares are replaced by
+shares ∝ (0.6 + pressure + 0.8 × shortfall below the mean strength), × 1.4 for the main front.
+
+**Front ids** are stable (`frontSeq`) but are no longer indices. Every sim consumer now goes
+through `frontref.frontById`: behavior, convoy, damage, events, homeguard, production, doctrine,
+cityai, and the thinkFronts groups. Units and production orders of a dissolved front rejoin the
+nearest front (`frontops.reassignStale`, every HQ think).
+
+**Player**: an order with no front, more than 900 m from every front's line, opens a new front
+when fronts < `fronts_max` (`frontops.frontForOrder`). The new front gets its share of the free
+line troops nearest the order.
+
+**Front commander tactics** (`fronts.planFront`, `frontslots.ts`):
+- defend / fortify / fall-back lines are snapped to terrain: every 32 m, the best
+  `defensivePosition` within 40 m, cached per line. Slots stand 8 m behind the snapped line.
+- An attack along a line keeps its shape and moves with the front point, massing on it.
+- On a `fallBack` order, units march to their slot with return fire only, for up to 150 s
+  (`behavior.fallingBack`).
+- Commanders post at an own *uncontested* town. When none is in reach, the commander follows
+  260 m behind the line on safe ground (`safeRear`). It steps away from armed enemies within
+  160 m wherever it is, and it is excluded from the recall's fall-back march.
+
+**Capital rule** (`homeguard.keepStanding`): from 120 s, `capital_standing_garrison` (3) infantry
+squads are home guards at all times, drawn from any front. Release keeps them. The alarm level
+now counts guards walking home (`level = enemy ÷ (enemy + garrison + guardAway + pad)`).
+
+Lab switches: `STRATEGY_AI.theatre`; `THEATRE=0` / `THEATRE_OFF=stances,structure,counter` in
+`scripts/soak.ts`. Diagnostics: `scripts/lab/fronts-diag.ts` (fronts per minute) and
+`scripts/lab/rush-diag.ts` (all-in rush on capital 0).
+
+### Before / after — strategy lab (`--seeds 7,11,13 --minutes 30`)
+
+| metric | before (HEAD) | first build | final |
+|---|---:|---:|---:|
+| op success % | 20.5 | 25.2 | **30.5** |
+| op captures / group-min | 0.08 | 0.12 | 0.15 |
+| captures per minute | 6.22 | 6.48 | 6.29 |
+| eliminations per match (30 min) | 1.0 | 0.67 | 1.0 |
+| capitals lost | 3 | 2 | 3 |
+| capitals lost although stoppable | 2 | 0 | **1** |
+| units lost per match | 409 | 433 | 398 |
+| home works built | 38 | 78 | 72 |
+
+A rejected intermediate build also struck enemies committed against a *third party's* capital,
+with csRatio 1 and csArmyShare 0.6. It turned every mid-game siege into a counter-strike
+cascade: op success fell to 11.5 %, and there were no eliminations in 3 × 30 min.
+
+### Soak (`npx tsx scripts/soak.ts 45 7,11,13`)
+
+Eliminations by 45 min, and stuck / unreachable anomalies:
+
+| build | seed 7 | seed 11 | seed 13 | elims | stuck / unreachable |
+|---|---|---|---|---:|---:|
+| before (HEAD) | 2 elim. | 2 elim. | 2 elim. | 6 | 38 (rear-guard tanks, commanders) |
+| same tree, `THEATRE=0` | 1 | 1 | 2 | 4 | 6 |
+| first build | 2 | 0 | 0 | 2 | 10 |
+| `THEATRE_OFF=counter` (seeds 11, 13) | – | 1 | 1 | – | – |
+| `THEATRE_OFF=structure` (seeds 11, 13) | – | 2 | 1 | – | – |
+| **final** (floor 25, csRatio 2, csArmyShare 0.3) | 1 | 1 | 1 | **3** | **9** |
+
+The final soak has no stuck / unreachable rear guards, because a guard whose post fails now takes
+the next route point (`operations.planOperations`). The remaining entries are:
+- AT guns "unreachable" in `status.homeGuard`: recall guards on a works post.
+- Recon units and a light tank stuck or unreachable while observing / raiding.
+- 1 commander and 1 occupier stuck.
+
+The works agent's new invariant check `fort#… occupant … is dead` fired 34 times in one run
+(pillbox occupancy). That code belongs to the works agent.
+
+Wars end less often than at HEAD: 3 eliminations against 6. The same tree with the planner off
+(`THEATRE=0`) gives 4, so the capital line, the pillboxes and the standing garrison account for
+most of the drop. The planner accounts for the remaining 1.
+
+### All-in rush (`scripts/lab/rush-diag.ts`, tests/fronts.test.ts)
+
+- **March** (`rush-diag 7 5 14 1`): at minute 5, faction 1 sends its whole army (62 units) at
+  capital 0.
+  - Detected at the first HQ think (`aimed` 3.5k). Two to three fronts are recalled, and the home
+    value grows from 1.7k to 7–8k before the rush arrives (~16 min).
+  - The rush is destroyed (62 → 8 units), and the capital never sees capture progress.
+  - Faction 0 then counter-strikes faction 1's capital, and is the finisher from minute 14.
+  - Seed 11 behaves the same: the capital holds and the rushers fall from 64 to 15 units.
+- **Teleport 700 m out** (worst case, 2–3 min warning): seed 11 holds. Seed 7 falls after
+  5.5 min against an equal army (5.8k vs 6.0k). The recalled fronts were 1.5–2 km away and arrived
+  piecemeal, and faction 0 had been the finisher, which keeps its groups out, until the first think.
+- The emptied capital is rarely open to a counter-strike at minute 5. Its fixed strongpoints,
+  works and new production alone are 1.5–3.9k of forecast defence, more than any single front.
+  The punishment therefore comes from the finisher (`chooseFinishTarget`: a broken enemy) once
+  the rush is beaten. The test checks the strike with the raider's capital emptied.
+
+### Performance
+
+Paired `npx tsx scripts/perf.ts generated 600 7`, same machine and same time, with three other
+agents running:
+
+| | before (HEAD) | after |
+|---|---:|---:|
+| mean tick | 1.8 ms | 1.9 ms |
+| p99 | 12.1 | 13.2 |
+
+An earlier pair gave before 2.1 / after 1.9. The planner runs every 5 s per faction and does
+O(units + objectives × fronts) work. It adds no per-tick or per-unit work.
+
+### Open issues
+
+- Wars end less often (see the soak). The capital line, pillboxes and standing garrison make
+  capitals much harder to take, and siege success in the lab fell to 2–4 %. The storm constants
+  (`STORM.massRatio`, `FINISH.forceArmyRatio`) need a pass against the new fortifications.
+- A rush that appears within 3 minutes of a capital can still beat an equal defender whose
+  fronts are 2 km out.
+- The planner usually keeps 2–3 fronts per faction. Front 4 opens only for a strong
+  uncovered axis.
+- New log keys for the UI: `log.frontOpened {point}`, `log.frontMerged {point, into}`,
+  `log.frontFallBack {point}`, `log.counterStrike {point}`.
+
+## Round 7: challenge lab (capital defence against scripted strategies)
+
+User: *"in some game I just let all units attack the capital, then it wins."*
+`scripts/challenge.ts` (docs/CHALLENGE_LAB.md) plays one faction through the command API with
+scripted strategies against the three AIs. The phase-1 baseline found one real hole. A capital
+falls when one eligible enemy squad holds the 35 m HQ radius for 45 s. The AI counted
+"garrison" over 250 m, built its works at 85–160 m, and posted nobody on the point. On
+human_like seed 13, F3 fell with 1.3 k of its own value inside 250 m and 7 k inside 1.5 km.
+
+### Changes
+
+- **HQ point** (`homeguard.HQ_POINT`, `assignHolders`, `hqDuty`; hook in `behavior.ts` before
+  structure duty):
+  - 2 standing-garrison squads stand within 12 m of the HQ. They must be eligible capturers
+    (infantry / recon / engineer, ≥ 50 % hp), not engineers by preference.
+  - A breach is capture progress, or an eligible enemy within `command_radius_m` + 40 m. It forces
+    the alarm. Every own infantry / vehicle within 400 m becomes a home guard and makes for the
+    point. Crews keep their posts.
+  - Units of recalled fronts within 1.5 km also converge, unless the defence is hopeless.
+- **Forecast**:
+  - `garrison` counts eligible infantry fully and crews, vehicles and fixed MGs at × 0.5.
+  - `eta` is the nearest aimed group's ETA (groups ≥ 150 value); `etaMean` keeps the old value.
+    The nearest ETA decides "at the gates". The recall march window keeps the mean ETA, because
+    the nearest ETA shrank the window and stopped distant groups from being recalled.
+- **Alert**: `homeThreat.alert` / `alarmLevel` count only contact, aimed groups inside 900 m, and
+  aimed closing groups with ETA ≤ 240 s.
+  - The early alarms (≈ 1 min) were AI fronts marching out on a capital axis 900–2400 m away,
+    with ETA 850–1070 s.
+  - `active` (readiness, drives recall) keeps the wide forecast. Gating recall on the narrow
+    alert lost 4 more capitals in the lab, so it is kept as the switch `ROUND7_AB.alarm` = off.
+- **Hopeless** (lead rule, wars must end): the defence is hopeless when the forecast is ≥ 1.5 ×
+  our army, or the main attacker's whole known army is ≥ `HOME.hopelessArmyRatio` (2) × ours.
+  Then every recalled front is released and the capital keeps only its standing garrison, HQ
+  squads and home guards.
+- **Finisher** (lead rule): `theatre.orderFront` orders every front of the finisher to `attack`
+  the finish capital, with no stances. `command.assignOccupations` sends no occupation
+  detachments and returns those already out. Rear guards and raids were already off for a
+  finisher in `operations.ts`.
+- **Player attack fronts can assault** (`fronts.ORDER_ASSAULT`, `orderedAssault`): `cityai` never
+  runs for players. The rule is assault when aggression ≥ assaultAll; or when the front is the
+  main effort and aggression ≥ assaultMain or it is strong (> 900); or when it outweighs the
+  known defence at the objective by 1.5×. Postures hold ≥ 45 s. An identical manual order given
+  again no longer resets the posture or the operation.
+- **Rejected**: `theatre.csCommittedAttacked` (counter-strike at 20 % committed while under
+  alarm). It cost 2 of 5 soak eliminations with no lab gain, so `ROUND7_AB.counter` is off.
+
+### Results
+
+| | Round 7 off (same tree) | Round 7 final |
+|---|---:|---:|
+| challenge lab, AI survival (33 matches) | 27 / 33 | 27 / 33 |
+| … when not outmatched (≥ 2 × army = legitimate loss) | — | **32 / 33** |
+| … `rush_micro` (literal all-in rush, 9 matches) | 5 / 9 | **8 / 9** |
+| soak 60 min (7, 11, 13): wars ended | 0 / 3 | 1 / 3 (seed 13, 52.0 min) |
+| soak 60 min: eliminations | 5 | **7** |
+| soak by 45 min: eliminations (Round 6: 3) | 5 | 4 |
+
+The lead's target of ≥ 2 / 3 wars ended is not met. The two open soak wars at 60 min:
+- Seed 7 is a near-even two-way fight (pop 536 vs 658), below the finisher threshold
+  (pop ≥ 1.3 ×), which is a balance question.
+- Seed 11 is a finisher war in progress (F3 949 vs F1 525 pop, 1.8 ×, F1 down from 65 to 41
+  settlements since minute 45) that did not reach F1's capital within the hour.
+Anomalies: 2–5 per seed, of the known kinds (home-guard AT guns "unreachable", raiders and
+tanks on slopes).

@@ -4,7 +4,8 @@ import { h } from './dom';
 import { onLangChange, t } from './i18n';
 import { MinimapPanel } from './minimap';
 import { ProductionBar } from './production';
-import { SectorsPanel } from './sectors';
+import { FrontsPanel } from './fronts';
+import { frontLabel } from './labels';
 import { SelectionPanel } from './selection';
 import { TopBar } from './topbar';
 
@@ -12,7 +13,7 @@ import { TopBar } from './topbar';
 export class Hud {
   readonly root: HTMLElement;
   readonly top: TopBar;
-  readonly sectors: SectorsPanel;
+  readonly fronts: FrontsPanel;
   readonly production: ProductionBar;
   readonly selection: SelectionPanel;
   readonly minimap: MinimapPanel;
@@ -29,7 +30,7 @@ export class Hud {
     this.help = h('div', { class: 'help panel paper-stack' });
     this.help.style.display = 'none';
     this.top = new TopBar(ctx, () => this.economy.toggle(), () => this.toggleHelp());
-    this.sectors = new SectorsPanel(ctx);
+    this.fronts = new FrontsPanel(ctx);
     this.production = new ProductionBar(ctx);
     this.selection = new SelectionPanel(ctx);
     this.minimap = new MinimapPanel(ctx);
@@ -38,11 +39,16 @@ export class Hud {
     this.hiddenHint = h('div', { class: 'hidden-hint' }, t('hud.hideHint'));
     this.pausedBadge = h('div', { class: 'paused-badge' }, t('hud.paused'));
     this.root = h('div', { class: 'hud' },
-      this.top.el, this.sectors.el, this.selection.el, this.economy.el, this.help,
+      this.top.el, this.fronts.el, this.selection.el, this.economy.el, this.help,
       h('div', { class: 'bottom-row' }, this.production.el, this.minimap.el),
-      this.toasts, this.modeHint, this.pausedBadge, this.production.tip);
+      this.toasts, this.modeHint, this.pausedBadge, this.production.tip, this.fronts.briefing);
     parent.append(this.root, this.hiddenHint);
     this.offLang = onLangChange(() => this.relabel());
+    // Map stamps on the standing order lines: "<front> · <order>".
+    ctx.renderer.orderLines.label = (fid, id) => {
+      const s = ctx.match.world.factions[fid]?.fronts.find((x) => x.id === id);
+      return s ? `${frontLabel(ctx.match.world, fid, id)} · ${t(`order.${s.order.kind}`)}` : '';
+    };
     this.refresh();
   }
 
@@ -53,7 +59,7 @@ export class Hud {
 
   private relabel(): void {
     this.top.relabel();
-    this.sectors.relabel();
+    this.fronts.relabel();
     this.production.relabel();
     this.selection.relabel();
     this.minimap.relabel();
@@ -78,7 +84,7 @@ export class Hud {
     // The pause menu carries its own stamp; only show the HUD badge for a plain (Space) pause.
     this.pausedBadge.style.display = this.ctx.paused && !document.querySelector('.pause-menu, .pause') ? '' : 'none';
     this.top.refresh();
-    this.sectors.refresh();
+    this.fronts.refresh();
     this.production.refresh();
     this.selection.refresh();
     this.minimap.refresh();
@@ -86,15 +92,19 @@ export class Hud {
     // Keep the selection dossier clear of the minimap stack.
     const miniH = `${Math.ceil(this.minimap.el.offsetHeight)}px`;
     if (this.root.style.getPropertyValue('--mini-h') !== miniH) this.root.style.setProperty('--mini-h', miniH);
+    // Keep the orders column clear of the production bar.
+    const botH = `${Math.ceil(this.production.el.offsetHeight)}px`;
+    if (this.root.style.getPropertyValue('--bottom-h') !== botH) this.root.style.setProperty('--bottom-h', botH);
     const m = this.ctx.mode;
-    const hint = m.kind === 'attackMove' ? t('cmd.pickAttack')
-      : m.kind === 'sectorTarget' ? t('sector.setTarget') : '';
-    this.modeHint.textContent = hint;
+    const hint = m.kind === 'attackMove' ? t('cmd.pickAttack') : this.fronts.modeHint();
+    if (this.modeHint.textContent !== hint) this.modeHint.textContent = hint;
     this.modeHint.style.display = hint ? '' : 'none';
+    this.modeHint.className = `mode-hint ${m.kind === 'frontOrder' ? `order k-${m.order}` : ''}`;
   }
 
   dispose(): void {
     this.offLang();
+    this.ctx.renderer.orderLines.label = null;
     this.root.remove();
     this.hiddenHint.remove();
   }

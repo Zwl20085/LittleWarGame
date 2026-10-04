@@ -1,10 +1,13 @@
 import { aliveMembers } from '../sim/formulas';
 import type { Unit } from '../sim/types';
+import type { World } from '../sim/world';
 import type { GameContext } from './context';
 import { h } from './dom';
 import { natoSymbol, silhouette } from './icons';
 import { t, unitName, unitShortName } from './i18n';
-import { factionLabel } from './labels';
+import { factionLabel, frontLabel } from './labels';
+
+const isCommander = (w: World, u: Unit): boolean => u.def.id === w.data.rules.command.commander_unit;
 
 /** Right detail panel — layer 2, only while something is selected (VISUAL_UX §4.2). */
 export class SelectionPanel {
@@ -62,7 +65,8 @@ export class SelectionPanel {
     this.el.append(
       h('div', { class: 'sel-head' },
         h('div', { class: 'sel-badge', style: `--fc:${f.color}` }, natoSymbol(u.fixed ? 'mg' : u.def.id), h('span', { class: 'roman', style: `background:${f.color}` }, f.roman)),
-        h('div', { class: 'sel-id' }, h('div', { class: 'title' }, unitName(u.fixed ? 'mg' : u.def.id)), h('div', { class: 'sub' }, enemyView ? t('sel.enemy') : factionLabel(w, u.owner)))),
+        h('div', { class: 'sel-id' }, h('div', { class: 'title' }, unitName(u.fixed ? 'mg' : u.def.id)), h('div', { class: 'sub' }, enemyView ? t('sel.enemy') : factionLabel(w, u.owner)),
+          isCommander(w, u) ? h('div', { class: 'sel-cmd' }, t('sel.commanderOf', { front: frontLabel(w, u.owner, u.frontId) })) : null)),
       h('div', { class: 'sel-sil' }, silhouette(u.fixed ? 'mg' : u.def.id)),
       this.meter(`${t('sel.hp')} ${u.def.kind === 'vehicle' ? '' : `(${aliveMembers(u.def, u.hp, maxHp)}/${u.def.memberCount})`}`, u.hp, maxHp, u.hp < maxHp * 0.3 ? 'danger' : ''),
       this.meter(t('sel.morale'), u.morale, 100, u.morale < 40 ? 'danger' : ''),
@@ -75,7 +79,7 @@ export class SelectionPanel {
     if (u.def.setupSeconds > 0) this.el.append(h('div', { class: 'kv' }, h('span', {}, '⚙'), h('b', {}, t(`sel.setup.${u.setup}`))));
     this.el.append(
       h('div', { class: 'kv' }, h('span', {}, t('sel.mode')), h('b', { class: u.manual ? 'manual' : '' }, u.manual ? t('sel.manual') : t('sel.auto'))),
-      h('div', { class: 'kv' }, h('span', {}, t('sel.sector')), h('b', {}, t(`sector.${w.factions[u.owner].sectors[u.sectorId]?.key ?? 'center'}`))),
+      h('div', { class: 'kv' }, h('span', {}, t('sel.front')), h('b', {}, frontLabel(w, u.owner, u.frontId))),
       h('div', { class: 'status' }, u.status ? t(u.status) : '—'),
     );
   }

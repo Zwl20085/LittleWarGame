@@ -42,7 +42,7 @@ describe('home defence (homeguard.ts)', () => {
     // and a raid of 8 units does not pull every army group home.
     const guards = [...world.units.values()].filter((u) => u.owner === 0 && u.opRole === 'garrison' && u.opObjective === 'hq:0');
     expect(guards.length + ht.recall.length).toBeGreaterThan(0);
-    expect(ht.recall.length).toBeLessThan(f.sectors.length);
+    expect(ht.recall.length).toBeLessThan(f.fronts.length);
     // Works on the threatened approach, within the capital's works radius.
     expect(ht.fortify).toBe(true);
     const works = world.forts.filter((w) => w.owner === 0 && (w.kind === 'trench' || w.kind === 'sandbag') && dist(w.pos, hq) < HOME.worksRadiusM);

@@ -1,9 +1,11 @@
 import { worksProtect } from './works';
+import { absorbHit, damageStructure, garrisonBlastMul, garrisonCover, isStructure, leaveStructure } from './structures';
 import { MOTOR } from './movement';
 import { COMBAT, COVER, type CoverLevel } from './config';
 import { crowding, OPS } from './operations';
 import { armorFacing, armorSuppressionMul, armorValue, blastFalloff, heTargetMul, penetrationProbability } from './formulas';
 import { recordDamage } from './stats';
+import { frontById } from './frontref';
 import { noteHit } from './events';
 import { noteBuildingHit, shieldBuilding } from './buildings';
 import { exposureSuppressionMul } from './terrainrules';
@@ -22,6 +24,9 @@ const SC_BLAST: Unit[] = [];
  */
 export function coverAgainst(world: World, u: Unit, from: V2 | null, buildings = true): CoverLevel {
   if (u.def.kind === 'vehicle') return 0;
+  // Inside a pillbox / bunker: its cover from every direction (structures.ts).
+  const inside = garrisonCover(u);
+  if (inside !== null) return inside;
   // Trench / sandbag line between us and the attacker: best cover.
   if (worksProtect(u, from)) return 3;
   if (u.fixed) {
@@ -29,7 +34,7 @@ export function coverAgainst(world: World, u: Unit, from: V2 | null, buildings =
     return Math.abs(angleDiff(u.fixedFacing, headingTo(u.pos, from))) <= 60 * DEG ? 3 : 0;
   }
   if (u.fortId !== null) {
-    const f = world.forts.find((x) => x.id === u.fortId);
+    const f = world.fortById(u.fortId);
     if (f && f.progress >= 1 && f.hp > 0) {
       const lvl: CoverLevel = f.kind === 'mg_bunker' ? 3 : 2;
       if (!from || Math.abs(angleDiff(f.facing, headingTo(f.pos, from))) <= 60 * DEG) return lvl;
@@ -72,8 +77,9 @@ export function applyDamage(world: World, u: Unit, dmg: number, attackerOwner: n
   world.emit({ t: 'death', pos: { x: u.pos.x, y: u.y, z: u.pos.z }, vehicle: u.def.kind === 'vehicle', unitType: u.def.id });
   world.note(u.owner, 'log.unitLost', { unit: u.def.id, weapon: weaponId, by: attackerOwner }, u.def.kind === 'vehicle' ? 'warn' : 'info');
   if (u.fortId !== null) {
-    const fort = world.forts.find((x) => x.id === u.fortId);
-    if (fort) fort.occupant = null;
+    const fort = world.fortById(u.fortId);
+    if (fort && isStructure(fort.kind)) leaveStructure(world, u);
+    else if (fort) fort.occupant = null;
   }
   // Nearby friends lose a little morale when a unit is wiped (rate-limited per unit).
   for (const n of world.spatial.query(u.pos.x, u.pos.z, 60, SC_WIPE)) {
@@ -124,6 +130,8 @@ export function resolveDirectHit(
     const cover = coverAgainst(world, target, from);
     dmg *= COVER[cover].direct;
     if (w.id === 'at_cannon') dmg *= COMBAT.atVsInfantryMul;
+    // A pillbox / bunker takes part of a direct hit on its occupants (structures.ts).
+    dmg = absorbHit(world, target, dmg, w.penetration, attackerOwner);
   }
   const cover = coverAgainst(world, target, from);
   const supp = w.suppression * COVER[cover].supp * armorSuppressionMul(def) * exposureSuppressionMul(world, target);
@@ -152,25 +160,32 @@ export function resolveBlast(
     const blocked = !world.terrain.los(at.x, at.y + 1, at.z, u.pos.x, u.y + 1, u.pos.z, 1e9);
     const blockMul = blocked ? 0.25 : 1;
     if (kind === 'shell') {
-      const grp = world.factions[u.owner]?.sectors[u.sectorId];
+      const fac = world.factions[u.owner];
+      const grp = fac ? frontById(fac, u.frontId) : undefined;
       if (grp) grp.shelledAt = world.time;
     }
     // Crowded troops suffer more under shellfire (shock + no room to go to ground).
     const crowdMul = kind === 'shell' && crowding(world, u) >= OPS.crowdThreshold ? 1.35 : 1;
     const cover = coverAgainst(world, u, { x: at.x, z: at.z }, !blocked);
-    const dmg = damage * fall * COVER[cover].blast * heTargetMul(u.def) * blockMul;
+    const dmg = damage * fall * (garrisonBlastMul(u) ?? COVER[cover].blast) * heTargetMul(u.def) * blockMul;
     const supMul = armorSuppressionMul(u.def) * (blocked ? 0.5 : 1) * crowdMul * exposureSuppressionMul(world, u);
     addSuppression(world, u, suppression * fall * COVER[cover].supp * supMul);
     applyDamage(world, u, dmg, attackerOwner, weaponId, src);
   }
-  for (const f of world.forts) damageFort(world, f, at, radius, damage);
+  for (const f of world.forts) damageFort(world, f, at, radius, kind === 'ap' ? Math.min(damage, COMBAT.apStructureCap) : damage, attackerOwner);
 }
 
-function damageFort(world: World, f: Fort, at: V3, radius: number, damage: number): void {
+function damageFort(world: World, f: Fort, at: V3, radius: number, damage: number, attackerOwner: number): void {
   if (f.hp <= 0) return;
   const d = Math.hypot(f.pos.x - at.x, f.pos.z - at.z);
   const fall = blastFalloff(Math.max(0, d - 3), radius);
   if (fall <= 0) return;
+  if (isStructure(f.kind)) {
+    // Pillbox / bunker: collapse throws the occupants out (structures.ts).
+    damageStructure(world, f, damage * fall * COMBAT.heTargetMul.fort, attackerOwner);
+    if (f.hp <= 0) world.emit({ t: 'explosion', pos: { x: f.pos.x, y: world.terrain.heightAt(f.pos.x, f.pos.z), z: f.pos.z }, radius: 8, kind: 'he' });
+    return;
+  }
   f.hp -= damage * fall * COMBAT.heTargetMul.fort;
   if (f.hp <= 0) {
     f.hp = 0;

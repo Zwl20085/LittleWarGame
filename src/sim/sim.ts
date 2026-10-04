@@ -9,7 +9,7 @@ import { FrontlineField } from './frontline';
 import { updateMorale } from './morale';
 import { updateHeight, updateMovement } from './movement';
 import { advanceProduction, normalizedWeights, populationCap, populationOf, scheduleProduction } from './production';
-import { initSectors, thinkSectors } from './sectors';
+import { initFronts, thinkFronts } from './fronts';
 import { supplyTick, type SupplyNode } from './supply';
 import { convoySecond } from './convoy';
 import { createHighCommand, thinkHighCommand } from './command';
@@ -44,26 +44,26 @@ function makeFaction(world: World, id: number, isPlayer: boolean): Faction {
     alloc: [...e.allocation_default] as [number, number, number], locks: [false, false, false], autoEconomy: true,
     stewardHoldUntil: 0, stewardLastDir: -1, stewardReason: 'steward.default', stewardParams: {},
     resolve: world.data.rules.victory.initial_resolve, popPresent: 0, popReserved: 0, logistics: 0, supplyDemand: 0,
-    weights, caps: { ...world.data.rules.proposed_defaults.production_unit_caps }, paused: {}, unitSector: {},
-    spent: [], protectedOrder: null, protectRetryAt: 0, nextRaidAt: 240, command: createHighCommand(), depot: 0, lastWorksAt: -999, orders: [], manualQueue: [], sectors: [], mainSector: 1,
+    weights, caps: { ...world.data.rules.proposed_defaults.production_unit_caps }, paused: {},
+    spent: [], protectedOrder: null, protectRetryAt: 0, nextRaidAt: 240, command: createHighCommand(), depot: 0, lastWorksAt: -999, orders: [], manualQueue: [], fronts: [], mainFront: 0, frontSeq: 0,
     incomeP: 0, incomeM: 0, overflowWarnAt: -1e9, hqProgress: {}, lostUnits: 0, producedUnits: 0,
     spentTotalP: 0, spentTotalM: 0, aiThinkAt: id * 0.7, trucksUnderFire: [],
   };
 }
 
-/** Create a match: factions, sectors, free initial units and fixed strongpoints (§3.3, §5.2). */
+/** Create a match: factions, fronts, free initial units and fixed strongpoints (§3.3, §5.2). */
 export function createMatch(baseData: GameData, config: MatchConfig): Match {
   const data = scaledData(baseData, config.armyScale ?? baseData.rules.proposed_defaults.army_scale ?? 1);
   const world = new World(data, config);
   const n = world.hostile.length;
   for (let i = 0; i < n; i++) world.factions.push(makeFaction(world, i, !config.spectate && i === config.playerSlot));
   for (const f of world.factions) {
-    initSectors(world, f);
+    initFronts(world, f);
     const city = world.cityOf(f.id);
     const init = world.data.rules.economy.initial_units;
     const fwd = (city.forwardDeg * Math.PI) / 180;
     // Initial forces deploy as lines facing the enemy around the map-defined points (§3.3).
-    const line = (center: V2, count: number, spacing: number, unitId: string, sector: (k: number) => number): void => {
+    const line = (center: V2, count: number, spacing: number, unitId: string, front: (k: number) => number): void => {
       const perRow = Math.max(1, Math.min(count, 8));
       for (let k = 0; k < count; k++) {
         const col = (k % perRow) - (perRow - 1) / 2;
@@ -75,14 +75,14 @@ export function createMatch(baseData: GameData, config: MatchConfig): Match {
         const nav = world.nav(false, 35);
         let safe = nav.nearestPassable(p, 60) ?? center;
         if (!nav.connected(safe, city.exit)) safe = nav.nearestPassable(center, 60) ?? city.exit;
-        world.spawnUnit(f.id, unitId, safe, sector(k)).behavior = 'advance';
+        world.spawnUnit(f.id, unitId, safe, front(k)).behavior = 'advance';
       }
     };
     const inf = init.infantry ?? 3;
     city.vanguard.forEach((p, k) => line(p, Math.ceil(inf / city.vanguard.length), 18, 'infantry', () => k));
     line(city.recon, init.recon ?? 1, 26, 'recon', (k) => k % 3);
     line(city.truck, init.supply_truck ?? 1, 20, 'supply_truck', (k) => k % 3);
-    for (const sp of city.strongpoints) world.spawnUnit(f.id, 'mg', sp.pos, f.mainSector, { fixed: true, facingDeg: sp.facingDeg });
+    for (const sp of city.strongpoints) world.spawnUnit(f.id, 'mg', sp.pos, f.mainFront, { fixed: true, facingDeg: sp.facingDeg });
   }
   // Starting territory: settlements near each capital (and closer to it than to any other).
   const initR = data.rules.territory?.initial_radius_m ?? 0;
@@ -301,7 +301,7 @@ export function step(match: Match): void {
   const hz = world.tickHz;
   const units = world.aliveUnits;
   world.spatial.rebuild(units);
-  // City + sector AI at their own cadence.
+  // City + front AI at their own cadence.
   for (const f of world.factions) {
     if (!f.alive) continue;
     const cityEvery = f.difficulty === 'easy' ? 30 : f.difficulty === 'hard' ? 12 : AI.cityThinkSeconds;
@@ -310,7 +310,7 @@ export function step(match: Match): void {
       f.aiThinkAt = world.time + cityEvery;
     }
     thinkHighCommand(world, f);
-    if (world.tick % Math.round(AI.sectorThinkSeconds * hz) === f.id % (AI.sectorThinkSeconds * hz)) thinkSectors(world, f);
+    if (world.tick % Math.round(AI.frontThinkSeconds * hz) === f.id % (AI.frontThinkSeconds * hz)) thinkFronts(world, f);
   }
   // Unit executor, staggered.
   for (let i = 0; i < units.length; i++) {
@@ -348,7 +348,7 @@ export function step(match: Match): void {
   }
   // Front field every 2 s, then one faction's front info per tick: the ~10 ms burst of doing
   // it all at once stalled frames at high game speed. Scheduled just before the groups think
-  // (sector AI of faction f runs at tick ≡ f mod 2 s), so they read fresh information.
+  // (front AI of faction f runs at tick ≡ f mod 2 s), so they read fresh information.
   const frontPeriod = 2 * hz;
   const phase = world.tick % frontPeriod;
   const frontAt = frontPeriod - world.factions.length - 1;
@@ -370,6 +370,7 @@ export function step(match: Match): void {
       const f = world.forts[i];
       if (f.hp <= 0 && f.kind !== 'pontoon') world.forts.splice(i, 1);
       else if (f.occupant !== null && !world.unitAlive(f.occupant)) f.occupant = null;
+      if (f.occupants && f.occupants.some((id) => !world.unitAlive(id))) f.occupants = f.occupants.filter((id) => world.unitAlive(id));
     }
   }
   checkElimination(match);

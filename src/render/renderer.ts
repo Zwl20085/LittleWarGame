@@ -12,8 +12,10 @@ import { MapLabels } from './mapLabels';
 import { ObjectiveMarkers } from './objectiveMarkers';
 import { QualityGovernor, type QualityLevel, type QualityMode } from './quality';
 import { OpArrows } from './opArrows';
+import { OrderLines } from './orderLines';
 import { clothFlag, FLAG_TIME } from './flags';
 import { FieldWorks, isLineWork } from './fieldWorks';
+import { StructureViews } from './structures';
 import { FrontLines } from './frontLines';
 import { fortModel } from './models';
 import { PontoonView } from './pontoon';
@@ -26,7 +28,7 @@ export interface Layers {
   front: boolean;
   supply: boolean;
   ranges: boolean;
-  sectors: boolean;
+  fronts: boolean;
   /** Contours, impassable water, fords and steep (vehicle-impassable) slopes. */
   terrain: boolean;
 }
@@ -55,7 +57,7 @@ export class GameRenderer {
   readonly terrainView: TerrainView;
   readonly units: UnitViews;
   readonly effects: Effects;
-  readonly layers: Layers = { front: true, supply: false, ranges: false, sectors: true, terrain: false };
+  readonly layers: Layers = { front: true, supply: false, ranges: false, fronts: true, terrain: false };
   readonly overlay: ScreenOverlay;
   private readonly counters: UnitCounters;
   private readonly sun: THREE.DirectionalLight;
@@ -66,7 +68,11 @@ export class GameRenderer {
   private readonly fortViews = new Map<number, THREE.Group>();
   private readonly pontoonViews = new Map<number, PontoonView>();
   private readonly fieldWorks: FieldWorks;
+  /** Pillboxes / bunkers (instanced; works agent). */
+  private readonly structureViews: StructureViews;
   private readonly opArrows: OpArrows;
+  /** Supreme-HQ standing orders and the order being placed (2.0). */
+  readonly orderLines: OrderLines;
   private readonly overlayGroup = new THREE.Group();
   private readonly orderMarkers: { mesh: THREE.Mesh; life: number }[] = [];
   private frontVersion = -1;
@@ -126,11 +132,16 @@ export class GameRenderer {
     this.units.onWreckFire = (x, y, z, k) => this.effects.wreckFire(x, y, z, k);
     this.units.onTrackDust = (x, y, z, h) => this.effects.trackDust(x, y, z, h);
     this.effects.onBigMuzzle = (x, z) => this.units.recoilAt(x, z);
+    this.effects.terrain = w.terrain;
     this.effects.setTowns(w.objectives.filter((o) => o.kind !== 'point').map((o) => ({ x: o.pos.x, z: o.pos.z, r: Math.max(30, o.radius), y: w.terrain.heightAt(o.pos.x, o.pos.z) })));
     this.fieldWorks = new FieldWorks(w.terrain, (owner) => w.factions[owner]?.color ?? '#888888');
     this.scene.add(this.fieldWorks.group);
+    this.structureViews = new StructureViews(w.terrain, (owner) => w.factions[owner]?.color ?? '#888888');
+    this.scene.add(this.structureViews.group);
     this.opArrows = new OpArrows((x, z) => w.terrain.heightAt(x, z));
     this.scene.add(this.opArrows.mesh);
+    this.orderLines = new OrderLines((x, z) => w.terrain.heightAt(x, z));
+    this.scene.add(this.orderLines.group);
     this.objectiveMarkers = new ObjectiveMarkers(w.objectives, w.terrain);
     this.scene.add(this.objectiveMarkers.group);
     this.buildCities();
@@ -262,8 +273,10 @@ export class GameRenderer {
     // Trenches and barricades (including wrecked ones) are batched separately.
     this.fieldWorks.sync(w.forts, w.time);
     for (let i = 0; i < this.fieldWorks.siteCount; i++) this.effects.workSite(this.fieldWorks.sites[i], dt);
+    this.structureViews.sync(w.forts, w.time);
+    for (let i = 0; i < this.structureViews.siteCount; i++) this.effects.workSite(this.structureViews.sites[i], dt);
     for (const f of w.forts) {
-      if (f.hp <= 0 || isLineWork(f.kind)) continue;
+      if (f.hp <= 0 || isLineWork(f.kind) || f.kind === 'pillbox' || f.kind === 'bunker') continue;
       seen.add(f.id);
       if (f.kind === 'pontoon') {
         let pv = this.pontoonViews.get(f.id);
@@ -278,7 +291,7 @@ export class GameRenderer {
       }
       let v = this.fortViews.get(f.id);
       if (!v) {
-        v = fortModel(f.kind);
+        v = fortModel(f.kind === 'field_cover' ? 'field_cover' : 'mg_bunker'); // pillbox / bunker: StructureViews
         v.position.set(f.pos.x, w.terrain.heightAt(f.pos.x, f.pos.z), f.pos.z);
         v.rotation.y = -f.facing;
         v.traverse((o) => { o.castShadow = true; o.receiveShadow = true; });
@@ -339,7 +352,7 @@ export class GameRenderer {
 
   /** Rebuild route/supply/range lines a few times a second (not every frame), disposing the old ones. */
   private drawOverlays(realDt: number): void {
-    const key = `${this.layers.sectors}|${this.layers.supply}|${this.layers.ranges}|${[...this.units.selected].join(',')}`;
+    const key = `${this.layers.fronts}|${this.layers.supply}|${this.layers.ranges}|${[...this.units.selected].join(',')}`;
     this.overlayTimer -= realDt;
     if (this.overlayTimer > 0 && key === this.overlayKey) return;
     this.overlayTimer = 0.25;
@@ -368,10 +381,10 @@ export class GameRenderer {
       const n = Math.max(2, Math.ceil(Math.hypot(b.x - a.x, b.z - a.z) / 15));
       return Array.from({ length: n + 1 }, (_, k) => lift({ x: a.x + ((b.x - a.x) * k) / n, z: a.z + ((b.z - a.z) * k) / n }, dy));
     };
-    if (this.layers.sectors && f.alive) {
+    if (this.layers.fronts && f.alive) {
       const exit = w.cityOf(f.id).exit;
-      for (const s of f.sectors) {
-        const main = s.id === f.mainSector;
+      for (const s of f.fronts) {
+        const main = s.id === f.mainFront;
         this.overlayGroup.add(mk(along(exit, s.rally, 3).concat(along(s.rally, s.targetPos, 3)), main ? '#f4ecd9' : '#d8cfb8', true, main ? 0.95 : 0.6));
         const tip = lift(s.targetPos, 3);
         const head = new THREE.Mesh(new THREE.ConeGeometry(4, 9, 3), new THREE.MeshBasicMaterial({ color: '#f4ecd9', depthTest: false, transparent: true, opacity: 0.9 }));
@@ -448,8 +461,9 @@ export class GameRenderer {
     const q = this.quality.profile;
     this.terrainView.scatter.visible = ppm > 1 && q.scatter;
     this.frontLines.update(realDt, ppm);
-    this.opArrows.sync(w, this.playerId, this.spectator, this.layers.sectors);
+    this.opArrows.sync(w, this.playerId, this.spectator, this.layers.fronts);
     this.opArrows.update(ppm);
+    this.orderLines.sync(w, this.playerId, this.spectator, this.layers.fronts, ppm);
     FLAG_TIME.value += realDt;
     this.terrainView.uniforms.uOverlayK.value = ppm > 4 ? 0.5 : ppm > 1.5 ? 0.8 : 1;
     this.units.showSoldiers = ppm > 0.7;
@@ -485,6 +499,7 @@ export class GameRenderer {
     this.overlay.begin(this.rig.camera);
     this.labels.draw(this.overlay, ppm, this.rig.zoom, lang(), null);
     this.counters.draw(this.overlay, ppm, this.playerId, this.fog);
+    this.orderLines.drawLabels(this.overlay, w, this.playerId, this.spectator, this.layers.fronts);
   }
 
   /** Player setting: fixed tier, or auto (start high, step down on slow frames). */
@@ -495,6 +510,7 @@ export class GameRenderer {
 
   private applyQuality(): void {
     const q = this.quality.profile;
+    this.effects.detail = this.quality.level;
     this.renderer.setPixelRatio(Math.min(q.maxPixelRatio, window.devicePixelRatio));
     const shadows = q.shadowMap > 0;
     if (this.renderer.shadowMap.enabled !== shadows) {
@@ -526,6 +542,7 @@ export class GameRenderer {
   }
 
   dispose(): void {
+    this.structureViews.dispose();
     this.objectiveMarkers.dispose();
     this.overlay.dispose();
     this.renderer.dispose();

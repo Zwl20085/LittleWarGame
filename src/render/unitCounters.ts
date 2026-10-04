@@ -72,12 +72,19 @@ export class UnitCounters {
     else this.occ.fill(0, 0, this.occW * this.occH);
     this.cells.clear();
     const priority: [Unit, number, number][] = [];
+    const commanders: [Unit, number, number][] = [];
+    const cmdId = w.data.rules.command.commander_unit;
     for (const u of w.units.values()) {
       if (u.hp <= 0) continue;
       const v = this.views.views.get(u.id);
       if (!v || !v.visible || !v.onScreen) continue;
       if (!o.project(v.x, v.y + v.spec.top, v.z, P) || !o.onScreen(P)) continue;
       const isSel = sel.has(u.id) || hov === u.id;
+      // Front commanders always show their HQ counter and pennant, at every zoom.
+      if (u.def.id === cmdId) {
+        commanders.push([u, P.x, P.y]);
+        continue;
+      }
       if (isSel) {
         priority.push([u, P.x, P.y]);
         continue;
@@ -118,6 +125,12 @@ export class UnitCounters {
         if (c.hp < c.maxHp * 0.98) this.bar(g, x - cw / 2, y + 1, cw, c.hp / c.maxHp);
       }
     }
+    for (const [u, x, y] of commanders) {
+      const hi = sel.has(u.id) || hov === u.id;
+      const cw2 = (hi ? 30 : 24) * scale;
+      this.counter(g, u, x, y, cw2, cw2 * (2 / 3), hi);
+      this.pennant(g, x, y - cw2 * (2 / 3), w.factions[u.owner].color, scale);
+    }
     // Selected / hovered last, always on top.
     const big = 30 * scale;
     for (const [u, x, y] of priority) this.counter(g, u, x, y, big, big * (2 / 3), true);
@@ -153,6 +166,35 @@ export class UnitCounters {
       byType.set(sk, s);
     }
     g.drawImage(s.canvas, s.sx, s.sy, s.w, s.h, Math.round(x * dpr) / dpr, Math.round(y * dpr) / dpr, s.w / dpr, s.h / dpr);
+  }
+
+  /** HQ pennant on a staff above a commander's counter (swallow-tailed, faction colour). */
+  private pennant(g: CanvasRenderingContext2D, x: number, top: number, color: string, scale: number): void {
+    const k = scale;
+    const px = x - 8 * k;
+    const y0 = top - 15 * k;
+    g.strokeStyle = '#1f231e';
+    g.lineWidth = 1.6;
+    g.beginPath();
+    g.moveTo(px, top + 1);
+    g.lineTo(px, y0);
+    g.stroke();
+    g.beginPath();
+    g.moveTo(px, y0);
+    g.lineTo(px + 17 * k, y0);
+    g.lineTo(px + 12 * k, y0 + 4 * k);
+    g.lineTo(px + 17 * k, y0 + 8 * k);
+    g.lineTo(px, y0 + 8 * k);
+    g.closePath();
+    g.fillStyle = color;
+    g.fill();
+    g.lineWidth = 1.2;
+    g.stroke();
+    // A brass star on the pennant.
+    g.fillStyle = '#e3c27a';
+    g.beginPath();
+    g.arc(px + 5 * k, y0 + 4 * k, 1.8 * k, 0, Math.PI * 2);
+    g.fill();
   }
 
   private bar(g: CanvasRenderingContext2D, x: number, y: number, w: number, ratio: number): void {

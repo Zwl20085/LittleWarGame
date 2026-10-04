@@ -2,7 +2,7 @@ import { safeRear } from './frontai';
 import { hostileMask } from './spatial';
 import { bombardPoint } from './storm';
 import { threatCentre } from './terrainai';
-import type { Sector, Unit } from './types';
+import type { Front, Unit } from './types';
 import { dist, type V2 } from './vec';
 import type { World } from './world';
 
@@ -73,7 +73,7 @@ function hotSpots(world: World, f: number): HotSpot[] {
 }
 
 /** Nearest hot spot to the unit within reach, else the group's own engagement (as a spot), else null. */
-function fightFor(world: World, u: Unit, s: Sector): HotSpot | null {
+function fightFor(world: World, u: Unit, s: Front): HotSpot | null {
   let best: HotSpot | null = null;
   let bd: number = CREW.hotReachM;
   for (const h of hotSpots(world, u.owner)) {
@@ -89,11 +89,11 @@ function fightFor(world: World, u: Unit, s: Sector): HotSpot | null {
 }
 
 interface Engagement { t: number; p: V2 | null }
-const engagements = new WeakMap<Sector, Engagement>();
+const engagements = new WeakMap<Front, Engagement>();
 const posts = new WeakMap<Unit, V2>();
 
 /** Known enemy mass at the group's front (null = not in contact), cached per group. */
-export function engagement(world: World, f: number, s: Sector): V2 | null {
+export function engagement(world: World, f: number, s: Front): V2 | null {
   const e = engagements.get(s);
   if (e && world.time - e.t < CREW.cacheS) return e.p;
   const p = threatCentre(world, f, s.front, CREW.engageR);
@@ -126,7 +126,7 @@ function along(from: V2, to: V2, d: number, side: number): V2 {
 const spreadOf = (u: Unit): number => (((Math.imul(u.id, 2654435761) >>> 0) % 1000) / 1000) - 0.5;
 
 /** MG / AT post: on the axis between the enemy mass and our line, inside range; null = use the formation slot. */
-export function crewPost(world: World, u: Unit, s: Sector): V2 | null {
+export function crewPost(world: World, u: Unit, s: Front): V2 | null {
   // The nearest stretch of front that is actually fighting (transit was 60–75 % of crew time).
   const h = fightFor(world, u, s);
   if (!h) {
@@ -141,7 +141,7 @@ export function crewPost(world: World, u: Unit, s: Sector): V2 | null {
 }
 
 /** Gun post: within range of the capital's defenders when besieging it, else of the group's enemy mass; null = old rule. */
-export function gunPost(world: World, u: Unit, s: Sector, safe: number): V2 | null {
+export function gunPost(world: World, u: Unit, s: Front, safe: number): V2 | null {
   const range = u.primary?.range ?? 300;
   const home = world.cityOf(u.owner).exit;
   if (s.op === 'siege' && s.targetCity !== null && s.opPhase !== '') {

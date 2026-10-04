@@ -5,6 +5,7 @@ import type { Unit } from './types';
 import { clamp, DEG, dist, headingTo, turnToward, type V2, angleDiff } from './vec';
 import type { World } from './world';
 import { updateWorksCover } from './works';
+import { isStructure, updateStructureGarrison } from './structures';
 
 /** Set a movement destination; path is (re)computed lazily and rate-limited. */
 export function moveTo(world: World, u: Unit, dest: V2, force = false): void {
@@ -102,7 +103,9 @@ export const MOTOR = {
   mountSeconds: 5,
   minTripM: 180,
   safeRadiusM: 450,
-  mountedDamageMul: 1.3,
+  mountedDamageMul: 1.15,
+  /** 2.0 attack-side round: a motorized spearhead stays mounted until known enemies are this close (450 m otherwise). */
+  spearSafeRadiusM: 220,
 } as const;
 
 /** Mount/dismount state machine; true while the squad is getting on or off its trucks. */
@@ -116,7 +119,7 @@ function handleMount(world: World, u: Unit, wantsMove: boolean): boolean {
   if (want) {
     // Any known enemy within the safety radius keeps the squad on foot (early-exit search).
     const f = u.owner;
-    if (world.spatial.findOwner(u.pos.x, u.pos.z, MOTOR.safeRadiusM, hostileMask(world, f), (o) => o.hp > 0 && world.isHostile(f, o.owner) && world.knows(f, o))) want = false;
+    if (world.spatial.findOwner(u.pos.x, u.pos.z, u.spearhead ? MOTOR.spearSafeRadiusM : MOTOR.safeRadiusM, hostileMask(world, f), (o) => o.hp > 0 && world.isHostile(f, o.owner) && world.knows(f, o))) want = false;
   }
   if (want === u.mounted) return false;
   u.mounted = want;
@@ -365,6 +368,8 @@ export function updateHeight(world: World, u: Unit): void {
   if (moved) u.y = world.terrain.heightAt(u.pos.x, u.pos.z);
   if (world.forts.length > 0) {
     updateWorksCover(world, u);
+    // Pillboxes / bunkers: enter / leave (structures.ts, staggered every 10th tick per unit).
+    updateStructureGarrison(world, u);
     // Scanning every work for every squad each tick is O(units × works): stagger it.
     if ((world.tick + u.id) % GARRISON_CHECK_TICKS === 0) updateGarrison(world, u);
   }
@@ -380,7 +385,8 @@ export function updateHeight(world: World, u: Unit): void {
 function updateGarrison(world: World, u: Unit): void {
   if (u.def.kind === 'vehicle' || u.fixed) return;
   if (u.fortId !== null) {
-    const f = world.forts.find((x) => x.id === u.fortId);
+    const f = world.fortById(u.fortId);
+    if (f && isStructure(f.kind)) return; // pillbox / bunker occupancy: structures.ts
     if (!f || f.hp <= 0 || dist(f.pos, u.pos) > 7) {
       if (f && f.occupant === u.id) f.occupant = null;
       u.fortId = null;
@@ -389,7 +395,7 @@ function updateGarrison(world: World, u: Unit): void {
   }
   if (u.moving) return;
   for (const f of world.forts) {
-    if (f.hp <= 0 || f.progress < 1 || f.occupant !== null || world.isHostile(u.owner, f.owner)) continue;
+    if (f.hp <= 0 || f.progress < 1 || f.occupant !== null || isStructure(f.kind) || world.isHostile(u.owner, f.owner)) continue;
     if (dist(f.pos, u.pos) <= 5) {
       f.occupant = u.id;
       u.fortId = f.id;

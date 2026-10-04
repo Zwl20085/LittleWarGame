@@ -36,6 +36,7 @@ export class ProductionBar {
     this.tip = h('div', { class: 'unit-tip panel', role: 'tooltip' });
     this.tip.style.display = 'none';
     for (const id of data.unitOrder) {
+      if (id === data.rules.command.commander_unit) continue; // appointed by the supreme HQ, not bought
       const name = h('span', { class: 'cname' });
       const cost = h('span', { class: 'ccost num' });
       const count = h('span', { class: 'ccount num' });
@@ -193,16 +194,12 @@ export class ProductionBar {
       this.pop.style.display = 'none';
       return;
     }
-    const sig = JSON.stringify([id, f.weights[id], f.caps[id], f.paused[id], f.unitSector[id]]);
+    const sig = JSON.stringify([id, f.weights[id], f.caps[id], f.paused[id]]);
     if (sig === this.popSig) return;
     this.popSig = sig;
     const def = w.data.units.get(id)!;
     const weight = f.weights[id] ?? 0;
     const cap = f.caps[id] ?? 0;
-    const sectorSel = h('select', { class: 'sel', onchange: (e: Event) => this.ctx.issue({ type: 'setUnitSector', unitId: id, sectorId: Number((e.target as HTMLSelectElement).value) }) },
-      h('option', { value: '-1' }, t('prod.autoSector')),
-      ...f.sectors.map((s) => h('option', { value: String(s.id) }, t(`sector.${s.key}`))));
-    sectorSel.value = String(f.unitSector[id] ?? -1);
     const wInput = h('input', { type: 'number', min: 0, max: 100, step: 1, value: weight, class: 'numin',
       onchange: (e: Event) => this.ctx.issue({ type: 'setWeight', unitId: id, weight: Number((e.target as HTMLInputElement).value) }) });
     const cInput = h('input', { type: 'number', min: 0, max: 40, step: 1, value: cap, class: 'numin',
@@ -224,10 +221,9 @@ export class ProductionBar {
         def.armorFront > 0 ? ` · ${def.armorFront}/${def.armorSide}/${def.armorRear} mm` : ''),
       h('label', { class: 'row' }, h('span', { class: 'lbl' }, t('prod.weight')), wInput),
       h('label', { class: 'row' }, h('span', { class: 'lbl' }, t('prod.cap')), cInput),
-      h('label', { class: 'row' }, h('span', { class: 'lbl' }, t('prod.sector')), sectorSel),
       h('div', { class: 'row' },
         h('button', { class: 'btn', onclick: () => this.ctx.issue({ type: 'togglePause', unitId: id }) }, f.paused[id] ? t('prod.resume') : t('prod.pause')),
-        h('button', { class: 'btn primary', onclick: () => this.ctx.issue({ type: 'queueUnit', unitId: id, sectorId: Math.max(0, f.unitSector[id] ?? f.mainSector) }) }, `＋ ${t('prod.addOne')}`)),
+        h('button', { class: 'btn primary', onclick: () => this.ctx.issue({ type: 'queueUnit', unitId: id, frontId: -1 }) }, `＋ ${t('prod.addOne')}`)),
     );
   }
 }

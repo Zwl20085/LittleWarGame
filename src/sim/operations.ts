@@ -14,7 +14,7 @@ const SC_CROWD: Unit[] = [];
  *
  * - Front segments: each army group owns a stretch of the faction's front, so units
  *   are distributed along the full line instead of piling on one point.
- * - Raids: small detachments infiltrate through weak front sectors toward enemy convoy routes.
+ * - Raids: small detachments infiltrate through weak front fronts toward enemy convoy routes.
  * - Rear guard: a share of the army secures our own convoy routes and reacts to raiders.
  * - Counter-battery: firing guns reveal an approximate position to the enemy for a while.
  */
@@ -37,8 +37,8 @@ export type OpRole = 'line' | 'raid' | 'rearguard';
 
 /** Sort front cells into contiguous order by angle around the capital, then split per group. */
 export function frontSegments(world: World, f: Faction, cells: V2[]): V2[][] {
-  const groups = f.sectors.length;
-  if (cells.length === 0 || groups === 0) return f.sectors.map(() => []);
+  const groups = f.fronts.length;
+  if (cells.length === 0 || groups === 0) return f.fronts.map(() => []);
   const hq = world.hqPos(f.id);
   const fwd = Math.atan2(cells.reduce((a, c) => a + c.z - hq.z, 0), cells.reduce((a, c) => a + c.x - hq.x, 0));
   const withAng = cells.map((c) => {
@@ -47,8 +47,8 @@ export function frontSegments(world: World, f: Faction, cells: V2[]): V2[][] {
     while (a < -Math.PI) a += 2 * Math.PI;
     return { c, a };
   }).sort((p, q) => p.a - q.a);
-  // Equal shares by count, in left → right order (matching sector keys left/center/right).
-  const out: V2[][] = f.sectors.map(() => []);
+  // Equal shares by count, in left → right order (matching front keys left/center/right).
+  const out: V2[][] = f.fronts.map(() => []);
   withAng.forEach((p, i) => out[Math.min(groups - 1, Math.floor((i / withAng.length) * groups))].push(p.c));
   return out;
 }
@@ -129,12 +129,12 @@ const guardSpot = (world: World, u: Unit, p: V2): V2 => (stormOn() ? navPost(wor
 const isGuard = (u: Unit): boolean => u.def.id === 'infantry' || u.def.id === 'motor_inf' || (u.def.id === 'mg' && !stormOn()) || u.def.id === 'light_tank';
 
 /**
- * Faction-level operations (every sector think, cheap): keep a rear guard on our convoy routes
+ * Faction-level operations (every front think, cheap): keep a rear guard on our convoy routes
  * and periodically launch a raid through the weakest stretch of the enemy front toward their rear.
  */
 export function planOperations(world: World, f: Faction): void {
   const mine: Unit[] = [];
-  for (const u of world.units.values()) if (u.owner === f.id && u.hp > 0 && !u.fixed && u.def.id !== 'supply_truck') mine.push(u);
+  for (const u of world.units.values()) if (u.owner === f.id && u.hp > 0 && !u.fixed && u.def.id !== 'supply_truck' && u.def.id !== 'commander') mine.push(u);
   if (mine.length < 20) return;
   const contact = (world.frontInfo[f.id]?.cells.length ?? 0) > 0;
   // Rear guard: posts along our own convoy routes, filled from units far from the front.
@@ -157,8 +157,14 @@ export function planOperations(world: World, f: Faction): void {
   } else if (guards.length > wantGuards + 2) {
     for (const u of guards.slice(wantGuards)) u.opRole = 'line';
   }
-  // Re-post guards to the current routes now and then.
-  if (route.length) for (const u of guards) if (!u.opTarget || (world.tick + u.id) % 600 === 0) u.opTarget = guardSpot(world, u, route[(u.id * 7) % route.length]);
+  // Re-post guards to the current routes now and then; a guard that cannot reach its post takes the
+  // next route point (round 6 soak: rear guards 'unreachable' for minutes on a slope / forest post).
+  if (route.length) {
+    for (const u of guards) {
+      if (u.pathFailed) u.opTarget = guardSpot(world, u, route[(u.id * 7 + Math.floor(world.time / 10)) % route.length]);
+      else if (!u.opTarget || (world.tick + u.id) % 600 === 0) u.opTarget = guardSpot(world, u, route[(u.id * 7) % route.length]);
+    }
+  }
   // Raids through the weakest front stretch toward the enemy rear.
   if (!contact || finisher || world.time < f.nextRaidAt) return;
   f.nextRaidAt = world.time + OPS.raidEverySeconds;
@@ -170,7 +176,10 @@ export function planOperations(world: World, f: Faction): void {
   const target = { x: gap.x + Math.cos(dir) * 380, z: gap.z + Math.sin(dir) * 380 };
   if (!world.terrain.inBounds(target.x, target.z)) return;
   const size = Math.max(3, Math.round(mine.length * OPS.raidShare));
-  const pool = mine.filter((u) => u.opRole === 'line' && !u.spearhead && !u.manual && isRaider(u) && u.behavior === 'advance' && u.hp > u.def.maxHp * 0.7)
+  // 2.0 attack-side round: a front storming / besieging a capital keeps its troops (storm diag: 4–7 of
+  // ~40 units of a storming front were off raiding while the assault reached the HQ piecemeal).
+  const besieging = new Set(f.fronts.filter((s) => s.op === 'siege' && s.targetCity !== null && s.opPhase !== '').map((s) => s.id));
+  const pool = mine.filter((u) => u.opRole === 'line' && !u.spearhead && !u.manual && isRaider(u) && u.behavior === 'advance' && u.hp > u.def.maxHp * 0.7 && !besieging.has(u.frontId))
     .sort((a, b) => dist(a.pos, gap) - dist(b.pos, gap)).slice(0, size);
   if (pool.length < 3) return;
   for (const u of pool) {

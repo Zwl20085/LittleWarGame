@@ -60,7 +60,7 @@ export interface Unit {
   pathFailed: boolean;
   moving: boolean;
   speedNow: number;
-  sectorId: number;
+  frontId: number;
   behavior: Behavior;
   manual: ManualTask | null;
   queue: ManualTask[];
@@ -127,9 +127,51 @@ export interface Unit {
 /** 正面推进 / 侧面迂回 / 钳形攻势 / 武装渗透 / 筑垒围攻. */
 export type OperationKind = 'frontal' | 'flank' | 'pincer' | 'infiltrate' | 'siege';
 
-export interface Sector {
+/**
+ * 2.0 command hierarchy. The supreme HQ (the player, or the AI's theatre planner) gives each
+ * front one high-level order; the front commander (a unit) turns it into tactics.
+ *   auto     — the front commander picks its own objective (supreme HQ attack bias still applies)
+ *   attack   — take the place / break the line at `a` (`b` = a line to assault along)
+ *   defend   — hold the line a–b (a point: a line through `a` facing away from home)
+ *   fortify  — hold the line a–b and have the engineers build works along it
+ *   fallBack — give up the current ground and defend the (nearer) line a–b
+ */
+export type OrderKind = 'auto' | 'attack' | 'defend' | 'fortify' | 'fallBack';
+
+export interface FrontOrder {
+  readonly kind: OrderKind;
+  readonly a: V2;
+  /** Second point of a line order (null = a point order). */
+  readonly b: V2 | null;
+  readonly issuedAt: number;
+  /** Who issued it: the player (manual) or the AI supreme HQ. */
+  readonly manual: boolean;
+}
+
+/** A line the front holds / assaults along (from a line order, or chosen by the commander). */
+export interface FrontLine {
+  readonly a: V2;
+  readonly b: V2;
+}
+
+/**
+ * An army group with a front commander (2.0; was the fixed left/centre/right "sector").
+ * Fronts are created and dissolved by the supreme HQ; `id` is unique per faction for the match.
+ */
+export interface Front {
   readonly id: number;
-  readonly key: 'left' | 'center' | 'right';
+  /** Settlement id the front is named after (its current objective), '' until it has one. */
+  name: string;
+  /** Wing from the capital's view: -1 left, 0 centre, +1 right (replaces the old sector key). */
+  wing: -1 | 0 | 1;
+  /** The front commander unit (null while a replacement is on its way). */
+  commanderId: number | null;
+  /** When the commander was lost (−1 = none lost); the front fights without cohesion until replaced. */
+  commanderLostAt: number;
+  /** Standing supreme-HQ order. */
+  order: FrontOrder;
+  /** Line derived from the order (defend / fortify / fallBack, or an attack along a line), else null. */
+  line: FrontLine | null;
   share: number;
   posture: Posture;
   targetPos: V2;
@@ -146,7 +188,7 @@ export interface Sector {
   /** Centre of this group's battle line and the direction it faces (toward the enemy). */
   front: V2;
   facing: number;
-  /** Formation slot per unit id (recomputed every sector think). */
+  /** Formation slot per unit id (recomputed every front think). */
   slots: Record<number, V2>;
   /** Route crossing (bridge/ford) being staged for, if any. */
   crossing: { pos: V2; kind: 'bridge' | 'ford' | 'pass'; staging: V2; key: string } | null;
@@ -176,7 +218,7 @@ export interface ProductionOrder {
   readonly facility: string;
   readonly slot: number;
   readonly manual: boolean;
-  readonly sectorId: number;
+  readonly frontId: number;
   remaining: number;
   total: number;
   readonly costP: number;
@@ -185,6 +227,7 @@ export interface ProductionOrder {
   /** Where the finished unit rolls out (an owned production place near its group's front). */
   readonly spawn: V2;
 }
+/* `frontId` on an order: the front the unit joins (-1 = the supreme HQ picks on roll-out). */
 
 export interface SpendRecord {
   readonly tick: number;
@@ -219,7 +262,6 @@ export interface Faction {
   weights: Record<string, number>;
   caps: Record<string, number>;
   paused: Record<string, boolean>;
-  unitSector: Record<string, number>;
   spent: SpendRecord[];
   protectedOrder: { unitId: string; until: number } | null;
   protectRetryAt: number;
@@ -231,9 +273,11 @@ export interface Faction {
   depot: number;
   lastWorksAt: number;
   orders: ProductionOrder[];
-  manualQueue: { unitId: string; sectorId: number }[];
-  sectors: Sector[];
-  mainSector: number;
+  manualQueue: { unitId: string; frontId: number }[];
+  fronts: Front[];
+  mainFront: number;
+  /** Next front id (fronts are created and dissolved during the match). */
+  frontSeq: number;
   incomeP: number;
   incomeM: number;
   overflowWarnAt: number;
@@ -285,7 +329,8 @@ export interface Projectile {
   done: boolean;
 }
 
-export type FortKind = 'field_cover' | 'mg_bunker' | 'trench' | 'sandbag' | 'pontoon';
+/** 2.0: pillbox (炮楼) and bunker (堡垒) are engineer-built defensive buildings manned by squads. */
+export type FortKind = 'field_cover' | 'mg_bunker' | 'trench' | 'sandbag' | 'pontoon' | 'pillbox' | 'bunker';
 
 export interface Fort {
   readonly id: number;
@@ -307,6 +352,9 @@ export interface Fort {
   readonly maxHp: number;
   progress: number;
   occupant: number | null;
+  /** Defensive buildings: squads it can hold (default 1); occupants beyond `occupant` (bunkers). */
+  readonly capacity?: number;
+  occupants?: number[];
 }
 
 export type FxEvent =

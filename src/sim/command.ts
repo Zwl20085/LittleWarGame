@@ -8,7 +8,10 @@ import { ADAPT, adaptive, EAGER, eagerOn, stormOn } from './strategyai';
 import { navPost } from './crewai';
 import { assessFinisher, FINISH } from './storm';
 import { populationCap } from './production';
+import { isCommander } from './formulas';
 import { createHomeThreat, fortifyPlace, homeOn, thinkHomeDefence, thinkHomeGuard, type HomeThreat } from './homeguard';
+import { reassignStale } from './frontops';
+import { thinkTheatre } from './theatre';
 import type { Faction, Objective, Unit } from './types';
 import { dist, headingTo, type V2 } from './vec';
 import type { World } from './world';
@@ -95,7 +98,7 @@ function assessMood(world: World, f: Faction): void {
   let idle = 0;
   const known = new Map<number, number>();
   for (const u of world.units.values()) {
-    if (u.hp <= 0 || u.fixed || u.def.id === 'supply_truck') continue;
+    if (u.hp <= 0 || u.fixed || u.def.id === 'supply_truck' || isCommander(u.def)) continue;
     const v = u.def.costP + u.def.costM;
     if (u.owner === f.id) {
       army += v;
@@ -172,7 +175,7 @@ function chooseFinishTarget(world: World, f: Faction, army: number, known: Map<n
 const GARRISON_TYPES = new Set(['infantry', 'motor_inf', 'mg', 'at_gun', 'engineer', 'light_tank', 'medium_tank', 'heavy_tank']);
 const OCCUPY_TYPES = new Set(['infantry', 'motor_inf', 'engineer', 'recon']);
 
-const valueOf = (u: Unit): number => (u.def.costP + u.def.costM) * (u.hp / u.def.maxHp);
+const valueOf = (u: Unit): number => (isCommander(u.def) ? 0 : (u.def.costP + u.def.costM) * (u.hp / u.def.maxHp));
 
 /**
  * Economic + strategic worth of a settlement (income per minute, strategic towns weigh more).
@@ -256,15 +259,18 @@ export function thinkHighCommand(world: World, f: Faction): void {
   assignOccupations(world, f, dirs.filter((d) => d.kind === 'occupy'));
   // The UI shows the top few (all three kinds represented when present).
   hc.directives = pickShown(dirs);
+  // 2.0 supreme HQ: units of dissolved fronts rejoin; AI factions set fronts and their orders (theatre.ts).
+  reassignStale(world, f);
+  thinkTheatre(world, f);
 }
 
 /** Units of the army groups currently aimed at `obj` (for the battle-event log only). */
 function attackersOf(world: World, f: Faction, obj: string): Unit[] {
   if (world.battle.lastAttack.get(f.id) === obj) return [];
-  const secs = new Set(f.sectors.filter((s) => s.targetObjective === obj).map((s) => s.id));
+  const secs = new Set(f.fronts.filter((s) => s.targetObjective === obj).map((s) => s.id));
   if (secs.size === 0) return [];
   const out: Unit[] = [];
-  for (const u of world.units.values()) if (u.owner === f.id && u.hp > 0 && !u.fixed && secs.has(u.sectorId)) out.push(u);
+  for (const u of world.units.values()) if (u.owner === f.id && u.hp > 0 && !u.fixed && secs.has(u.frontId)) out.push(u);
   return out;
 }
 
@@ -275,6 +281,7 @@ function pickShown(dirs: Directive[]): Directive[] {
 }
 
 function freeLine(u: Unit): boolean {
+  if (isCommander(u.def)) return false;
   return u.opRole === 'line' && !u.spearhead && !u.manual && !u.routing && u.behavior === 'advance';
 }
 
@@ -284,7 +291,7 @@ function assignGarrisons(world: World, f: Faction, defend: Directive[]): void {
   let army = 0;
   let tied = 0;
   for (const u of world.units.values()) {
-    if (u.owner !== f.id || u.hp <= 0 || u.fixed || u.def.id === 'supply_truck') continue;
+    if (u.owner !== f.id || u.hp <= 0 || u.fixed || u.def.id === 'supply_truck' || isCommander(u.def)) continue;
     mine.push(u);
     army += valueOf(u);
     if (u.opRole === 'garrison') tied += valueOf(u);
@@ -318,8 +325,8 @@ function assignGarrisons(world: World, f: Faction, defend: Directive[]): void {
       continue;
     }
     // Groups in the middle of an operation (forming up, digging in, storming) keep their troops.
-    const busy = new Set(f.sectors.filter((s) => s.op !== 'frontal' && s.opPhase !== '').map((s) => s.id));
-    const pool = mine.filter((u) => freeLine(u) && !busy.has(u.sectorId) && GARRISON_TYPES.has(u.def.id) && dist(u.pos, d.pos) < HQ.assignRadius)
+    const busy = new Set(f.fronts.filter((s) => s.op !== 'frontal' && s.opPhase !== '').map((s) => s.id));
+    const pool = mine.filter((u) => freeLine(u) && !busy.has(u.frontId) && GARRISON_TYPES.has(u.def.id) && dist(u.pos, d.pos) < HQ.assignRadius)
       .sort((a, b) => dist(a.pos, d.pos) - dist(b.pos, d.pos));
     const sent: Unit[] = [];
     for (const u of pool) {
@@ -342,6 +349,17 @@ function assignGarrisons(world: World, f: Faction, defend: Directive[]): void {
 
 /** Occupy directives: small infantry detachments take open settlements behind the lines. */
 function assignOccupations(world: World, f: Faction, occupy: Directive[]): void {
+  // Round 7 (lead decision, wars must end): a finisher sends no occupation detachments; those out return to the line (and the storm).
+  if (f.command.finisher) {
+    for (const u of world.units.values()) {
+      if (u.owner !== f.id || u.hp <= 0 || u.opRole !== 'occupy') continue;
+      u.opRole = 'line';
+      u.opObjective = null;
+      u.opTarget = null;
+    }
+    for (const d of occupy) d.assigned = 0;
+    return;
+  }
   const active = new Map<string, number>();
   const pool: Unit[] = [];
   for (const u of world.units.values()) {

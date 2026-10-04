@@ -5,7 +5,12 @@ import { eagerOn, stormOn, STRATEGY_AI } from './strategyai';
 import { Ground } from './terrain';
 import { navPost } from './crewai';
 import { dig, openWork, startLine, WORKS } from './works';
-import type { Faction, Sector, Unit } from './types';
+import { isCommander } from './formulas';
+import { planPlaceStructure, planStructures } from './fortplans';
+import { eligibleCapturer } from './capture';
+import { leaveStructure } from './structures';
+import { counterStrikes, frontById } from './frontref';
+import type { Faction, Front, Unit } from './types';
 import { angleDiff, dist, headingTo, type V2 } from './vec';
 import type { World } from './world';
 
@@ -51,6 +56,8 @@ export const HOME = {
   allGroupsShare: 0.5,
   /** Hopeless: forecast ≥ this × our whole army → no group marches home early (only once the enemy is within `gatesEtaS`); guards and works still go in. */
   hopelessRatio: 1.5,
+  /** Round 7: also hopeless when the main attacker's whole known army is ≥ this × ours (its storm front alone may be smaller than our home army). */
+  hopelessArmyRatio: 2,
   gatesEtaS: 120,
   /** Occupation detachments within this range of the capital are the first home guards. */
   occupyRecallM: 600,
@@ -75,12 +82,59 @@ export const HOME = {
   reserveCostMul: 0.5,
   /** Towns / cities with a defend directive: one trench across the approach, `placeTrenchPad` m outside the place radius. */
   placeTrenchPad: 40,
+  /**
+   * Round 7 (challenge lab): `alert` counts only contact, groups aimed at us inside scanM, and aimed
+   * closing groups whose ETA is ≤ alarmEtaS. The wide `active` state (on 85–98 % of a rush match:
+   * AI fronts marching out on a capital axis 15 min away) stays the readiness / recall trigger —
+   * gating the recall on `alert` lost 4 more capitals in the lab (rush 3 / 10 min, rush_micro).
+   */
+  alarmEtaS: 240,
+  /** Garrison weight of own units that cannot hold the HQ point (crews, vehicles, fixed MGs); eligible infantry count fully. */
+  holdOtherWeight: 0.5,
+  /** Recall ETA: the nearest aimed enemy group with at least this value (else the value-weighted mean). */
+  etaGroupMin: 150,
+} as const;
+
+/**
+ * Round 7 (challenge lab: capitals fell with 1.3 k garrison inside 250 m and nobody on the 35 m
+ * capture point). `holders` standing-garrison squads stand within `postR` of the HQ at all times;
+ * on a breach (capture progress, or an eligible enemy within command_radius_m + breachPadM) every
+ * own infantry / vehicle within `convergeM` becomes a home guard and converges on the point
+ * (crews keep their posts). The breach stands `breachHoldS` after the last sign.
+ */
+/**
+ * Lab switches for round 7 (A/B in scripts/challenge.ts with R7_OFF=hqPoint,eta,assault; R7_ON=alarm,counter).
+ * Rejected (off): `alarm` gated the readiness / recall state on the narrow `alert` (4 more capitals lost in
+ * the lab); `counter` (theatre.csCommittedAttacked) cost 2 of 5 soak eliminations with no lab gain.
+ */
+export const ROUND7_AB = { hqPoint: true, alarm: false, eta: true, assault: true, counter: false };
+
+export const HQ_POINT = {
+  holders: 2,
+  postR: 12,
+  engageR: 80,
+  /** Breach: own infantry / vehicles within convergeM converge on the point; units of a recalled front within recalledM too, unless the defence is hopeless. */
+  convergeM: 400,
+  recalledM: 1500,
+  breachPadM: 40,
+  breachHoldS: 20,
 } as const;
 
 export const homeOn = (): boolean => eagerOn() && STRATEGY_AI.homeDefence;
 
+/**
+ * 2.0 capital rule (user: "首都区域必须有驻防"): every faction keeps
+ * `rules.command.capital_standing_garrison` home guards from `fromS` on, threat or not: infantry
+ * squads (they dig and man the capital line), nearest the capital first.
+ */
+export const STANDING = {
+  fromS: 120,
+  /** A recall / counter-strike front is taken last by the recall (cost added to its rank). */
+  counterStrikeCost: 3,
+} as const;
+
 /** A group in the middle of an assault, a breakthrough or a siege of its own. */
-const storming = (s: Sector): boolean => s.opPhase === 'assault' || s.mode === 'breakthrough' || (s.op === 'siege' && s.opPhase !== '');
+const storming = (s: Front): boolean => s.opPhase === 'assault' || s.mode === 'breakthrough' || (s.op === 'siege' && s.opPhase !== '');
 
 export interface HomeThreat {
   /** Risk to the capital, 0 … 1. */
@@ -111,14 +165,31 @@ export interface HomeThreat {
   /** Round 5: forecast value from enemies in contact or actually heading for the capital (no off-axis share). */
   aimed: number;
   farEta: number;
+  /** Round 7: value-weighted mean ETA of the whole forecast (`eta` is the nearest aimed group's). */
+  etaMean: number;
+  /** Round 7: alert forecast (contact + aimed within scanM + aimed closing with ETA ≤ alarmEtaS), its level, and the alert itself (an attack actually coming; for notices / UI). */
+  alarmEnemy: number;
+  alarmLevel: number;
+  alert: boolean;
+  alertAt: number;
+  /** Round 7: standing guards posted on the HQ point (unit ids), breach state and when it was last seen. */
+  holders: number[];
+  breach: boolean;
+  breachAt: number;
+  /** Round 7: the faction contributing most of the aimed forecast (-1 = none), and whether the defence is hopeless (no front recall, local HQ defence only). */
+  attacker: number;
+  hopeless: boolean;
 }
 
 export function createHomeThreat(): HomeThreat {
-  return { level: 0, eta: -1, enemy: 0, garrison: 0, committed: 0, bearing: 0, active: false, since: 0, calmSince: 0, recall: [], recallAt: {}, fortify: false, fortifyUntil: -1, fortifyNoteAt: -1e9, noteAt: -1e9, works: 0, far: 0, farEta: -1, aimed: 0 };
+  return {
+    level: 0, eta: -1, enemy: 0, garrison: 0, committed: 0, bearing: 0, active: false, since: 0, calmSince: 0, recall: [], recallAt: {}, fortify: false, fortifyUntil: -1, fortifyNoteAt: -1e9, noteAt: -1e9, works: 0, far: 0, farEta: -1, aimed: 0,
+    etaMean: -1, alarmEnemy: 0, alarmLevel: 0, alert: false, alertAt: -1e9, holders: [], breach: false, breachAt: -1e9, attacker: -1, hopeless: false,
+  };
 }
 
 /** Recalled to the capital (new graded rule or the old all-or-nothing one). */
-export const defendingHome = (s: Sector): boolean => s.reason === 'reason.defendCity' || s.reason === 'reason.homeDefence';
+export const defendingHome = (s: Front): boolean => s.reason === 'reason.defendCity' || s.reason === 'reason.homeDefence';
 
 const clamp01 = (x: number): number => Math.max(0, Math.min(1, x));
 const valueOf = (u: Unit): number => (u.def.costP + u.def.costM) * (u.hp / (u.fixed ? 1400 : u.def.maxHp));
@@ -127,7 +198,8 @@ const hqKey = (f: number): string => `hq:${f}`;
 /** Does this (enemy) unit head for capital `f`? Spearhead, its group's target, or its destination. */
 function aimedAt(world: World, f: number, u: Unit, hq: V2): boolean {
   if (u.spearhead === hqKey(f)) return true;
-  if (world.factions[u.owner]?.sectors[u.sectorId]?.targetCity === f) return true;
+  const owner = world.factions[u.owner];
+  if (owner && frontById(owner, u.frontId)?.targetCity === f) return true;
   return !!u.dest && dist(u.dest, hq) < 400;
 }
 
@@ -137,7 +209,7 @@ interface GroupInfo { value: number; sx: number; sz: number; firing: number; n: 
  * Forecast (O(units), every HQ think): weighted known enemy value approaching the capital, its
  * ETA and bearing, the garrison, and per-group strength / position / engagement for the recall.
  */
-function forecast(world: World, f: Faction, groups: GroupInfo[]): number {
+function forecast(world: World, f: Faction, groups: Map<number, GroupInfo>): number {
   const ht = f.command.homeThreat;
   const hq = world.hqPos(f.id);
   let enemy = 0;
@@ -149,17 +221,22 @@ function forecast(world: World, f: Faction, groups: GroupInfo[]): number {
   let bz = 0;
   let guardAway = 0;
   let aimedV = 0;
+  let alarmV = 0;
   const key = hqKey(f.id);
+  // Round 7: per enemy group, value and value × ETA of its units aimed at us (the nearest such group sets `eta`).
+  const aimedGroups = new Map<number, { v: number; etaW: number }>();
+  const aimedByOwner = new Map<number, number>();
   const tracks = approachOf(f);
   const acc = new Map<number, { dv: number; v: number }>();
   for (const u of world.units.values()) {
-    if (u.hp <= 0 || u.def.id === 'supply_truck') continue;
+    if (u.hp <= 0 || u.def.id === 'supply_truck' || isCommander(u.def)) continue;
     const d = dist(u.pos, hq);
     if (u.owner === f.id) {
       const v = valueOf(u);
       // Each own unit counts once: at home (garrison), a home guard on its way, or its group.
       if (d < HOME.garrisonM) {
-        garrison += v;
+        // Round 7: only infantry can hold (or retake) the HQ point; crews, vehicles and fixed MGs count at a reduced weight.
+        garrison += (u.def.kind === 'infantry' && !u.fixed) || !ROUND7_AB.hqPoint ? v : v * HOME.holdOtherWeight;
         continue;
       }
       if (u.fixed) continue;
@@ -167,7 +244,7 @@ function forecast(world: World, f: Faction, groups: GroupInfo[]): number {
         guardAway += v;
         continue;
       }
-      const g = groups[u.sectorId];
+      const g = groups.get(u.frontId);
       if (!g) continue;
       g.value += v;
       g.sx += u.pos.x;
@@ -179,7 +256,7 @@ function forecast(world: World, f: Faction, groups: GroupInfo[]): number {
     if (u.fixed || d > HOME.farM || !world.isHostile(f.id, u.owner) || !world.knows(f.id, u)) continue;
     const v = valueOf(u);
     // Per enemy group: value-weighted distance to our capital (closing speed from think to think).
-    const gk = u.owner * 64 + u.sectorId;
+    const gk = u.owner * 64 + u.frontId;
     const a = acc.get(gk) ?? { dv: 0, v: 0 };
     a.dv += d * v;
     a.v += v;
@@ -196,7 +273,15 @@ function forecast(world: World, f: Faction, groups: GroupInfo[]): number {
     }
     if (w <= 0) continue;
     enemy += v * w;
-    if (aimed) aimedV += v * w;
+    if (aimed) {
+      aimedV += v * w;
+      const ag = aimedGroups.get(gk) ?? { v: 0, etaW: 0 };
+      ag.v += v * w;
+      ag.etaW += v * w * eta;
+      aimedGroups.set(gk, ag);
+      aimedByOwner.set(u.owner, (aimedByOwner.get(u.owner) ?? 0) + v * w);
+    }
+    if (d < HOME.contactM || (aimed && (d < HOME.scanM || (closing && eta <= HOME.alarmEtaS)))) alarmV += v * w;
     etaW += v * w * eta;
     bx += ((u.pos.x - hq.x) / Math.max(1, d)) * v * w;
     bz += ((u.pos.z - hq.z) / Math.max(1, d)) * v * w;
@@ -205,10 +290,19 @@ function forecast(world: World, f: Faction, groups: GroupInfo[]): number {
   ht.enemy = enemy;
   ht.aimed = aimedV;
   ht.garrison = garrison;
-  ht.eta = enemy > 0 ? etaW / enemy : far > 0 ? farEtaW / far : -1;
+  ht.etaMean = enemy > 0 ? etaW / enemy : far > 0 ? farEtaW / far : -1;
+  let nearestEta = Infinity;
+  for (const g of aimedGroups.values()) if (g.v >= HOME.etaGroupMin) nearestEta = Math.min(nearestEta, g.etaW / g.v);
+  ht.eta = Number.isFinite(nearestEta) && ROUND7_AB.eta ? nearestEta : ht.etaMean;
+  ht.attacker = -1;
+  let topAimed = 0;
+  for (const [o, v] of aimedByOwner) if (v > topAimed || (v === topAimed && o < ht.attacker)) { topAimed = v; ht.attacker = o; }
+  ht.alarmEnemy = alarmV;
+  ht.alarmLevel = alarmV > 0 ? alarmV / (alarmV + garrison + guardAway + HOME.levelPad) : 0;
   ht.far = far;
   ht.farEta = far > 0 ? farEtaW / far : -1;
-  ht.level = enemy > 0 ? enemy / (enemy + garrison + HOME.levelPad) : 0;
+  // 2.0: guards on their way home (the standing garrison walking to its posts) count too.
+  ht.level = enemy > 0 ? enemy / (enemy + garrison + guardAway + HOME.levelPad) : 0;
   // No threat known: face the city's exit (the side the front lies on).
   if (bx !== 0 || bz !== 0) ht.bearing = Math.atan2(bz, bx);
   else if (!ht.active) ht.bearing = headingTo(hq, world.cityOf(f.id).exit);
@@ -242,17 +336,24 @@ function updateApproach(world: World, tracks: Map<number, Approach>, acc: Map<nu
 export function thinkHomeDefence(world: World, f: Faction): void {
   if (!homeOn()) return;
   const ht = f.command.homeThreat;
-  const groups: GroupInfo[] = f.sectors.map(() => ({ value: 0, sx: 0, sz: 0, firing: 0, n: 0 }));
+  const groups = new Map<number, GroupInfo>(f.fronts.map((s) => [s.id, { value: 0, sx: 0, sz: 0, firing: 0, n: 0 }]));
   const guardAway = forecast(world, f, groups);
   const now = world.time;
   const wasActive = ht.active;
-  if (!ht.active && ht.level >= HOME.activeLevel && ht.enemy >= HOME.minThreat) {
+  // Round 7: a breach of the HQ point is always an alarm. `alert` = an attack actually coming (near, or aimed and soon).
+  const breachNow = ROUND7_AB.hqPoint && breached(world, f);
+  if (breachNow) ht.breachAt = now;
+  ht.breach = now - ht.breachAt <= HQ_POINT.breachHoldS;
+  if (ht.breach || (ht.alarmLevel >= HOME.activeLevel && ht.alarmEnemy >= HOME.minThreat)) ht.alertAt = now;
+  ht.alert = now - ht.alertAt <= HOME.calmS;
+  const alarmOn = ROUND7_AB.alarm ? ht.alert : ht.level >= HOME.activeLevel && ht.enemy >= HOME.minThreat;
+  if (!ht.active && (ht.breach || alarmOn)) {
     ht.active = true;
     ht.since = now;
     ht.calmSince = -1;
     world.note(f.id, 'log.homeThreat', { enemy: Math.round(ht.enemy), eta: Math.round(ht.eta) }, 'alert');
   } else if (ht.active) {
-    if (ht.level < HOME.releaseLevel) {
+    if ((ROUND7_AB.alarm ? ht.alarmLevel : ht.level) < HOME.releaseLevel && !ht.breach) {
       if (ht.calmSince < 0) ht.calmSince = now;
     } else ht.calmSince = -1;
     if (ht.calmSince >= 0 && now - ht.calmSince >= HOME.calmS && now - ht.since >= HOME.minHoldS) {
@@ -275,8 +376,73 @@ export function thinkHomeDefence(world: World, f: Faction): void {
   const guards = homeGuards(world, f.id);
   ht.works = fortifyHome(world, f);
   if (ht.active) recall(world, f, groups, guards, guardAway, !wasActive);
-  else releaseGuards(f, guards);
+  else {
+    ht.hopeless = false;
+    releaseGuards(world, f, guards);
+  }
+  keepStanding(world, f, guards);
+  if (ht.breach) convergeOnPoint(world, f, guards);
+  assignHolders(world, f, guards);
   if (ht.fortify) ensureDiggers(world, f, guards);
+}
+
+/** An attacker has capture progress on our HQ, or an enemy that could capture stands near the point. */
+function breached(world: World, f: Faction): boolean {
+  if (Object.keys(f.hqProgress).length > 0) return true;
+  const hq = world.hqPos(f.id);
+  const r = world.data.rules.victory.command_radius_m + HQ_POINT.breachPadM;
+  for (const e of world.spatial.queryOwners(hq.x, hq.z, r, hostileMask(world, f.id))) {
+    if (e.hp > 0 && world.knows(f.id, e) && eligibleCapturer(world, e)) return true;
+  }
+  return false;
+}
+
+/** Point holders: the `HQ_POINT.holders` standing guards that can capture (eligible infantry), nearest the HQ first. */
+function assignHolders(world: World, f: Faction, guards: Unit[]): void {
+  const ht = f.command.homeThreat;
+  if (!ROUND7_AB.hqPoint || (world.time < STANDING.fromS && !ht.breach)) {
+    ht.holders = [];
+    return;
+  }
+  const hq = world.hqPos(f.id);
+  const keep = ht.holders.filter((id) => guards.some((u) => u.id === id && eligibleCapturer(world, u)));
+  const cands = guards
+    .filter((u) => !keep.includes(u.id) && eligibleCapturer(world, u))
+    .sort((a, b) => (a.def.id === 'engineer' ? 1 : 0) - (b.def.id === 'engineer' ? 1 : 0) || dist(a.pos, hq) - dist(b.pos, hq) || a.id - b.id);
+  ht.holders = [...keep, ...cands.map((u) => u.id)].slice(0, HQ_POINT.holders);
+}
+
+/** Known value of faction `e`'s mobile army as seen by `f` (O(units); only while the alarm is on). */
+function knownArmy(world: World, f: number, e: number): number {
+  let v = 0;
+  for (const u of world.units.values()) {
+    if (u.owner !== e || u.hp <= 0 || u.fixed || u.def.id === 'supply_truck' || isCommander(u.def) || !world.knows(f, u)) continue;
+    v += valueOf(u);
+  }
+  return v;
+}
+
+/**
+ * Breach: every own infantry / vehicle within `convergeM` (not crews, artillery, trucks, manual or
+ * routing units) becomes a home guard, and so do the units of a recalled front within `recalledM`
+ * unless the defence is hopeless (lead decision: an army-wide pull put 100–120 units on a capital a
+ * 2.5× stronger enemy could then never take; wars must end). Lab: rush_micro seed 13 took F1 at
+ * 1.2–1.3× with F1's recalled army (5 k) standing at its exit-side rally inside 1.5 km.
+ */
+function convergeOnPoint(world: World, f: Faction, guards: Unit[]): void {
+  const hq = world.hqPos(f.id);
+  const key = hqKey(f.id);
+  const ht = f.command.homeThreat;
+  const recalled = new Set(ht.hopeless ? [] : ht.recall);
+  for (const u of world.units.values()) {
+    if (u.owner !== f.id || u.hp <= 0 || u.fixed || u.manual || u.routing || isCommander(u.def)) continue;
+    if (u.def.kind === 'crew' || u.def.id === 'supply_truck' || (u.opRole === 'garrison' && u.opObjective === key)) continue;
+    const d = dist(u.pos, hq);
+    if (d > HQ_POINT.convergeM && !(recalled.has(u.frontId) && d <= HQ_POINT.recalledM)) continue;
+    u.spearhead = null;
+    toGuard(u, f.id);
+    guards.push(u);
+  }
 }
 
 function nearestEnemy(world: World, f: number, at: V2, r: number): number {
@@ -289,10 +455,10 @@ function nearestEnemy(world: World, f: number, at: V2, r: number): number {
 }
 
 /** Own mobile value within reach of home (groups whose centroid is inside guardRadiusM). */
-function ownNear(groups: GroupInfo[], world: World, f: Faction): number {
+function ownNear(groups: Map<number, GroupInfo>, world: World, f: Faction): number {
   const hq = world.hqPos(f.id);
   let v = 0;
-  for (const g of groups) if (g.n > 0 && dist({ x: g.sx / g.n, z: g.sz / g.n }, hq) < HOME.guardRadiusM) v += g.value;
+  for (const g of groups.values()) if (g.n > 0 && dist({ x: g.sx / g.n, z: g.sz / g.n }, hq) < HOME.guardRadiusM) v += g.value;
   return v;
 }
 
@@ -317,14 +483,15 @@ function toLine(u: Unit): void {
 }
 
 /** Candidate home guards by tier: occupation / quiet garrison detachments, then AT guns and MGs, then free line troops; nearest first. */
-function guardPool(world: World, f: Faction, engineersOnly: boolean, minD: number): Unit[] {
+function guardPool(world: World, f: Faction, engineersOnly: boolean, minD: number, anyFront = false): Unit[] {
   const hq = world.hqPos(f.id);
-  const busy = new Set(f.sectors.filter((s) => (s.op !== 'frontal' && s.opPhase !== '') || s.manualTarget).map((s) => s.id));
+  // The standing garrison (anyFront) is drawn from any front, ordered or busy: the capital is never empty.
+  const busy = new Set(anyFront ? [] : f.fronts.filter((s) => (s.op !== 'frontal' && s.opPhase !== '') || s.manualTarget).map((s) => s.id));
   const tiered: { u: Unit; tier: number; d: number }[] = [];
   for (const u of world.units.values()) {
     if (u.owner !== f.id || u.hp <= 0 || u.fixed || u.manual || u.routing || u.spearhead) continue;
     if (u.behavior !== 'advance' && u.behavior !== 'rally') continue;
-    if (u.def.id === 'supply_truck' || u.def.id === 'howitzer' || u.def.id === 'mortar' || u.def.id === 'recon') continue;
+    if (u.def.id === 'supply_truck' || u.def.id === 'howitzer' || u.def.id === 'mortar' || u.def.id === 'recon' || isCommander(u.def)) continue;
     if (engineersOnly && u.def.id !== 'engineer') continue;
     const d = dist(u.pos, hq);
     if (d > HOME.guardRadiusM || d < minD) continue;
@@ -335,7 +502,7 @@ function guardPool(world: World, f: Faction, engineersOnly: boolean, minD: numbe
     }
     else if (u.opRole === 'garrison' && u.opObjective && !u.opObjective.startsWith('hq:')
       && world.time - (f.command.threatAt[u.opObjective] ?? -1e9) > 20) tier = 0;
-    else if (u.opRole !== 'line' || busy.has(u.sectorId)) continue;
+    else if (u.opRole !== 'line' || busy.has(u.frontId)) continue;
     else tier = u.def.id === 'at_gun' || u.def.id === 'mg' ? 1 : 2;
     tiered.push({ u, tier, d });
   }
@@ -346,16 +513,16 @@ function guardPool(world: World, f: Faction, engineersOnly: boolean, minD: numbe
 /**
  * Graded recall: home-guard detachments first, then whole army groups (nearest / least engaged
  * first) until home strength ≥ overmatch × forecast. Recalled groups stay recalled while the
- * alarm lasts (no yo-yo); they get their old orders back when it ends (sectors.ts).
+ * alarm lasts (no yo-yo); they get their old orders back when it ends (fronts.ts).
  */
-function recall(world: World, f: Faction, groups: GroupInfo[], guards: Unit[], guardAway: number, fresh: boolean): void {
+function recall(world: World, f: Faction, groups: Map<number, GroupInfo>, guards: Unit[], guardAway: number, fresh: boolean): void {
   const ht = f.command.homeThreat;
   const hq = world.hqPos(f.id);
   const want = HOME.overmatch * ht.enemy;
   // What is already home or on its way: the garrison (incl. guards and recalled troops arrived),
   // guards still marching, recalled groups' value outside the garrison radius.
   let have = ht.garrison + guardAway;
-  for (const id of ht.recall) have += groups[id]?.value ?? 0;
+  for (const id of ht.recall) have += groups.get(id)?.value ?? 0;
   let sent = 0;
   if (have < want) {
     for (const u of guardPool(world, f, false, HOME.garrisonM)) {
@@ -372,25 +539,34 @@ function recall(world: World, f: Faction, groups: GroupInfo[], guards: Unit[], g
   if (finisher) ht.recall = [];
   const groupsAllowed = !finisher && (!stormOn() || ht.aimed >= HOME.minThreat);
   const centre = (id: number): V2 => {
-    const g = groups[id];
+    const g = groups.get(id);
     return g && g.n > 0 ? { x: g.sx / g.n, z: g.sz / g.n } : hq;
   };
-  if (have < want && groupsAllowed) {
+  let army = ht.garrison + guardAway;
+  for (const g of groups.values()) army += g.value;
+  // Round 4: a hopeless defence recalls no further group even at the gates (the army fights on in the
+  // field; recalling it made the last capitals unbreakable). Raids never reach this ratio.
+  // Round 7 (lead decision, wars must end): hopeless also when the attacker's whole army is ≥
+  // hopelessArmyRatio × ours, and then every recalled front goes back to its front — the capital keeps
+  // its standing garrison, HQ-point squads and home guards only.
+  const hopeless = (ht.enemy >= army * HOME.hopelessRatio && (stormOn() || ht.eta > HOME.gatesEtaS))
+    || (ht.attacker >= 0 && knownArmy(world, f.id, ht.attacker) >= army * HOME.hopelessArmyRatio);
+  ht.hopeless = hopeless;
+  if (hopeless) ht.recall = [];
+  if (have < want && groupsAllowed && !hopeless) {
     // Only groups that can be home in time; the rest keep the offensive going.
-    const window = Math.max(0, ht.eta) + HOME.reachSlackS;
-    const army = ht.garrison + guardAway + groups.reduce((a, g) => a + g.value, 0);
-    // Round 4: a hopeless defence recalls no further group even at the gates (the army fights on in the
-    // field; recalling it made the last capitals unbreakable). Raids never reach this ratio.
-    const hopeless = ht.enemy >= army * HOME.hopelessRatio && (stormOn() || ht.eta > HOME.gatesEtaS);
-    const maxGroups = hopeless ? ht.recall.length : want >= army * HOME.allGroupsShare ? f.sectors.length : f.sectors.length - 1;
-    const cands = f.sectors
-      .filter((s) => !s.manualTarget && !ht.recall.includes(s.id) && (groups[s.id]?.n ?? 0) > 0 && dist(centre(s.id), hq) / HOME.marchMps <= window)
+    // (Round 7: the march window keeps the whole forecast's mean ETA; the nearest group's ETA only decides "at the gates".)
+    const window = Math.max(0, ht.etaMean) + HOME.reachSlackS;
+    const maxGroups = want >= army * HOME.allGroupsShare ? f.fronts.length : f.fronts.length - 1;
+    const cands = f.fronts
+      .filter((s) => !s.manualTarget && !ht.recall.includes(s.id) && (groups.get(s.id)?.n ?? 0) > 0 && dist(centre(s.id), hq) / HOME.marchMps <= window)
       // Round 4: an assault / storm under way is not called off (op success −3.7 pts in round 3), unless the enemy is at the gates.
       .filter((s) => !stormOn() || !storming(s) || ht.eta <= HOME.gatesEtaS)
       .map((s) => {
-        const g = groups[s.id];
+        const g = groups.get(s.id)!;
         const engaged = g.firing / g.n;
-        const cost = dist(centre(s.id), hq) / 1000 + engaged * 1.5 + (s.opPhase === 'assault' ? 1 : 0) + (s.mode === 'push' || s.mode === 'breakthrough' ? 0.4 : 0);
+        const cost = dist(centre(s.id), hq) / 1000 + engaged * 1.5 + (s.opPhase === 'assault' ? 1 : 0) + (s.mode === 'push' || s.mode === 'breakthrough' ? 0.4 : 0)
+          + (counterStrikes.has(s) ? STANDING.counterStrikeCost : 0);
         return { s, cost };
       })
       .sort((a, b) => a.cost - b.cost || a.s.id - b.s.id);
@@ -398,12 +574,12 @@ function recall(world: World, f: Faction, groups: GroupInfo[], guards: Unit[], g
       if (have >= want || ht.recall.length >= maxGroups) break;
       ht.recall = [...ht.recall, c.s.id];
       ht.recallAt = { ...ht.recallAt, [c.s.id]: world.time };
-      have += groups[c.s.id].value;
+      have += groups.get(c.s.id)?.value ?? 0;
     }
   } else if (ht.recall.length > 0) {
     // Surplus: release the most recently recalled group once the rest clearly suffices.
     const last = ht.recall[ht.recall.length - 1];
-    const v = groups[last]?.value ?? 0;
+    const v = groups.get(last)?.value ?? 0;
     if (world.time - (ht.recallAt[last] ?? 0) >= HOME.minRecallS && have - v >= want * HOME.surplus) {
       ht.recall = ht.recall.slice(0, -1);
       have -= v;
@@ -417,10 +593,39 @@ function recall(world: World, f: Faction, groups: GroupInfo[], guards: Unit[], g
   }
 }
 
-/** No alarm: guards return to their groups once the fortify order has lapsed (they stay to dig and man the works while it lasts). */
-function releaseGuards(f: Faction, guards: Unit[]): void {
+/**
+ * No alarm: guards return to their groups once the fortify order has lapsed (they stay to dig and
+ * man the works while it lasts), except the standing garrison (2.0).
+ */
+function releaseGuards(world: World, f: Faction, guards: Unit[]): void {
   if (f.command.homeThreat.fortify) return;
-  for (const u of guards) toLine(u);
+  const keep = new Set(world.time >= STANDING.fromS ? rankStanding(world, f, guards).slice(0, standingSize(world)) : []);
+  const kept = guards.filter((u) => keep.has(u));
+  for (const u of guards) if (!keep.has(u)) toLine(u);
+  guards.length = 0;
+  guards.push(...kept);
+}
+
+const standingSize = (world: World): number => world.data.rules.command.capital_standing_garrison;
+
+/** Standing-guard preference: infantry (diggers), then crews, then the rest; nearest the capital first. */
+function rankStanding(world: World, f: Faction, units: Unit[]): Unit[] {
+  const hq = world.hqPos(f.id);
+  const rank = (u: Unit): number => (u.def.kind === 'infantry' ? 0 : u.def.kind === 'crew' ? 1 : 2);
+  return [...units].sort((a, b) => rank(a) - rank(b) || dist(a.pos, hq) - dist(b.pos, hq) || a.id - b.id);
+}
+
+/** Top the standing garrison up to `capital_standing_garrison` (from `STANDING.fromS`). */
+function keepStanding(world: World, f: Faction, guards: Unit[]): void {
+  if (world.time < STANDING.fromS) return;
+  const missing = standingSize(world) - guards.length;
+  if (missing <= 0) return;
+  // Squads only (rifle / engineer / motorised): crews posted by the standing garrison sat 'unreachable' (soak seed 13).
+  const pool = rankStanding(world, f, guardPool(world, f, false, 0, true).filter((u) => u.def.kind === 'infantry'));
+  for (const u of pool.slice(0, missing)) {
+    toGuard(u, f.id);
+    guards.push(u);
+  }
 }
 
 /** Engineers first, then infantry, so each open home work has its diggers. */
@@ -454,6 +659,8 @@ const SANDBAG_ANGLES = [-0.22, 0.22, -0.6, 0.6];
  * Returns the number of home works alive.
  */
 function fortifyHome(world: World, f: Faction): number {
+  // 2.0: the standing capital line and the other planned works / buildings (fortplans.ts), every HQ think.
+  planStructures(world, f);
   const ht = f.command.homeThreat;
   const hq = world.hqPos(f.id);
   let trenches = 0;
@@ -513,8 +720,12 @@ export function fortifyPlace(world: World, f: Faction, centre: V2, radius: numbe
     sz += e.pos.z - centre.z;
   }
   if (near <= HOME.noDigM || (sx === 0 && sz === 0)) return;
-  for (const w of world.forts) if (w.owner === f.id && w.hp > 0 && w.kind === 'trench' && dist(w.pos, centre) < r + 40) return;
   const ang = Math.atan2(sz, sx);
+  // 2.0: with the approach trench standing, add a pillbox just inside it when M allows (fortplans.ts).
+  if (world.forts.some((w) => w.owner === f.id && w.hp > 0 && w.kind === 'trench' && dist(w.pos, centre) < r + 40)) {
+    planPlaceStructure(world, f, centre, radius, ang);
+    return;
+  }
   const k = world.data.rules.proposed_defaults.army_scale ?? 1;
   if (f.p < WORKS.trench.costP * k * (1 + HOME.reserveCostMul)) return;
   for (const rr of [r, r - 20, r + 20]) {
@@ -532,6 +743,7 @@ export function fortifyPlace(world: World, f: Faction, centre: V2, radius: numbe
  * axis just behind the trench line.
  */
 export function thinkHomeGuard(world: World, u: Unit): boolean {
+  if (hqDuty(world, u)) return true;
   const f = world.factions[u.owner];
   const hq = world.hqPos(u.owner);
   const ht = f.command.homeThreat;
@@ -563,6 +775,44 @@ export function thinkHomeGuard(world: World, u: Unit): boolean {
   if (dist(u.pos, u.opTarget) > 8) moveTo(world, u, u.opTarget);
   else stop(u);
   selectTarget(world, u, foe ? foe.pos : null);
+  return true;
+}
+
+/**
+ * Round 7: the HQ point. A point holder stands within `HQ_POINT.postR` of the HQ (only eligible
+ * infantry inside command_radius_m blocks a capture); during a breach every non-crew home guard
+ * makes for the point and goes for any enemy inside it. Runs before structure duty (behavior.ts):
+ * a holder in a building off the point walks out. False = not on HQ duty (normal home guard).
+ */
+export function hqDuty(world: World, u: Unit): boolean {
+  if (u.opRole !== 'garrison' || u.opObjective !== hqKey(u.owner) || u.manual || u.routing || !homeOn()) return false;
+  const ht = world.factions[u.owner].command.homeThreat;
+  const holder = ht.holders.includes(u.id);
+  if (!holder && !(ht.breach && u.def.kind !== 'crew')) return false;
+  const hq = world.hqPos(u.owner);
+  const r = world.data.rules.victory.command_radius_m;
+  if (u.fortId !== null) {
+    if (dist(u.pos, hq) <= r * 0.8) return false;
+    leaveStructure(world, u);
+  }
+  let foe: Unit | null = null;
+  let inside: Unit | null = null;
+  let bd: number = HQ_POINT.engageR;
+  for (const e of world.spatial.queryOwners(hq.x, hq.z, HQ_POINT.engageR, hostileMask(world, u.owner))) {
+    if (e.hp <= 0 || !world.knows(u.owner, e)) continue;
+    const d = dist(e.pos, hq);
+    if (d < bd) { bd = d; foe = e; }
+    if (d <= r + HQ_POINT.breachPadM && eligibleCapturer(world, e) && (!inside || d < dist(inside.pos, hq))) inside = e;
+  }
+  u.status = 'status.homeGuard';
+  if (inside && !holder) moveTo(world, u, inside.pos);
+  else {
+    const a = (spreadOf(u) + 0.5) * Math.PI * 2;
+    const post = navPost(world, u, { x: hq.x + Math.cos(a) * HQ_POINT.postR, z: hq.z + Math.sin(a) * HQ_POINT.postR }, 20);
+    if (dist(u.pos, post) > 4) moveTo(world, u, post);
+    else stop(u);
+  }
+  selectTarget(world, u, (inside ?? foe)?.pos ?? null);
   return true;
 }
 
@@ -605,8 +855,8 @@ const postAt = (world: World, u: Unit, p: V2): V2 => (stormOn() ? navPost(world,
  * Recalled group, far from home: fall back in good order — march to the slot near the capital,
  * returning fire at targets of opportunity, instead of staying pinned in the old fight.
  */
-export function fallBackHome(world: World, u: Unit, s: Sector): boolean {
-  if (s.reason !== 'reason.homeDefence' || u.def.id === 'howitzer' || u.def.id === 'mortar') return false;
+export function fallBackHome(world: World, u: Unit, s: Front): boolean {
+  if (s.reason !== 'reason.homeDefence' || u.def.id === 'howitzer' || u.def.id === 'mortar' || isCommander(u.def)) return false;
   const hq = world.hqPos(u.owner);
   if (dist(u.pos, hq) < HOME.contactM) return false;
   const slot = s.slots[u.id] ?? s.front;
@@ -616,19 +866,19 @@ export function fallBackHome(world: World, u: Unit, s: Sector): boolean {
   return true;
 }
 
-// ---------------------------------------------------------------- saved orders (sectors.ts)
+// ---------------------------------------------------------------- saved orders (fronts.ts)
 
 interface SavedOrders { targetPos: V2; targetObjective: string | null; targetCity: number | null; rally: V2; lastRetarget: number }
-const saved = new WeakMap<Sector, SavedOrders>();
+const saved = new WeakMap<Front, SavedOrders>();
 
 /** Remember a group's orders before it is recalled (first recall only). */
-export function saveOrders(s: Sector): void {
+export function saveOrders(s: Front): void {
   if (saved.has(s) || defendingHome(s)) return;
   saved.set(s, { targetPos: { ...s.targetPos }, targetObjective: s.targetObjective, targetCity: s.targetCity, rally: { ...s.rally }, lastRetarget: s.lastRetarget });
 }
 
 /** Give a released group its old orders back (returns false if it had none saved). */
-export function restoreOrders(s: Sector): boolean {
+export function restoreOrders(s: Front): boolean {
   const o = saved.get(s);
   if (!o) return false;
   saved.delete(s);
@@ -640,4 +890,4 @@ export function restoreOrders(s: Sector): boolean {
   return true;
 }
 
-export const isRecalled = (f: Faction, s: Sector): boolean => !s.manualTarget && f.command.homeThreat.recall.includes(s.id);
+export const isRecalled = (f: Faction, s: Front): boolean => !s.manualTarget && f.command.homeThreat.recall.includes(s.id);

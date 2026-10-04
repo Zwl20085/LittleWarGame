@@ -1,5 +1,6 @@
-import type { Faction, Objective, OperationKind, Posture, Personality, Sector, Unit } from './types';
+import type { Faction, Objective, OperationKind, Posture, Personality, Front, Unit } from './types';
 import { crossings } from './terrainai';
+import { frontById } from './frontref';
 import { dist, type V2 } from './vec';
 import type { World } from './world';
 
@@ -34,7 +35,7 @@ export type OpOutcome = 'won' | 'abort' | 'spent' | 'timeout' | 'noForce' | 'unr
 export interface OpRecord {
   readonly id: number;
   readonly f: number;
-  readonly sector: number;
+  readonly front: number;
   readonly op: OperationKind;
   readonly doctrine: Personality;
   readonly posture: Posture;
@@ -131,7 +132,7 @@ export interface BattleLog {
   /** Off = hot hooks (hits, per-second upkeep) return at once (for overhead measurements). */
   enabled: boolean;
   /** Runtime indices (not part of the record). */
-  readonly activeOp: Map<Sector, OpRecord>;
+  readonly activeOp: Map<Front, OpRecord>;
   readonly openEng: Map<string, EngagementRecord>;
   readonly openDir: DirectiveRecord[];
   readonly lastPos: Map<number, V2>;
@@ -224,7 +225,8 @@ export function noteHit(world: World, victim: Unit, attackerOwner: number, hp: n
   if (killed) v.killed++;
   tally(e, attackerOwner).dealt += hp;
   if (victim.fixed) return;
-  const sec = world.factions[victim.owner]?.sectors[victim.sectorId];
+  const vf = world.factions[victim.owner];
+  const sec = vf ? frontById(vf, victim.frontId) : undefined;
   const op = sec ? log.activeOp.get(sec) : undefined;
   if (op) {
     op.loss += value;
@@ -268,7 +270,7 @@ export function terrainContext(world: World, from: V2, to: V2, targetKind: strin
 }
 
 /** Operation start (doctrine.runOperation re-plan). Closes the group's previous record if still open. */
-export function noteOpStart(world: World, f: Faction, s: Sector, units: Unit[], theirs: number, replanReason: OpOutcome): void {
+export function noteOpStart(world: World, f: Faction, s: Front, units: Unit[], theirs: number, replanReason: OpOutcome): void {
   const log = world.battle;
   const prev = log.activeOp.get(s);
   if (prev) finishOp(world, prev, replanReason);
@@ -284,7 +286,7 @@ export function noteOpStart(world: World, f: Faction, s: Sector, units: Unit[], 
   const centroid = units.length ? { x: cx / units.length, z: cz / units.length } : world.hqPos(f.id);
   const mine = units.reduce((a, u) => a + valueOf(u), 0);
   const rec: OpRecord = {
-    id: log.nextId++, f: f.id, sector: s.id, op: s.op, doctrine: f.personality, posture: s.posture, locked: s.opLocked,
+    id: log.nextId++, f: f.id, front: s.id, op: s.op, doctrine: f.personality, posture: s.posture, locked: s.opLocked,
     target, targetKind, targetOwner: obj ? obj.owner : s.targetCity ?? -1, area: obj ? obj.id : areaKey(world, s.targetPos), t0: world.time,
     mine: Math.round(mine), theirs: Math.round(theirs), ratio: Math.round((mine / (theirs + 1)) * 100) / 100, units: units.length,
     terrain: terrainContext(world, centroid, s.targetPos, targetKind), distM: Math.round(dist(centroid, s.targetPos)),
@@ -295,13 +297,13 @@ export function noteOpStart(world: World, f: Faction, s: Sector, units: Unit[], 
 }
 
 /** Phase change of the group's running op (form → assault, dig …). */
-export function noteOpPhase(world: World, s: Sector, phase: string): void {
+export function noteOpPhase(world: World, s: Front, phase: string): void {
   const op = world.battle.activeOp.get(s);
   if (op && phase && !op.phases.includes(phase)) op.phases = op.phases ? `${op.phases}>${phase}` : phase;
 }
 
 /** Operation finished (doctrine.endOp / reset). */
-export function noteOpEnd(world: World, s: Sector, outcome: OpOutcome): void {
+export function noteOpEnd(world: World, s: Front, outcome: OpOutcome): void {
   const op = world.battle.activeOp.get(s);
   if (!op) return;
   finishOp(world, op, outcome);
@@ -408,7 +410,7 @@ function sample(world: World): void {
   for (const f of world.factions) {
     const s = out[f.id];
     if (!f.alive) continue;
-    for (const sec of f.sectors) {
+    for (const sec of f.fronts) {
       s.modes[sec.mode] = (s.modes[sec.mode] ?? 0) + 1;
       s.reasons[sec.reason] = (s.reasons[sec.reason] ?? 0) + 1;
     }

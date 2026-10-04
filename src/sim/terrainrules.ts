@@ -1,6 +1,7 @@
 import { perch, sightLine } from './buildings';
 import { TERRAIN_COMBAT as TC, BUILDING } from './config';
 import { Ground } from './terrain';
+import { garrisonConcealed } from './structures';
 import type { Unit } from './types';
 import type { V2 } from './vec';
 import type { World } from './world';
@@ -28,7 +29,8 @@ export function forestConcealed(world: World, from: V2, t: Unit): boolean {
   const dx = t.pos.x - from.x;
   const dz = t.pos.z - from.z;
   if (dx * dx + dz * dz <= r * r) return false;
-  return inForest(world, t);
+  // Squads in a pillbox / bunker stay hidden the same way until they fire (structures.ts).
+  return inForest(world, t) || garrisonConcealed(t);
 }
 
 /**
