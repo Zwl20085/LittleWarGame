@@ -45,7 +45,7 @@ function makeFaction(world: World, id: number, isPlayer: boolean): Faction {
     stewardHoldUntil: 0, stewardLastDir: -1, stewardReason: 'steward.default', stewardParams: {},
     resolve: world.data.rules.victory.initial_resolve, popPresent: 0, popReserved: 0, logistics: 0, supplyDemand: 0,
     weights, caps: { ...world.data.rules.proposed_defaults.production_unit_caps }, paused: {},
-    spent: [], protectedOrder: null, protectRetryAt: 0, nextRaidAt: 240, command: createHighCommand(), depot: 0, lastWorksAt: -999, orders: [], manualQueue: [], fronts: [], mainFront: 0, frontSeq: 0,
+    spent: [], protectedOrder: null, protectRetryAt: 0, nextRaidAt: 240, command: createHighCommand(), depot: 0, lastWorksAt: -999, orders: [], manualQueue: [], fronts: [], mainFront: 0, frontSeq: 0, zones: [], zoneSeq: 0,
     incomeP: 0, incomeM: 0, overflowWarnAt: -1e9, hqProgress: {}, lostUnits: 0, producedUnits: 0,
     spentTotalP: 0, spentTotalM: 0, aiThinkAt: id * 0.7, trucksUnderFire: [],
   };

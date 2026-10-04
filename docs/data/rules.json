@@ -77,7 +77,7 @@
     "node_p_bonus_cap": 40,
     "node_m_bonus_cap": 30,
     "node_activation_seconds": 30,
-    "initial_units": {"infantry": 3, "recon": 1, "supply_truck": 1}
+    "initial_units": {"infantry": 3, "recon": 1, "supply_truck": 1, "engineer": 2}
   },
   "territory": {
     "comment": "User decision 2026-10-02: income and production grow with held settlements; values are per army_scale=1 and get multiplied by army_scale.",
@@ -189,7 +189,7 @@
     "comment": "2.0 command hierarchy (user decision 2026-10-04): the supreme HQ (player or AI) gives each front one order (attack / defend / fortify / fall back / auto); a front commander unit executes it. Commanders are appointed, never produced.",
     "commander_unit": "commander",
     "fronts_initial": 3,
-    "fronts_max": 4,
+    "fronts_max": 8,
     "commander_respawn_seconds": 90,
     "commander_lost_hold_seconds": 60,
     "commander_post_radius_m": 700,

@@ -1,7 +1,8 @@
 import { cancelOrder } from './production';
 import type { Match } from './sim';
 import { issueFrontOrder } from './fronts';
-import { frontForOrder } from './frontops';
+import { createFrontAt, disbandFront, frontForOrder } from './frontops';
+import { issueFrontOrder as applyOrder } from './fronts';
 import type { OrderKind, Unit } from './types';
 import type { V2 } from './vec';
 
@@ -31,6 +32,12 @@ export type Command =
   | { type: 'frontOrder'; frontId: number | null; kind: OrderKind; a: V2; b?: V2 }
   /** The main effort: reinforcement and supply priority. */
   | { type: 'setMainFront'; frontId: number }
+  /** 2.1: open a front at a point (its commander is appointed; free troops nearby join it). */
+  | { type: 'newFront'; a: V2 }
+  /** 2.1: disband a front; troops and zones go to the nearest other front. */
+  | { type: 'disbandFront'; frontId: number }
+  /** 2.1: stop a fortified-zone project (works already standing remain). */
+  | { type: 'cancelZone'; zoneId: number }
   | { type: 'unitOrder'; unitIds: number[]; order: 'move' | 'moveHold' | 'attackMove' | 'retreat' | 'hold' | 'resume'; pos?: V2; queue?: boolean }
   | { type: 'focus'; unitIds: number[]; targetId: number };
 
@@ -147,6 +154,27 @@ function apply(match: Match, env: CommandEnvelope): CommandOutcome {
       if (!f.fronts.some((x) => x.id === c.frontId)) return fail('NO_FRONT');
       f.mainFront = c.frontId;
       return OK;
+    case 'newFront': {
+      if (!finiteV2(c.a) || !w.terrain.inBounds(c.a.x, c.a.z)) return fail('BAD_VALUE');
+      if (f.fronts.length >= w.data.rules.command.fronts_max) return fail('NO_FRONT');
+      const p = w.nav(false, 35).nearestPassable(c.a, 30);
+      if (!p) return fail('UNREACHABLE');
+      const s = createFrontAt(w, f, { ...p });
+      if (!s) return fail('INSUFFICIENT_M');
+      applyOrder(w, f, s, { kind: 'defend', a: { ...p }, b: null, issuedAt: w.time, manual: true });
+      return OK;
+    }
+    case 'disbandFront': {
+      const s = f.fronts.find((x) => x.id === c.frontId);
+      if (!s) return fail('NO_FRONT');
+      return disbandFront(w, f, s) ? OK : fail('BAD_VALUE');
+    }
+    case 'cancelZone': {
+      const z = f.zones.find((x) => x.id === c.zoneId && !x.cancelled);
+      if (!z) return fail('NO_ORDER');
+      z.cancelled = true;
+      return OK;
+    }
     case 'unitOrder': {
       const units = ownedUnits(match, env.actor, c.unitIds);
       if (units.length === 0) return fail('NOT_OWNER');

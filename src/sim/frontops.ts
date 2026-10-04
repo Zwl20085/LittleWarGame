@@ -171,3 +171,45 @@ export function reassignStale(world: World, f: Faction): void {
     u.frontId = best.id;
   }
 }
+
+/** Troops within this of a point join a front the player opens there (2.1 `newFront`). */
+const NEW_FRONT_ADOPT_M = 350;
+
+/**
+ * 2.1: the player opens a front at a point (a garrison front for a fortified zone, a second axis …).
+ * Named after the nearest settlement; free troops within NEW_FRONT_ADOPT_M of the point join it.
+ */
+export function createFrontAt(world: World, f: Faction, p: V2): Front | null {
+  let obj: Objective | null = null;
+  let bd = Infinity;
+  for (const o of world.objectives) {
+    const d = dist(o.pos, p);
+    if (d < bd) { bd = d; obj = o; }
+  }
+  if (!obj) return null;
+  let near = 0;
+  for (const u of world.units.values()) if (u.owner === f.id && transferable(u) && dist(u.pos, p) < NEW_FRONT_ADOPT_M) near++;
+  const s = createFront(world, f, obj, near);
+  if (s) {
+    s.targetPos = { ...p };
+    s.front = { ...p };
+    s.order = { kind: 'defend', a: { ...p }, b: null, issuedAt: world.time, manual: true };
+  }
+  return s;
+}
+
+/** 2.1: the player disbands a front; its troops and zone bindings go to the nearest other front. */
+export function disbandFront(world: World, f: Faction, s: Front): boolean {
+  if (f.fronts.length <= 1) return false;
+  let into: Front | null = null;
+  let bd = Infinity;
+  for (const x of f.fronts) {
+    if (x === s) continue;
+    const d = dist(x.front, s.front);
+    if (d < bd) { bd = d; into = x; }
+  }
+  if (!into) return false;
+  for (const z of f.zones) if (z.frontId === s.id) z.frontId = into.id;
+  dissolveFront(world, f, s, into);
+  return true;
+}

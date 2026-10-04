@@ -8,7 +8,7 @@ import { bridgeSiteFor } from './engineering';
 import { frontSegments, OPS, spreadAlong, planOperations } from './operations';
 import { defendingHome, homeOn, isRecalled, restoreOrders, ROUND7_AB, saveOrders } from './homeguard';
 import { capitalSiege, stormRing } from './storm';
-import type { Faction, Objective, Front, Unit } from './types';
+import type { Faction, Objective, Front, Unit, Zone } from './types';
 import { dist, headingTo, angleDiff, DEG, type V2 } from './vec';
 import type { World } from './world';
 import { isCommander } from './formulas';
@@ -148,6 +148,7 @@ export function issueFrontOrder(world: World, f: Faction, s: Front, order: Front
       if (s.opPhase !== '') resetOperation(s, frontUnits(world, f.id, s.id), world);
     } else if (s.posture === 'hold' || s.posture === 'fortify') setPosture(world, s, 'cautious');
   }
+  if (order.kind === 'fortify' && s.line) addZone(world, f, s);
   if (order.kind === 'fallBack') {
     // Everyone drops what they are doing and marches back to the new line before fighting again
     // (behavior.fallingBack keeps them marching until they reach it).
@@ -158,6 +159,28 @@ export function issueFrontOrder(world: World, f: Faction, s: Front, order: Front
       u.behavior = 'advance';
     }
   }
+}
+
+/** Match radius for "the same line again" (a re-issued Fortify order binds the existing zone). */
+const ZONE_SAME_M = 40;
+
+/**
+ * Register the front's ordered line as a permanent fortified-zone project (2.1). A line already
+ * registered is re-bound to this front instead of duplicated; other zones of the faction are
+ * untouched, so a new Fortify order never cancels an earlier one.
+ */
+export function addZone(world: World, f: Faction, s: Front): Zone | null {
+  if (!s.line) return null;
+  const { a, b } = s.line;
+  const same = f.zones.find((z) => !z.cancelled && ((dist(z.a, a) < ZONE_SAME_M && dist(z.b, b) < ZONE_SAME_M) || (dist(z.a, b) < ZONE_SAME_M && dist(z.b, a) < ZONE_SAME_M)));
+  if (same) {
+    same.frontId = s.id;
+    return same;
+  }
+  const z: Zone = { id: f.zoneSeq++, a: { ...a }, b: { ...b }, frontId: s.id, createdAt: world.time, cancelled: false };
+  f.zones = [...f.zones, z];
+  world.note(f.id, 'log.zonePlanned', { point: s.name }, 'info');
+  return z;
 }
 
 function setPosture(world: World, s: Front, p: Front['posture']): void {
