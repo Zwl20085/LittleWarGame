@@ -1,14 +1,44 @@
 import * as THREE from 'three';
-import type { Terrain } from '../sim/terrain';
+import { Ground, type Terrain } from '../sim/terrain';
 import { smoothBankHeights } from './bankSmoothing';
 import { buildBridges } from './bridges';
 import { roadDistanceField } from './roadField';
 import { buildScatter } from './scatter';
-import { buildSettlements } from './settlements';
+import { buildSettlements, type Settlements } from './settlements';
 import { computeTerrainAttribs } from './terrainColor';
 import { terrainMaterial, type TerrainUniforms } from './terrainMaterial';
 import { buildForests } from './vegetation';
+import { townField, townGrids, type TownGrid } from './townPlan';
+import { buildTownProps } from './townProps';
 import { WaterView } from './water';
+
+/** Dry cells within this many cells of water get a shore level. */
+const SHORE_REACH = 4;
+
+/** Per cell: for dry ground near water, the highest nearby water surface; NaN elsewhere. */
+function shoreLevels(t: Terrain): Float32Array {
+  const nx = t.nx;
+  const nz = t.nz;
+  const out = new Float32Array(nx * nz).fill(NaN);
+  for (let j = 0; j < nz; j++) {
+    for (let i = 0; i < nx; i++) {
+      const w = t.waterSurface[j * nx + i];
+      if (Number.isNaN(w)) continue;
+      for (let dj = -SHORE_REACH; dj <= SHORE_REACH; dj++) {
+        for (let di = -SHORE_REACH; di <= SHORE_REACH; di++) {
+          const ii = i + di;
+          const jj = j + dj;
+          if (ii < 0 || jj < 0 || ii >= nx || jj >= nz) continue;
+          const k = jj * nx + ii;
+          const g = t.ground[k];
+          if (g === Ground.Water || g === Ground.Ford || !Number.isNaN(t.waterSurface[k])) continue;
+          if (!(out[k] >= w)) out[k] = w;
+        }
+      }
+    }
+  }
+  return out;
+}
 
 /** Grid cells per terrain tile (tiles let the camera and shadow passes cull). */
 const TILE_CELLS = 64;
@@ -30,9 +60,17 @@ export class TerrainView {
 
   /** Render heights (visual heights with eased river banks). */
   readonly heights: Float32Array;
+  /** Dry cells near water: the local water level (NaN elsewhere); see surfaceAt. */
+  private readonly shore: Float32Array;
+  /** Street grids of the towns and cities (render-side reconstruction). */
+  readonly towns: TownGrid[];
+  /** Buildings and landmarks; `setDetail` swaps in the town props (overview / lower tiers off). */
+  readonly settlements: Settlements;
 
   constructor(private readonly terrain: Terrain) {
     this.heights = smoothBankHeights(terrain);
+    this.shore = shoreLevels(terrain);
+    this.towns = townGrids(terrain);
     this.overlayCanvas = document.createElement('canvas');
     // 2.5 m per pixel; the 10 m field is upscaled with blur for soft contours.
     this.overlayCanvas.width = Math.ceil(terrain.width / 2.5);
@@ -49,13 +87,51 @@ export class TerrainView {
     if (this.water.mesh) this.group.add(this.water.mesh);
     this.forests = buildForests(terrain);
     this.scatter = buildScatter(terrain);
-    this.group.add(this.forests, this.scatter, buildSettlements(terrain), buildBridges(terrain), this.buildBase());
+    const props = buildTownProps(terrain, this.towns, (x, z) => this.surfaceAt(x, z));
+    this.settlements = buildSettlements(terrain, props);
+    this.group.add(this.forests, this.scatter, this.settlements.group, buildBridges(terrain), this.buildBase());
+  }
+
+  /**
+   * Height of the *rendered* ground at (x, z): the same render heights and the same triangle
+   * split as the tile meshes (diagonal from (i+1, j) to (i, j+1)), so anything placed with it
+   * touches the visible surface exactly. The sim's `heightAt` is bilinear on the un-eased sim
+   * grid; it differs by up to a few decimetres on curved ground and by metres on eased river
+   * banks. Bridge decks (road cells over water, incl. pontoons) keep the sim height: the render
+   * mesh is the carved channel under them.
+   */
+  surfaceAt(x: number, z: number): number {
+    const t = this.terrain;
+    const nx = t.nx;
+    const fx = Math.min(Math.max(x / t.cell, 0), nx - 1.0001);
+    const fz = Math.min(Math.max(z / t.cell, 0), t.nz - 1.0001);
+    const i = Math.floor(fx);
+    const j = Math.floor(fz);
+    const k = j * nx + i;
+    // Bridge cells: sim deck height (nearest cell, as the sim rasterises roads).
+    const kn = Math.round(fz) * nx + Math.round(fx);
+    if (t.ground[kn] === Ground.Road && !Number.isNaN(t.waterSurface[kn])) return t.heightAt(x, z);
+    const tx = fx - i;
+    const tz = fz - j;
+    const h = this.heights;
+    let y: number;
+    if (tx + tz <= 1) y = h[k] + (h[k + 1] - h[k]) * tx + (h[k + nx] - h[k]) * tz;
+    else {
+      const d = h[k + nx + 1];
+      y = d + (h[k + nx] - d) * (1 - tx) + (h[k + 1] - d) * (1 - tz);
+    }
+    // Eased banks push the drawn shoreline onto cells the sim treats as dry: keep units there
+    // at the water's edge (never under the water sheet, never above the sim ground).
+    const sh = this.shore[kn];
+    if (!Number.isNaN(sh) && y < sh + 0.15) y = Math.min(t.heightAt(x, z), sh + 0.15);
+    return y;
   }
 
   private buildTiles(material: THREE.Material): THREE.Group {
     const t = this.terrain;
     const a = computeTerrainAttribs(t, this.heights);
     const roadD = roadDistanceField(t);
+    const townD = townField(t, this.towns);
     const g = new THREE.Group();
     const nx = t.nx;
     for (let tj = 0; tj < t.nz - 1; tj += TILE_CELLS) {
@@ -70,6 +146,8 @@ export class TerrainView {
         const farm = new Float32Array(vx * vz);
         const ang = new Float32Array(vx * vz);
         const road = new Float32Array(vx * vz);
+        const town = new Float32Array(vx * vz * 4);
+        const square = new Float32Array(vx * vz);
         for (let j = 0; j < vz; j++) {
           for (let i = 0; i < vx; i++) {
             const k = j * vx + i;
@@ -84,6 +162,8 @@ export class TerrainView {
             farm[k] = a.farm[src];
             ang[k] = a.fieldAngle[src];
             road[k] = roadD[src];
+            for (let c = 0; c < 4; c++) town[k * 4 + c] = townD[src * 5 + c];
+            square[k] = townD[src * 5 + 4];
           }
         }
         const idx: number[] = [];
@@ -100,6 +180,8 @@ export class TerrainView {
         geo.setAttribute('aFarm', new THREE.BufferAttribute(farm, 1));
         geo.setAttribute('aFieldAng', new THREE.BufferAttribute(ang, 1));
         geo.setAttribute('aRoadD', new THREE.BufferAttribute(road, 1));
+        geo.setAttribute('aTown', new THREE.BufferAttribute(town, 4));
+        geo.setAttribute('aSquare', new THREE.BufferAttribute(square, 1));
         geo.setIndex(idx);
         geo.computeBoundingSphere();
         const mesh = new THREE.Mesh(geo, material);

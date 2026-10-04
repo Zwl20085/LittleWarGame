@@ -3,6 +3,7 @@ import { dist, headingTo, type V2 } from './vec';
 import { enemyDistance } from './frontai';
 import { EAGER, eagerOn, stormOn } from './strategyai';
 import { navPost } from './crewai';
+import { boundOrder } from './frontref';
 import type { World } from './world';
 
 /** Query scratch for crowding() (called per blast victim). */
@@ -140,6 +141,8 @@ export function planOperations(world: World, f: Faction): void {
   // Rear guard: posts along our own convoy routes, filled from units far from the front.
   const route = ownConvoyRoute(world, f);
   if (stormOn()) for (const u of mine) if (u.opRole === 'rearguard' && !isGuard(u)) u.opRole = 'line';
+  // 2.1: a front under a binding (player) order lends no rear guards or raiders (fronts.recallDetachments brings its own back).
+  const bound = new Set(f.fronts.filter(boundOrder).map((s) => s.id));
   const guards = mine.filter((u) => u.opRole === 'rearguard');
   // Round 2: guards fired 1–2 % of the time; keep a small guard until our convoys are actually hit.
   const raided = f.trucksUnderFire.some((h) => world.time - h.at < EAGER.rearGuardAlertS);
@@ -148,7 +151,7 @@ export function planOperations(world: World, f: Faction): void {
   const finisher = stormOn() && f.command.finisher;
   const wantGuards = contact && route.length && !finisher ? Math.round(mine.length * share) : 0;
   if (guards.length < wantGuards) {
-    const pool = mine.filter((u) => u.opRole === 'line' && !u.spearhead && !u.manual && isGuard(u) && u.behavior === 'advance')
+    const pool = mine.filter((u) => u.opRole === 'line' && !u.spearhead && !u.manual && isGuard(u) && u.behavior === 'advance' && !bound.has(u.frontId))
       .sort((a, b) => enemyDistance(world, f.id, b.pos) - enemyDistance(world, f.id, a.pos));
     for (const u of pool.slice(0, wantGuards - guards.length)) {
       u.opRole = 'rearguard';
@@ -179,7 +182,7 @@ export function planOperations(world: World, f: Faction): void {
   // 2.0 attack-side round: a front storming / besieging a capital keeps its troops (storm diag: 4–7 of
   // ~40 units of a storming front were off raiding while the assault reached the HQ piecemeal).
   const besieging = new Set(f.fronts.filter((s) => s.op === 'siege' && s.targetCity !== null && s.opPhase !== '').map((s) => s.id));
-  const pool = mine.filter((u) => u.opRole === 'line' && !u.spearhead && !u.manual && isRaider(u) && u.behavior === 'advance' && u.hp > u.def.maxHp * 0.7 && !besieging.has(u.frontId))
+  const pool = mine.filter((u) => u.opRole === 'line' && !u.spearhead && !u.manual && isRaider(u) && u.behavior === 'advance' && u.hp > u.def.maxHp * 0.7 && !besieging.has(u.frontId) && !bound.has(u.frontId))
     .sort((a, b) => dist(a.pos, gap) - dist(b.pos, gap)).slice(0, size);
   if (pool.length < 3) return;
   for (const u of pool) {

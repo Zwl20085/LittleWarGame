@@ -11,12 +11,14 @@ export interface QualityProfile {
   readonly maxPixelRatio: number;
   /** Ground clutter (rocks, shrubs). */
   readonly scatter: boolean;
+  /** Town detail (street furniture, gardens, yards, telegraph poles) and chimney smoke. */
+  readonly townProps: boolean;
 }
 
 export const QUALITY_PROFILES: readonly QualityProfile[] = [
-  { shadowMap: 2048, soldierShadows: true, maxPixelRatio: 2, scatter: true },
-  { shadowMap: 1024, soldierShadows: false, maxPixelRatio: 1.5, scatter: false },
-  { shadowMap: 0, soldierShadows: false, maxPixelRatio: 1, scatter: false },
+  { shadowMap: 2048, soldierShadows: true, maxPixelRatio: 2, scatter: true, townProps: true },
+  { shadowMap: 1024, soldierShadows: false, maxPixelRatio: 1.5, scatter: false, townProps: false },
+  { shadowMap: 0, soldierShadows: false, maxPixelRatio: 1, scatter: false, townProps: false },
 ];
 
 const LEVEL_OF: Record<Exclude<QualityMode, 'auto'>, QualityLevel> = { high: 0, medium: 1, low: 2 };

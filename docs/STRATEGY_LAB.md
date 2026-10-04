@@ -898,3 +898,111 @@ The lead's target of ≥ 2 / 3 wars ended is not met. The two open soak wars at 
   settlements since minute 45) that did not reach F1's capital within the hour.
 Anomalies: 2–5 per seed, of the known kinds (home-guard AT guns "unreachable", raiders and
 tanks on slopes).
+
+## Round 8: binding orders, more fronts, zone garrisons
+
+User findings (2.1): *"前线指挥官可以设置多位，不必拘泥于三位。甚至每条永备工事可以拥有单独的前线指挥官"*
+and *"最高统帅部的指挥命令为强约束，单位需要根据最高统帅部的命令行动，不然人类玩家会感到单位不听指挥"*.
+Spec: docs/COMMAND_V2.md §3 (binding column). Measured on frozen copies of the shared
+`feat/fortress-war` tree (fortress / ui2 work included on both sides); "off" is the same snapshot
+with the fronts agent's files at b23f42c.
+
+### Changes
+
+**Binding orders** (`frontref.boundOrder` = `manual && kind ≠ auto`; `boundLine` = not attack):
+- No detachments from a bound front: `command.assignGarrisons` (busy set), `assignOccupations`,
+  `operations.planOperations` (rear guard and raid pools), `cityai.balanceReserves` (reserve
+  shift). Detachments already out come back (`fronts.recallDetachments`, on the order and every
+  front think); the capital's guards (`hq:` garrison) are exempt (user rule 8).
+- `attack`: no `outmatched` / leaderless hold; `eagerPush` always pushes after a massing wait of
+  at most 30 s (`BOUND_MASS_WAIT_S`); river staging kept; flank / pincer / infiltrate / siege
+  still allowed toward the ordered objective.
+- `defend` / `fortify` / `fallBack`: no manoeuvre op (`holdOperation`: frontal, phase ''), no
+  spearheads, nobody waits at the rally point, crews take line slots (no `crewPost`), no truck
+  hunts or escorts away from the line (`behavior.thinkRaid` / `thinkEscort` skipped). On a
+  `fallBack` the front's town garrisons come back too.
+- Ordered lines man the works on them first (`fronts.manWorks` with `structures.structureSlots`,
+  within `STRUCT.zoneSlotM`): free building slots, then trench bays, nearest squads.
+- Visibility: a bound front's `reason` is `reason.order.<kind>` (except river staging / massing
+  wait); its units' status is `status.orderAttack` / `status.orderMove` / `status.orderHold`.
+- Home recall: a bound front is recalled only at the gates (breach, or nearest aimed ETA ≤
+  `HOME.gatesEtaS`) and only if its order predates the alarm (`homeguard.recallable`); order and
+  line are untouched by the recall, the objective is restored after it. A new manual order ends
+  that front's recall (`releaseRecall`). (Before: manual fronts were never recalled.)
+
+**More fronts** (`theatre.desiredFronts`): wanted = max(one per neighbouring enemy capital ≤
+troops / 12, the 2.0 rule min(strong axes, troops / 20), troops / 28), ≤ `fronts_max` (8); kept
+by the same rule with troops / 12 and troops / 20 (hysteresis below the opening rule). A new front
+needs ≥ 14 free troops (was 20: mid-game only 20–70 of 100–130 troops are free). With every axis
+covered, an extra front goes for the HQ's best attack objective ≥ 600 m from every front
+(`extraObjective`). Seed 7 at 30 min: the strongest faction (154–219 troops) runs 5–7 fronts, a
+100–120-troop faction 4, the weak ones 2–3.
+
+**Zone garrison fronts** (`theatre.garrisonZone`): a zone with ≥ 1 finished pillbox / bunker
+within 60 m of its line and no front holding a line within 300 m gets its own front (≤ 2 per
+faction) when ≥ 6 free squads exist: 8 troops nearest the zone, named after the nearest
+settlement, on a standing *binding* `defend` of the zone's line. Released (to `auto`) when the zone
+is cancelled, unmanned or re-bound, or the faction becomes the finisher; never merged; reinforced
+only when pressed (share × 0.2).
+
+**AI fortified zones** (coordinator request; fortress agent's bunkers never showed in soaks):
+`theatre` now fortifies (a) a quiet `defend` line about to be released and (b) a quiet, freshly
+held town / city objective (a line 60 m beyond its edge toward the nearest enemy capital), when a
+free engineer is within 450 m, the faction has < 3 live zones and none within 500 m. Soak: zones
+0–3 per faction by 45 min, first bunkers built (were 0 in every soak).
+
+**Capital defence** (`storm.capitalDefence`, coordinator request): pillboxes / bunkers count only
+by their manned share (living occupants ÷ capacity), so empty concrete no longer deters a storm.
+
+**Fixes**: `frontops.createFrontAt` (player `newFront`) adopted troops nearest the *settlement*
+instead of the point, and pre-set the same manual order, which made the command's `defend` a
+"repeat" that kept the front 'cautious'. It now adopts every free unit within 350 m of the point
+(a bound donor keeps half) and the order applies the hold posture.
+
+### Results
+
+Challenge lab (`--strategy rush,human_like,rush_micro --seeds 7,11,13 --minutes 40`, plus
+`rush_micro --rushAt 180`), same snapshot, binding orders off → on:
+
+| strategy (3 seeds × 40 min) | off | on (final) |
+|---|---|---|
+| rush@5m | 67 % | **100 %** |
+| human_like | 100 % | 100 % |
+| rush_micro@5m | 100 % | 100 % |
+| rush_micro@3m | 100 % | 100 % |
+| **all 12** | 11 / 12 | **12 / 12** (12 / 12 not outmatched) |
+
+The challenger's front orders are now binding (no outmatched hold, pushes after ≤ 30 s), so it
+attacks harder; the AI still holds every capital and took the challenger's capital in 11 of 12
+matches. Round 7's open `rush_micro@3m` seed-13 loss (hopeless verdict at 1.4 × forecast, recall
+released 6 min before the fall) no longer reproduces on either side of the A/B — the fortress
+round's manned capital buildings changed that match — so `HOME.hopelessRatio` was left alone.
+
+Soak (`npx tsx scripts/soak.ts 45 7,11,13`):
+
+| | off | on (final) |
+|---|---:|---:|
+| eliminations by 45 min (7 / 11 / 13) | 2 / 2 / 2 = 6 | 2 / 2 / 2 = **6** |
+| anomalies per seed | 4 / 6 / 0 | 1 / 7 / 0 |
+| zones per faction at 45 min | 0 | 0–3 |
+| bunkers built | 0 | 1–2 per seed |
+
+Round 7 had 4 eliminations by 45 min and 2–5 anomalies per seed. The anomalies are the known
+kinds (home-guard AT guns "unreachable", a commander stuck on a slope, occupation squads on
+slopes) plus the fortress invariant `fort#… occupant … is dead`, repeated each second while it
+lasts (4 of the 7 on seed 11).
+
+Performance (`npx tsx scripts/perf.ts generated 600 7`): 1.2 ms per tick, p99 9.4 ms (off
+snapshot 1.4 / 10.7 with older data and 10 % more units). The new work is per front think
+(O(front units) for detachments, O(slots × squads) for works) and per HQ think (zones).
+
+### Open issues
+
+- Units on a bound line still follow `structures.structureDuty` (engineer jobs, seeking a free
+  building within `seek_radius_m`); an engineer with a job elsewhere leaves the line.
+- The player can not move units between fronts; a `newFront` next to a bound front takes only
+  half of its free troops.
+- `fort#… occupant … is dead` (fortress code) is the largest anomaly source.
+- New i18n keys needed: `status.orderAttack`, `status.orderMove`, `status.orderHold`.
+- Lab helpers: `scripts/lab/fronts21-diag.ts [seed] [minutes] [every]` prints every faction's
+  fronts (order, `!` binding, `Z` zone garrison, troops), zones, troops / free / wanted fronts.

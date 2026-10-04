@@ -601,7 +601,7 @@ export class Terrain {
     const big = kind === 'city' || kind === 'capital';
     // Landmarks first: church on the square; towers near the centre of cities.
     const sq = toWorld(block / 2 + street / 2, block / 2 + street / 2);
-    if (fits(sq.x, sq.z, 14, 26)) add({ x: sq.x, z: sq.z, w: 26, d: 13, h: 14, rot: ang, kind: 'church' });
+    if (fits(sq.x, sq.z, 14, 26)) add({ x: sq.x, z: sq.z, w: 26, d: 13, h: 14, rot: -ang, kind: 'church' });
     if (big) {
       const towers = kind === 'capital' ? 7 : 4;
       for (let k = 0, tries = 0; k < towers && tries < 60; tries++) {
@@ -610,7 +610,7 @@ export class Terrain {
         const p = { x: t.x + Math.cos(a) * r, z: t.z + Math.sin(a) * r };
         const w = rng.range(12, 18);
         if (!fits(p.x, p.z, w, w)) continue;
-        add({ x: p.x, z: p.z, w, d: w * rng.range(0.8, 1.2), h: rng.range(22, 38), rot: ang, kind: 'tower' });
+        add({ x: p.x, z: p.z, w, d: w * rng.range(0.8, 1.2), h: rng.range(22, 38), rot: -ang, kind: 'tower' });
         k++;
       }
     }
@@ -639,7 +639,9 @@ export class Terrain {
             add({
               x: p.x, z: p.z, w: isFactory ? w * 2 : w, d: isFactory ? d * 1.6 : d,
               h: isFactory ? rng.range(9, 13) : core ? rng.range(big ? 11 : 8, big ? 18 : 12) : rng.range(5.5, 9),
-              rot: ang + rotOff, kind: isFactory ? 'factory' : core && big ? 'block' : 'house',
+              // 2.1: the footprint / draw convention is lx = dx cos(rot) − dz sin(rot), so the long side lies along the
+              // street axis (cos ang, sin ang) only with rot = −(ang + rotOff); +ang turned every house by 2·ang.
+              rot: -(ang + rotOff), kind: isFactory ? 'factory' : core && big ? 'block' : 'house',
             });
           }
         }

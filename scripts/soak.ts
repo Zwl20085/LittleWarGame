@@ -16,6 +16,7 @@ import { buildGameData } from '../src/data/loader';
 import { createMatch, step } from '../src/sim/sim';
 import type { Unit } from '../src/sim/types';
 import { dist } from '../src/sim/vec';
+import { mannedShare } from '../src/sim/structures';
 import { STRATEGY_AI } from '../src/sim/strategyai';
 import { STORM_AB } from '../src/sim/storm';
 import { THEATRE_AB } from '../src/sim/theatre';
@@ -47,6 +48,7 @@ for (const seed of seeds) {
   let logSeen = 0;
   const ticks = minutes * 60 * w.tickHz;
   const win: number[] = [];
+  const mannedAcc = w.factions.map(() => ({ slots: 0, manned: 0 }));
   console.log(`\n=== seed ${seed}: ${w.terrain.width}×${w.terrain.depth} m, ${w.objectives.length} settlements, ${minutes} min cap ===`);
   for (let i = 0; i < ticks && !w.result; i++) {
     const t0 = performance.now();
@@ -62,6 +64,8 @@ for (const seed of seeds) {
     }
     if ((i + 1) % (300 * w.tickHz) === 0) report(win.splice(0, win.length));
     if (i % w.tickHz !== 0) continue;
+    // 2.1: manned building slots, sampled once a minute (time average per faction).
+    if (i % (60 * w.tickHz) === 0) for (const f of w.factions) { const m = mannedShare(w, f.id); mannedAcc[f.id].slots += m.slots; mannedAcc[f.id].manned += m.manned; }
     // Per-second invariants.
     for (const f of w.factions) {
       if (f.p < -1e-6 || f.m < -1e-6) note(`t=${Math.round(w.time)}s faction ${f.id} negative stock P=${f.p.toFixed(1)} M=${f.m.toFixed(1)}`);
@@ -94,7 +98,11 @@ for (const seed of seeds) {
     const done = mine.filter((x) => x.progress >= 1);
     return `${done.length}+${mine.length - done.length}(${done.reduce((a, x) => a + (x.occupants?.length ?? 0), 0)})`;
   }).join(' ');
-  console.log(`BUILDINGS standing+sites(garrison) | pillbox ${bstat('pillbox')} | bunker ${bstat('bunker')} | built pillbox ${builtLog('log.pillboxBuilt')} bunker ${builtLog('log.bunkerBuilt')} lost ${builtLog('log.structureLost')}`);
+  // 2.1: manned share of the finished building slots, and zones per faction (live / cancelled).
+  const manned = w.factions.map((f) => { const m = mannedShare(w, f.id); return m.slots ? `${Math.round((100 * m.manned) / m.slots)}%` : '-'; }).join('/');
+  const zones = w.factions.map((f) => `${f.zones.filter((z) => !z.cancelled).length}${f.zones.some((z) => z.cancelled) ? `(-${f.zones.filter((z) => z.cancelled).length})` : ''}`).join('/');
+  const mannedAvg = mannedAcc.map((a) => (a.slots ? `${Math.round((100 * a.manned) / a.slots)}%` : '-')).join('/');
+  console.log(`BUILDINGS standing+sites(garrison) | pillbox ${bstat('pillbox')} | bunker ${bstat('bunker')} | built pillbox ${builtLog('log.pillboxBuilt')} bunker ${builtLog('log.bunkerBuilt')} lost ${builtLog('log.structureLost')} | manned ${manned} (avg ${mannedAvg}) | zones ${zones} | engineers requested ${builtLog('log.engineersRequested')}`);
   // Batteries that never fired in the whole war.
   let silentGuns = 0; let guns = 0;
   for (const u of w.units.values()) if (u.def.id === 'howitzer' || u.def.id === 'mortar') { guns++; if (!tracks.get(u.id)?.fired && w.time - (tracks.get(u.id)?.since ?? w.time) > 300) silentGuns++; }

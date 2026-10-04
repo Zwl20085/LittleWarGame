@@ -115,6 +115,7 @@ function validateDefensive(d: DefensiveRules | undefined, units: Map<string, Uni
     if (s.cost_p < 0 || s.cost_m < 0) throw new Error(`rules.json: ${s.id} has a negative cost`);
     if (!(s.capacity >= 1) || s.max_crews < 0 || s.max_crews > s.capacity) throw new Error(`rules.json: ${s.id} capacity / max_crews invalid`);
     if (s.weapon !== null && !weapons.has(s.weapon)) throw new Error(`rules.json: ${s.id} references unknown weapon "${s.weapon}"`);
+    if (s.fire_mul && !(s.fire_mul.damage > 0 && s.fire_mul.range > 0)) throw new Error(`rules.json: ${s.id} fire_mul needs damage > 0 and range > 0`);
     for (const id of s.accepts) if (!units.has(id)) throw new Error(`rules.json: ${s.id} accepts unknown unit "${id}"`);
   }
   const g = d.garrison;

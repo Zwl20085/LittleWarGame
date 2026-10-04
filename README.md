@@ -24,6 +24,20 @@
 
 ---
 
+## What's new in 2.1
+
+- **Fortified zones are permanent works.** A Fortify order registers a zone; a later order to the same front never cancels it. Zones keep building from the supreme-HQ card's **Fortified zones** list (progress, who holds it, cancel) and stay on the map as stencils. Engineers of any front finish them.
+- **As many fronts as you need.** Open a front anywhere with <kbd>N</kbd> (up to 8; the commander costs 120 P and free troops within 350 m join it), disband one from its card, pick fronts with <kbd>1</kbd>–<kbd>8</kbd>. The AI runs up to 8 fronts too and opens garrison fronts for its finished zones.
+- **Orders are binding.** A front under your order sends out no occupation, raid or rear-guard detachments; an attack order goes without the "outmatched" hold; a defend or fortify order keeps every unit on the line and mans its works first. Cards stamp **奉命 / ordered** for your orders and the expanded card shows how many units are in position.
+- **Works that are worth it.** Pillboxes cost 6 P + 50 M (2 750 HP) and carry their own 200 m machine gun; bunkers 12 P + 100 M (5 625 HP) and sharpen their occupants' fire; trenches are cheaper. Capitals start with finished pillboxes at their strongpoints plus engineers in the field, and the supreme HQ queues engineers whenever works are waiting. In the soak, manned works went from 2 squads per side to 66–93 % of all slots.
+- **Production follows demand.** When sites wait and no engineer is free, engineers are queued automatically (also for you; pausing the engineer line stops it).
+- **Feet on the ground.** Units no longer float: they stand on the drawn terrain surface instead of the simulation's coarser height, vehicles pitch *and* roll with the slope, shadows start at the feet (the shadow bias now follows the shadow-map pixel size) and every unit gets a soft contact shadow. A fill light from the camera side lifts the faces you actually see.
+- **Towns with streets.** Street grids are painted into the terrain (setts, kerbs, gutters, footways), every town has a square with a monument or well, stalls and benches; lamp posts, carts, garden walls, church yards, factory crate yards and rail spurs, telegraph poles along country roads, chimney smoke. Houses now sit square to their streets (a long-standing rotation bug in the layout).
+- **Refined models.** Riflemen carry packs, bedrolls and canteens, squads have a leader and an LMG gunner; tanks got distinct running gear, hatches, mantlets, stowage and a muzzle brake on the heavy; trucks, guns and the commander's staff got the same treatment; buildings got window reveals, doors, chimneys, tile rows, spires and sawtooth factory roofs. All instanced: frame cost +0.4 ms at most, 8× still holds.
+
+<details>
+<summary><b>What was new in 2.0</b></summary>
+
 ## What's new in 2.0
 
 - **You are the supreme HQ.** The fixed left / centre / right sectors are gone. You command *fronts*, and you give each front one standing order on the map: **Attack**, **Defend**, **Fortify**, **Fall back** or **Auto**. Click for a point, drag for a line. Each order is drawn as an inked war-map line with a stamp naming the front. An order far from every front opens a new front (up to 4). The AI supreme HQ opens, merges and dissolves its own fronts and gives its orders through the same command API as you ([docs/COMMAND_V2.md](docs/COMMAND_V2.md)).
@@ -33,6 +47,8 @@
 - **Challenge lab.** `scripts/challenge.ts` plays one faction with a scripted strategy (rush at 3 / 5 / 10 min, turtle, two axes, raids, late blitz, a human-like player, every unit on the capital) against three AI factions through the real command API. It reports whether the AI kept its capital and how it defended ([docs/CHALLENGE_LAB.md](docs/CHALLENGE_LAB.md)).
 - **Heavier fire.** Explosions now depend on what they hit: water splashes, collapsing buildings that throw dust and rubble, roof hits, AP sparks and vehicle cook-offs. Guns fire tapered flames with smoke rings, tracers glow brighter, wrecks burn with embers that die down, and shelled ground gets a faint haze (high quality tier).
 - **Still fast.** The enemy-distance transform runs on a coarser grid (2.8 % → 0.8 % of sim CPU), defensive-position and cover searches are cached, and forts are looked up through a per-tick index. The 2.0 planner thinks every 5 s and adds no per-tick work. In the browser the renderer frame takes 4.8 ms at the overview and 3.3–3.5 ms in battle views, and 8× speed holds.
+
+</details>
 
 <details>
 <summary><b>What was new in 1.1 and 1.0</b></summary>
@@ -190,7 +206,10 @@ flowchart LR
 | Left click on the map | Place the order at a point |
 | Left drag (25 px or more) | Draw the order as a line from where you press to where you release |
 | <kbd>Shift</kbd> while placing | Keep the order armed for the next one |
-| <kbd>1</kbd>–<kbd>4</kbd> or click a front card | Choose the front that gets the order (default: the front nearest to where you click) |
+| <kbd>1</kbd>–<kbd>8</kbd> or click a front card | Choose the front that gets the order (default: the front nearest to where you click) |
+| <kbd>N</kbd>, then click | Open a new front there (up to 8; its commander costs 120 P) |
+| Disband on the expanded card (two clicks) | Dissolve a front into its nearest neighbour |
+| Fortified zones list on the HQ card | Progress of each permanent zone; Cancel stops the work (standing works remain) |
 | ★ on the front card | Make it the main effort |
 | Right click or <kbd>Esc</kbd> | Cancel the armed order |
 
@@ -322,8 +341,9 @@ It also prints an attacker × victim kill matrix, damage shares by attacker for 
     <tr><td>0.5</td><td>Battle plans, sieges and field works, motorized rifles, doctrines, capital-only defeat</td><td><img src="https://img.shields.io/badge/shipped-3a3326?style=flat-square" alt="shipped" /></td></tr>
     <tr><td>1.0</td><td>Soldier motion, terrain and buildings in combat, orchestral score, retuned AI, graphics quality</td><td><img src="https://img.shields.io/badge/shipped-3a3326?style=flat-square" alt="shipped" /></td></tr>
     <tr><td>1.1</td><td>Artillery and unit identity, capital defence, siege and storm, capital-only victory</td><td><img src="https://img.shields.io/badge/shipped-3a3326?style=flat-square" alt="shipped" /></td></tr>
-    <tr><td><b>2.0</b></td><td><b>Supreme HQ and front commanders, pillboxes and bunkers, armoured thrusts, challenge lab, impact effects</b></td><td><img src="https://img.shields.io/badge/this_release-a63f36?style=flat-square" alt="this release" /></td></tr>
-    <tr><td>2.0.x</td><td>Endgame pace: near-equal two-way duels can still run past an hour under capital-only victory (finisher and attrition tuning)</td><td><img src="https://img.shields.io/badge/in_progress-8a6a2c?style=flat-square" alt="in progress" /></td></tr>
+    <tr><td>2.0</td><td>Supreme HQ and front commanders, pillboxes and bunkers, armoured thrusts, challenge lab, impact effects</td><td><img src="https://img.shields.io/badge/shipped-3a3326?style=flat-square" alt="shipped" /></td></tr>
+    <tr><td><b>2.1</b></td><td><b>Fortress war: permanent fortified zones, up to 8 fronts, binding orders, stronger and cheaper works, capital pillboxes, grounded units and detailed towns</b></td><td><img src="https://img.shields.io/badge/this_release-a63f36?style=flat-square" alt="this release" /></td></tr>
+    <tr><td>2.1.x</td><td>Endgame pace: near-equal two-way duels can still run past an hour under capital-only victory (finisher and attrition tuning)</td><td><img src="https://img.shields.io/badge/in_progress-8a6a2c?style=flat-square" alt="in progress" /></td></tr>
     <tr><td>2.1</td><td>Fog-of-war challenge runs and harder AI difficulties</td><td><img src="https://img.shields.io/badge/planned-6b7a3a?style=flat-square" alt="planned" /></td></tr>
     <tr><td>2.2</td><td>AI bunker garrisons with AT guns, using captured enemy works</td><td><img src="https://img.shields.io/badge/planned-6b7a3a?style=flat-square" alt="planned" /></td></tr>
     <tr><td>2.2</td><td>Buildings and fortifications that block movement</td><td><img src="https://img.shields.io/badge/planned-6b7a3a?style=flat-square" alt="planned" /></td></tr>

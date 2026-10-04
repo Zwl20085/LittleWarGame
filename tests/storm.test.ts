@@ -25,9 +25,15 @@ describe('capital siege-and-storm helpers (storm.ts, crewai.ts)', () => {
     world.forts.push({ id: world.newId(), owner: 0, kind: 'trench', pos: { x: hq.x + 100, z: hq.z }, facing: 0, start: { x: hq.x + 100, z: hq.z - 20 }, end: { x: hq.x + 100, z: hq.z + 20 }, length: 40, hp: 2600, maxHp: 2600, progress: 1, occupant: null });
     expect(capitalDefence(world, 1, 0)).toBeCloseTo(before + STORM.trenchValue, 5);
     expect(stormMass(world, 0, hq)).toBeGreaterThan(0);
-    // 2.0: a finished pillbox adds its building value (its garrison counts as units).
+    // 2.0: a finished pillbox adds its building value (its garrison counts as units);
+    // 2.1: only while manned — empty concrete deters nobody.
     const withTrench = capitalDefence(world, 1, 0);
-    world.forts.push({ id: world.newId(), owner: 0, kind: 'pillbox', pos: { x: hq.x - 60, z: hq.z }, facing: 0, hp: 2200, maxHp: 2200, progress: 1, occupant: null, capacity: 1, occupants: [] });
+    const box = { id: world.newId(), owner: 0, kind: 'pillbox' as const, pos: { x: hq.x - 60, z: hq.z }, facing: 0, hp: 2200, maxHp: 2200, progress: 1, occupant: null as number | null, capacity: 1, occupants: [] as number[] };
+    world.forts.push(box);
+    expect(capitalDefence(world, 1, 0)).toBeCloseTo(withTrench, 5);
+    const crew = [...world.units.values()].find((u) => u.owner === 0 && u.hp > 0 && !u.fixed)!;
+    box.occupants = [crew.id];
+    box.occupant = crew.id;
     expect(capitalDefence(world, 1, 0)).toBeCloseTo(withTrench + STORM.pillboxValue, 5);
   });
 

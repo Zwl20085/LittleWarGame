@@ -7,7 +7,8 @@ import { defendingHome, HOME, isRecalled, ROUND7_AB } from './homeguard';
 import { hostileMask } from './spatial';
 import { capitalDefence } from './storm';
 import { stormOn, STRATEGY_AI } from './strategyai';
-import type { Faction, Front, FrontOrder, Objective, Unit } from './types';
+import { isStructure } from './structures';
+import type { Faction, Front, FrontOrder, Objective, Unit, Zone } from './types';
 import { angleDiff, DEG, dist, headingTo, type V2 } from './vec';
 import type { World } from './world';
 
@@ -29,9 +30,44 @@ export const THEATRE = {
   changeEveryS: 30,
   /** A front younger than this is neither merged nor dissolved (no churn). */
   minAgeS: 120,
-  /** Open a front only with ≥ unitsPerFront combat units per front (and the new one gets ≥ that many); merge the excess below keepUnitsPerFront (hysteresis). */
+  /** A new front gets ≥ newFrontFree free troops (2.0: 20; 2.1: most troops are on a task, ~20–70 of 100–130 are free mid-game). */
+  newFrontFree: 14,
+  /**
+   * 2.1 (user: "前线指挥官可以设置多位，不必拘泥于三位"), fronts wanted (≤ fronts_max) = the most of:
+   * one per neighbouring enemy capital (≤ troops ÷ neighbourTroops), the 2.0 rule (strong axes,
+   * ≤ troops ÷ unitsPerFront) and one per troopsPerFront troops. Kept (hysteresis) by the same rule
+   * with the kept-axis share and keepUnitsPerFront / keepTroopsPerFront.
+   */
   unitsPerFront: 20,
   keepUnitsPerFront: 12,
+  troopsPerFront: 28,
+  keepTroopsPerFront: 20,
+  neighbourTroops: 12,
+  /** Beyond the axes, extra fronts go for the HQ's best attack objective ≥ extraSpacingM from every front's objective and line. */
+  extraSpacingM: 600,
+  /**
+   * 2.1 garrison fronts (user: "每条永备工事可以拥有单独的前线指挥官"): a fortified zone with ≥ 1 finished
+   * pillbox / bunker within zoneStructM of its line and no front holding a line within zoneHeldM gets
+   * a front of its own (≤ zoneFrontsMax per faction) when ≥ zoneMinSquads free squads exist; it takes
+   * zoneTroops troops nearest the zone and holds the zone's line on a standing (binding) defend order.
+   */
+  zoneStructM: 60,
+  zoneHeldM: 300,
+  zoneFrontsMax: 2,
+  zoneMinSquads: 6,
+  zoneTroops: 8,
+  /**
+   * 2.1 (AI fortified zones): a quiet `defend` line about to be released becomes a `fortify` (a
+   * permanent zone, fronts.addZone) when a free engineer of ours is within zoneEngineerM of it, the
+   * line is ≥ zoneMinLineM (addZone's minimum), the faction has < zonesMax live zones and none within
+   * zoneSpacingM. The fortify stance then stands its own stanceMinS before it is released.
+   */
+  zoneEngineerM: 450,
+  zoneMinLineM: 60,
+  zonesMax: 3,
+  zoneSpacingM: 500,
+  /** A quiet held town's zone stands this far beyond its radius, toward the nearest enemy capital. */
+  zoneFrontPadM: 60,
   /** Never merge below min(fronts_initial, troops / floorUnitsPerFront) fronts (diag seed 7: one 120-unit front held the whole frontage; soak 3 × 45 min: floor 40 → 25 took eliminations 2 → 3). */
   floorUnitsPerFront: 25,
   /** Axes: enemy capitals within neighbourMul × the nearest one (the diagonal capital of a 4-FFA is 1.41 ×, left out unless it is the finish target). */
@@ -92,7 +128,7 @@ export const THEATRE = {
 /** Lab switches for the parts of the AI supreme HQ (A/B in scripts/soak.ts: THEATRE_OFF=stances,structure,counter). */
 export const THEATRE_AB = { stances: true, structure: true, counter: true };
 
-interface Axis { pos: V2; bearing: number; weight: number }
+interface Axis { pos: V2; bearing: number; weight: number; /** A neighbouring enemy capital (else a cluster of settlements). */ capital: boolean }
 interface Meta { createdAt: number; emptySince: number; stanceSince: number; calmSince: number }
 
 const metas = new WeakMap<Front, Meta>();
@@ -140,6 +176,7 @@ export function thinkTheatre(world: World, f: Faction): void {
     else if (m.emptySince < 0) m.emptySince = world.time;
   }
   assignWings(world, f);
+  upkeepZoneGarrisons(world, f);
   if (THEATRE_AB.structure && world.time >= (nextChange.get(f) ?? 0) && restructure(world, f, combat)) nextChange.set(f, world.time + THEATRE.changeEveryS);
   if (THEATRE_AB.counter) counterStrike(world, f, combat);
   for (const s of [...f.fronts]) orderFront(world, f, s, combat.get(s.id) ?? []);
@@ -157,7 +194,7 @@ export function theatreAxes(world: World, f: Faction): Axis[] {
     const finish = c.e.id === f.command.finishTarget;
     if (c.d > d0 * THEATRE.neighbourMul && !finish) continue;
     const pos = world.hqPos(c.e.id);
-    raw.push({ pos, bearing: headingTo(hq, pos), weight: (finish ? 2 : 1) / (1 + c.d / THEATRE.capitalScaleM) });
+    raw.push({ pos, bearing: headingTo(hq, pos), weight: (finish ? 2 : 1) / (1 + c.d / THEATRE.capitalScaleM), capital: true });
   }
   const clusters: { pos: V2; w: number }[] = [];
   const objs = world.objectives.filter((o) => (f.command.attackBias[o.id] ?? 0) >= THEATRE.clusterMinBias)
@@ -168,38 +205,53 @@ export function theatreAxes(world: World, f: Faction): Axis[] {
     if (c) c.w += b;
     else clusters.push({ pos: o.pos, w: b });
   }
-  for (const c of clusters) raw.push({ pos: c.pos, bearing: headingTo(hq, c.pos), weight: THEATRE.clusterWeight * c.w });
+  for (const c of clusters) raw.push({ pos: c.pos, bearing: headingTo(hq, c.pos), weight: THEATRE.clusterWeight * c.w, capital: false });
   raw.sort((a, b) => b.weight - a.weight);
   const kept: Axis[] = [];
   for (const a of raw) {
     const same = kept.find((k) => Math.abs(angleDiff(k.bearing, a.bearing)) < THEATRE.axisMergeRad);
-    if (same) same.weight += a.weight * 0.5;
+    if (same) {
+      same.weight += a.weight * 0.5;
+      same.capital ||= a.capital;
+    }
     else kept.push({ ...a });
   }
   return kept.sort((a, b) => b.weight - a.weight);
 }
 
-/** Fronts the theatre needs (open more below it): strong axes, one per `unitsPerFront` troops, 1 … fronts_max. */
-export function desiredFronts(world: World, axes: Axis[], troops: number, axisShare: number = THEATRE.axisMinShare, perFront: number = THEATRE.unitsPerFront): number {
+/**
+ * Fronts the theatre needs (open more below it), 1 … fronts_max (THEATRE.troopsPerFront): one per
+ * neighbouring enemy capital, the 2.0 rule (strong axes, one per `axisPer` troops) and, 2.1, one
+ * per `perFront` troops — whichever asks for most.
+ */
+export function desiredFronts(world: World, axes: Axis[], troops: number, axisShare: number = THEATRE.axisMinShare, axisPer: number = THEATRE.unitsPerFront, perFront: number = THEATRE.troopsPerFront): number {
   const top = axes[0]?.weight ?? 0;
   const strong = axes.filter((a) => a.weight >= axisShare * top).length;
+  const neighbours = Math.min(axes.filter((a) => a.capital).length, Math.floor(troops / THEATRE.neighbourTroops));
+  const byAxes = Math.min(strong, Math.floor(troops / axisPer));
   const byArmy = Math.floor(troops / perFront);
-  return Math.max(1, Math.min(world.data.rules.command.fronts_max, strong, byArmy));
+  return Math.max(1, Math.min(world.data.rules.command.fronts_max, Math.max(neighbours, byAxes, byArmy)));
 }
+
+/** 2.1: AI fronts that garrison a fortified zone (binding defend order on the zone's line). */
+const zoneGarrisons = new WeakSet<Front>();
+export const garrisonsZone = (s: Front): boolean => zoneGarrisons.has(s);
 
 /** Not in the middle of something a merge would break. */
 function mergeable(world: World, f: Faction, s: Front): boolean {
-  return world.time - metaOf(world, s).createdAt >= THEATRE.minAgeS && !maneuvering(s) && s.opPhase !== 'assault'
+  return !zoneGarrisons.has(s) && world.time - metaOf(world, s).createdAt >= THEATRE.minAgeS && !maneuvering(s) && s.opPhase !== 'assault'
     && !(s.op === 'siege' && s.opPhase !== '') && !isRecalled(f, s) && !defendingHome(s) && !counterStrikes.has(s) && !s.manualTarget;
 }
 
 /** At most one structural change; true if one was made. */
 function restructure(world: World, f: Faction, combat: Map<number, Unit[]>): boolean {
+  // 2.1: zone garrisons are counted apart (they hold a fixed line, not an axis).
+  const field = f.fronts.filter((s) => !zoneGarrisons.has(s));
   const total = [...combat.values()].reduce((a, c) => a + c.length, 0);
   const axes = theatreAxes(world, f);
   const want = desiredFronts(world, axes, total);
   const floor = Math.min(world.data.rules.command.fronts_initial, Math.floor(total / THEATRE.floorUnitsPerFront));
-  const keep = Math.max(floor, desiredFronts(world, axes, total, THEATRE.keepAxisShare, THEATRE.keepUnitsPerFront));
+  const keep = Math.max(floor, desiredFronts(world, axes, total, THEATRE.keepAxisShare, THEATRE.keepUnitsPerFront, THEATRE.keepTroopsPerFront));
   const value = (s: Front): number => sumValue(combat.get(s.id) ?? []);
   const nearestOther = (s: Front): Front | undefined => f.fronts.filter((x) => x !== s)
     .sort((a, b) => dist(a.targetPos, s.targetPos) - dist(b.targetPos, s.targetPos) || a.id - b.id)[0];
@@ -220,7 +272,7 @@ function restructure(world: World, f: Faction, combat: Map<number, Unit[]>): boo
       // (Fronts converging on an enemy capital stay apart: each is one axis of the siege / storm.)
       const same = a.targetObjective !== null && a.targetObjective === b.targetObjective;
       if (a.targetCity !== null || b.targetCity !== null) continue;
-      if (f.fronts.length <= floor || (!same && (f.fronts.length <= keep || dist(a.targetPos, b.targetPos) > THEATRE.mergeTargetM))) continue;
+      if (field.length <= floor || (!same && (field.length <= keep || dist(a.targetPos, b.targetPos) > THEATRE.mergeTargetM))) continue;
       const ca = centroid(combat.get(a.id) ?? [], a.front);
       const cb = centroid(combat.get(b.id) ?? [], b.front);
       if (dist(ca, cb) > THEATRE.mergeCentroidM) continue;
@@ -230,7 +282,7 @@ function restructure(world: World, f: Faction, combat: Map<number, Unit[]>): boo
     }
   }
   // 3. More fronts than the army / axes justify: the weakest joins its nearest neighbour.
-  if (f.fronts.length > keep && f.command.finishTarget < 0) {
+  if (field.length > keep && f.command.finishTarget < 0) {
     const weakest = f.fronts.filter((s) => mergeable(world, f, s)).sort((a, b) => value(a) - value(b) || a.id - b.id)[0];
     const into = weakest ? nearestOther(weakest) : undefined;
     if (weakest && into) {
@@ -238,18 +290,95 @@ function restructure(world: World, f: Faction, combat: Map<number, Unit[]>): boo
       return true;
     }
   }
-  // 4. An uncovered axis gets a new front.
-  if (f.fronts.length < want) {
+  // 4. An uncovered axis gets a new front; 2.1: with all axes covered, a big enough army opens
+  // an extra front on the HQ's best attack objective away from every other front.
+  if (field.length < want) {
     const axis = axes.slice(0, want).find((a) => !covered(world, f, a));
-    const obj = axis ? axisObjective(world, f, axis) : null;
+    const obj = axis ? axisObjective(world, f, axis) : extraObjective(world, f);
     if (obj) {
       let free = 0;
       for (const u of world.units.values()) if (u.owner === f.id && transferable(u)) free++;
       const share = Math.floor(free / (f.fronts.length + 1));
-      return share >= THEATRE.unitsPerFront && createFront(world, f, obj, share) !== null;
+      if (share >= THEATRE.newFrontFree && createFront(world, f, obj, share) !== null) return true;
     }
   }
-  return false;
+  // 5. A finished fortified zone nobody holds gets a garrison front of its own.
+  return garrisonZone(world, f);
+}
+
+/** 2.1 extra front: the open objective with the highest HQ attack bias ≥ extraSpacingM from every front's objective / line. */
+function extraObjective(world: World, f: Faction): Objective | null {
+  let best: Objective | null = null;
+  let bestB = 0;
+  for (const o of world.objectives) {
+    const b = f.command.attackBias[o.id] ?? 0;
+    if (o.owner === f.id || b <= bestB) continue;
+    if (f.fronts.some((s) => dist(s.targetPos, o.pos) < THEATRE.extraSpacingM || dist(s.front, o.pos) < THEATRE.extraSpacingM)) continue;
+    best = o;
+    bestB = b;
+  }
+  return best;
+}
+
+/** Distance from `p` to the segment a–b. */
+function segDist(p: V2, a: V2, b: V2): number {
+  const vx = b.x - a.x;
+  const vz = b.z - a.z;
+  const l2 = vx * vx + vz * vz;
+  const t = l2 > 0 ? Math.max(0, Math.min(1, ((p.x - a.x) * vx + (p.z - a.z) * vz) / l2)) : 0;
+  return Math.hypot(p.x - (a.x + vx * t), p.z - (a.z + vz * t));
+}
+
+const zoneCentre = (z: Zone): V2 => ({ x: (z.a.x + z.b.x) / 2, z: (z.a.z + z.b.z) / 2 });
+
+/** A zone with at least one finished, standing pillbox / bunker of ours along its line. */
+export function zoneManned(world: World, f: Faction, z: Zone): boolean {
+  return world.forts.some((w) => w.owner === f.id && w.hp > 0 && w.progress >= 1 && isStructure(w.kind) && segDist(w.pos, z.a, z.b) < THEATRE.zoneStructM);
+}
+
+/** A front holds the zone: a line order (not attack) whose line passes within zoneHeldM of the zone's centre. */
+function zoneHeld(f: Faction, z: Zone): boolean {
+  const c = zoneCentre(z);
+  return f.fronts.some((s) => !!s.line && s.order.kind !== 'attack' && segDist(c, s.line.a, s.line.b) < THEATRE.zoneHeldM);
+}
+
+/** Open a garrison front for the first finished, unheld zone (named after the nearest settlement). */
+function garrisonZone(world: World, f: Faction): boolean {
+  const rules = world.data.rules.command;
+  if (f.fronts.length >= rules.fronts_max || f.command.finisher) return false;
+  if (f.fronts.filter((s) => zoneGarrisons.has(s)).length >= THEATRE.zoneFrontsMax) return false;
+  const z = f.zones.find((x) => !x.cancelled && !zoneHeld(f, x) && zoneManned(world, f, x));
+  if (!z) return false;
+  let squads = 0;
+  for (const u of world.units.values()) if (u.owner === f.id && u.def.kind === 'infantry' && transferable(u)) squads++;
+  if (squads < THEATRE.zoneMinSquads) return false;
+  const c = zoneCentre(z);
+  let obj: Objective | null = null;
+  let bd = Infinity;
+  for (const o of world.objectives) {
+    const d = dist(o.pos, c);
+    if (d < bd) { bd = d; obj = o; }
+  }
+  if (!obj) return false;
+  const s = createFront(world, f, obj, THEATRE.zoneTroops, c);
+  if (!s) return false;
+  zoneGarrisons.add(s);
+  z.frontId = s.id;
+  // A standing, binding order: the garrison keeps the line (no stance release, detachments or pushes).
+  issueFrontOrder(world, f, s, { kind: 'defend', a: { ...z.a }, b: { ...z.b }, issuedAt: world.time, manual: true });
+  s.name = obj.id;
+  return true;
+}
+
+/** A garrison front whose zone was cancelled, lost or re-bound goes back to the field (merged later); a finisher releases them all. */
+function upkeepZoneGarrisons(world: World, f: Faction): void {
+  for (const s of f.fronts) {
+    if (!zoneGarrisons.has(s)) continue;
+    const z = f.zones.find((x) => x.frontId === s.id && !x.cancelled);
+    if (z && zoneManned(world, f, z) && !f.command.finisher) continue;
+    zoneGarrisons.delete(s);
+    issueFrontOrder(world, f, s, order(world, 'auto', s.targetPos));
+  }
 }
 
 function covered(world: World, f: Faction, a: Axis): boolean {
@@ -311,6 +440,14 @@ function orderFront(world: World, f: Faction, s: Front, combat: Unit[]): void {
       m.calmSince = -1;
       return;
     }
+    // 2.1: a freshly held town on a quiet stretch, an engineer at hand: fortify a line in front of it (a permanent zone).
+    const site = THEATRE_AB.stances ? zoneSite(world, f, s, mine) : null;
+    if (site) {
+      issueFrontOrder(world, f, s, order(world, 'fortify', site));
+      m.stanceSince = world.time;
+      m.calmSince = -1;
+      return;
+    }
   }
   attackNext(world, f, s);
 }
@@ -335,6 +472,12 @@ function holdStance(world: World, f: Faction, s: Front, m: Meta, mine: number): 
   } else m.calmSince = -1;
   if (since < THEATRE.stanceMinS) return false;
   if ((m.calmSince >= 0 && world.time - m.calmSince >= THEATRE.calmS) || (since >= THEATRE.stanceMaxS && enemy < mine)) {
+    // 2.1: a quiet line with an engineer at hand is fortified for good before the front moves on.
+    if (s.order.kind === 'defend' && s.line && dist(s.line.a, s.line.b) >= THEATRE.zoneMinLineM && wantsZone(world, f, lineCentre(s.line))) {
+      issueFrontOrder(world, f, s, order(world, 'fortify', s.line.a, s.line.b));
+      m.stanceSince = world.time;
+      return false;
+    }
     s.lastRetarget = -999;
     return true;
   }
@@ -343,6 +486,37 @@ function holdStance(world: World, f: Faction, s: Front, m: Meta, mine: number): 
   if (line && s.order.kind === 'fallBack') issueFrontOrder(world, f, s, order(world, 'defend', line.a, line.b));
   else if (line && s.order.kind === 'defend' && since >= THEATRE.fortifyAfterS) issueFrontOrder(world, f, s, order(world, 'fortify', line.a, line.b));
   return false;
+}
+
+const lineCentre = (l: { a: V2; b: V2 }): V2 => ({ x: (l.a.x + l.b.x) / 2, z: (l.a.z + l.b.z) / 2 });
+
+/** A place worth a permanent zone: a free engineer near, below the zone cap, no zone near. */
+function wantsZone(world: World, f: Faction, c: V2): boolean {
+  const live = f.zones.filter((z) => !z.cancelled);
+  if (live.length >= THEATRE.zonesMax || live.some((z) => dist(zoneCentre(z), c) < THEATRE.zoneSpacingM)) return false;
+  for (const u of world.units.values()) {
+    if (u.owner === f.id && u.def.id === 'engineer' && u.hp > 0 && !u.manual && !u.routing && u.opRole === 'line' && dist(u.pos, c) < THEATRE.zoneEngineerM) return true;
+  }
+  return false;
+}
+
+/** The front's objective is an own, quiet town / city: a point (radius + zoneFrontPadM) toward the nearest enemy capital, if a zone is wanted there. */
+function zoneSite(world: World, f: Faction, s: Front, mine: number): V2 | null {
+  const o = world.objectives.find((x) => x.id === s.targetObjective);
+  if (!o || o.owner !== f.id || o.contested || (o.kind !== 'town' && o.kind !== 'city') || mine <= 0) return null;
+  if (enemyNear(world, f.id, o.pos, THEATRE.defendR) >= mine * THEATRE.releaseRatio) return null;
+  let toward: V2 | null = null;
+  let bd = Infinity;
+  for (const e of world.factions) {
+    if (!e.alive || !world.isHostile(f.id, e.id)) continue;
+    const d = dist(world.hqPos(e.id), o.pos);
+    if (d < bd) { bd = d; toward = world.hqPos(e.id); }
+  }
+  if (!toward) return null;
+  const h = headingTo(o.pos, toward);
+  const p = { x: o.pos.x + Math.cos(h) * (o.radius + THEATRE.zoneFrontPadM), z: o.pos.z + Math.sin(h) * (o.radius + THEATRE.zoneFrontPadM) };
+  const q = world.nav(false, 35).nearestPassable(p, 40);
+  return q && wantsZone(world, f, q) ? q : null;
 }
 
 function wantsFallBack(world: World, f: Faction, s: Front, combat: Unit[], mine: number): boolean {

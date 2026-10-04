@@ -30,6 +30,11 @@ export const PAL = {
   riverBed: new THREE.Color('#5f6249'),
   gravel: new THREE.Color('#b0a588'),
   hedge: new THREE.Color('#5f6a3d'),
+  /** Town paving (2.1): granite setts, kerb stone, pavement flags, garden ground. */
+  sett: new THREE.Color('#7e776b'),
+  kerb: new THREE.Color('#d8d1c1'),
+  flag: new THREE.Color('#bdb39d'),
+  garden: new THREE.Color('#8f9660'),
   /** Field patchwork: wheat, young green, ploughed, pale meadow, fallow, mustard. */
   fields: ['#c8b676', '#8f9c58', '#94795a', '#a8ad70', '#b3a57c', '#c2b263'].map((h) => new THREE.Color(h)),
   water: { deep: new THREE.Color('#2a5257'), shallow: new THREE.Color('#4f7d72'), ford: new THREE.Color('#8ea486') },

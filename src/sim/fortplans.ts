@@ -3,7 +3,7 @@ import { HOME } from './homeguard';
 import { assignJob, canAfford, enemyNear, isStructure, jobOf, startStructure, structureSiteOk, STRUCT, type StructureKind } from './structures';
 import { Ground } from './terrain';
 import { startLine, WORKS } from './works';
-import type { Faction, Fort, Front, Unit } from './types';
+import type { Faction, Fort, Unit, Zone } from './types';
 import { dist, headingTo, type V2 } from './vec';
 import type { World } from './world';
 
@@ -12,16 +12,19 @@ import type { World } from './world';
  *  - Capital line (rule 8, "首都区域必须有驻防、且必须有工兵建设一道防线"): from minute 1 every faction
  *    builds `rules.command.capital_line_works` (trenches + pillboxes) across the capital's exit
  *    approach (HOME.trenchR, the home-defence geometry), rebuilding what is destroyed.
- *  - Fortified zone (筑垒地域): a front under a `fortify` order builds trenches along its line,
- *    pillboxes at the ends and a bunker behind the centre, facing away from the capital.
+ *  - Fortified zone (筑垒地域, 2.1): every non-cancelled `Faction.zones` entry (one per Fortify
+ *    order, fronts.addZone) is a permanent project — trenches along its line, pillboxes at the ends
+ *    and a bunker behind the centre, facing away from the capital — built whatever the front's
+ *    current order (user: 筑垒地域是永备工事). A cancelled zone stops (escrow released, standing
+ *    works kept). Builders: the zone's front's engineers first, then any free engineer in range.
  *  - Pressed towns (homeguard.fortifyPlace): a pillbox behind the approach trench when M allows.
  * Runs once per HQ think (5 s) from homeguard.fortifyHome; builders are assigned here (engineers;
  * riflemen help with trenches only) and do the work in behavior.thinkUnit → structures.structureDuty.
  */
 export const PLANS = {
   capital: {
-    /** First capital-line site this long after the start. */
-    startS: 60,
+    /** First capital-line site this long after the start (2.1: the two starting engineers start at once). */
+    startS: 20,
     /** Trenches at HOME.trenchR, this far apart (rad) around the exit bearing; pillboxes on the flanks. */
     trenchStepRad: 0.34,
     pillboxFlankRad: 0.36,
@@ -41,6 +44,8 @@ export const PLANS = {
     bunkerBackM: 18,
     maxOpen: 2,
     poolR: 1200,
+    /** The zone's own front's engineers are called from this far. */
+    frontPoolR: 3000,
   },
   place: {
     /** A pressed town gets a pillbox only with this × its M cost to spare. */
@@ -57,9 +62,11 @@ export const PLANS = {
    * one per HQ think): engineers wanted = buildings waiting (planned or open), at most `maxEngineers`.
    * (Soak, first build: the AI's production mix fielded no engineer in the first 5 min, so no pillbox rose.)
    */
-  maxEngineers: 3,
+  maxEngineers: 0.4,
   /** …and no request while the faction already has this many engineers (alive + queued). */
-  maxEngineersAll: 6,
+  maxEngineersAll: 0.8,
+  /** The request is announced (log.engineersRequested) at most this often per faction. */
+  requestNoteS: 120,
   /** Engineers this close to their front's planned bridge are left to build it. */
   bridgeKeepM: 500,
   /**
@@ -92,35 +99,51 @@ interface Plan {
 }
 
 const capitalPlans = new WeakMap<Faction, Plan>();
-const zonePlans = new WeakMap<Front, Plan>();
+/** Fortified-zone plans per faction, by zone id (2.1: zones outlive the orders that created them). */
+const zonePlans = new WeakMap<Faction, Map<number, Plan>>();
 const capitalAnnounced = new WeakSet<Faction>();
+/** The one plan item per faction collecting trench instalments (escrows do not stack across zones). */
+const escrowHolder = new WeakMap<Faction, PlanItem>();
+const requestNotedAt = new WeakMap<Faction, number>();
+
+function zonePlansOf(f: Faction): Map<number, Plan> {
+  let m = zonePlans.get(f);
+  if (!m) zonePlans.set(f, (m = new Map()));
+  return m;
+}
 
 /** Per-HQ-think entry point (homeguard.fortifyHome). */
 export function planStructures(world: World, f: Faction): void {
   if (!f.alive) return;
   planCapitalLine(world, f);
-  for (const s of f.fronts) planFortifyZone(world, f, s);
+  planZones(world, f);
   requestEngineers(world, f);
 }
 
-/** Buildings planned but not finished (capital line + fortify zones). */
-function buildingsWaiting(world: World, f: Faction): number {
+/** Plan items (buildings and trenches) not yet finished: the capital line and every live zone. */
+function sitesWaiting(world: World, f: Faction): number {
   let n = 0;
-  const plans = [capitalPlans.get(f), ...f.fronts.map((s) => zonePlans.get(s))];
+  const plans = [capitalPlans.get(f), ...zonePlansOf(f).values()];
   for (const p of plans) {
     for (const it of p?.items ?? []) {
-      if (it.kind === 'trench') continue;
-      const fort = it.fortId !== null ? world.forts.find((x) => x.id === it.fortId) : undefined;
-      if (!fort || fort.progress < 1) n++;
+      const fort = it.fortId !== null ? world.fortById(it.fortId) : undefined;
+      if (!fort || fort.hp <= 0 || fort.progress < 1) n++;
     }
   }
   return n;
 }
 
-/** The AI supreme HQ asks for engineers when buildings wait for builders (the player raises their own). */
+/**
+ * The supreme HQ's war-effort automation (2.1, every faction including the player's — user
+ * finding "单位生产似乎不顾及需求"): when works wait and the free engineers are fewer than the
+ * sites (at most `maxEngineers`), queue the missing engineers at manual-queue priority, up to
+ * `maxEngineersAll` engineers in all, and say so in the log. A paused engineer line is respected.
+ */
 function requestEngineers(world: World, f: Faction): void {
-  if (f.isPlayer) return;
-  const want = Math.min(PLANS.maxEngineers, buildingsWaiting(world, f));
+  if (f.paused.engineer) return;
+  // Caps scale with the army (army_scale 10 fields ~20 engineers; the seed values are per scale 1).
+  const k = world.data.rules.proposed_defaults.army_scale ?? 1;
+  const want = Math.min(Math.round(PLANS.maxEngineers * k), sitesWaiting(world, f));
   if (want <= 0) return;
   // Engineers on other errands (sieges, occupations, bridges) do not count, up to a hard cap on all engineers.
   const queued = f.orders.filter((o) => o.unitId === 'engineer').length + f.manualQueue.filter((q) => q.unitId === 'engineer').length;
@@ -131,7 +154,13 @@ function requestEngineers(world: World, f: Faction): void {
     all++;
     if (freeHand(f, u)) free++;
   }
-  if (free < want && all < PLANS.maxEngineersAll) f.manualQueue = [...f.manualQueue, { unitId: 'engineer', frontId: -1 }];
+  const n = Math.min(want - free, Math.round(PLANS.maxEngineersAll * k) - all);
+  if (n <= 0) return;
+  f.manualQueue = [...f.manualQueue, ...Array.from({ length: n }, () => ({ unitId: 'engineer', frontId: -1 }))];
+  if (world.time - (requestNotedAt.get(f) ?? -1e9) >= PLANS.requestNoteS) {
+    requestNotedAt.set(f, world.time);
+    world.note(f.id, 'log.engineersRequested', { n }, 'info');
+  }
 }
 
 // ---------------------------------------------------------------- capital line
@@ -184,30 +213,32 @@ function capitalPool(world: World, f: Faction, hq: V2, site: Fort): Unit[] {
     // Home guards man the buildings (structures.seekGarrison); riflemen of quiet fronts dig.
     if (u.def.id === 'engineer' ? d < PLANS.capital.poolR : canDig(u, site) && d < PLANS.capital.rifleR && u.opRole === 'line' && quietFront(f, u)) out.push(u);
   }
-  return out;
+  return byDistance(out, site.pos);
 }
 
-// ---------------------------------------------------------------- fortified zone (fortify order)
+const byDistance = (us: Unit[], p: V2): Unit[] => us.sort((x, y) => dist(x.pos, p) - dist(y.pos, p) || x.id - y.id);
 
-function planFortifyZone(world: World, f: Faction, s: Front): void {
-  if (s.order.kind !== 'fortify' || !s.line) {
-    dropZone(world, f, s);
-    return;
-  }
-  const { a, b } = s.line;
-  const key = `${Math.round(a.x)},${Math.round(a.z)},${Math.round(b.x)},${Math.round(b.z)}`;
-  let plan = zonePlans.get(s);
-  if (!plan || plan.key !== key) {
-    dropZone(world, f, s);
-    plan = layoutZone(world, f, key, a, b);
-    zonePlans.set(s, plan);
-  }
-  advancePlan(world, f, plan, PLANS.zone.maxOpen, (site) => frontPool(world, f, s, site));
-}
+// ---------------------------------------------------------------- fortified zones (2.1, Faction.zones)
 
-function dropZone(world: World, f: Faction, s: Front): void {
-  for (const it of zonePlans.get(s)?.items ?? []) releaseEscrow(world, f, it);
-  zonePlans.delete(s);
+/** Build every live zone; a cancelled (or vanished) zone's plan is dropped, its standing works stay. */
+function planZones(world: World, f: Faction): void {
+  const plans = zonePlansOf(f);
+  const live = new Set<number>();
+  for (const z of f.zones) {
+    if (z.cancelled) continue;
+    live.add(z.id);
+    let plan = plans.get(z.id);
+    if (!plan) {
+      plan = layoutZone(world, f, `zone:${z.id}`, z.a, z.b);
+      plans.set(z.id, plan);
+    }
+    advancePlan(world, f, plan, PLANS.zone.maxOpen, (site) => zonePool(world, f, z, site));
+  }
+  for (const [id, plan] of [...plans]) {
+    if (live.has(id)) continue;
+    for (const it of plan.items) releaseEscrow(world, f, it);
+    plans.delete(id);
+  }
 }
 
 /** Trenches along a–b, pillboxes at the ends (one at the centre on short lines), a bunker behind the centre. */
@@ -233,14 +264,23 @@ function layoutZone(world: World, f: Faction, key: string, a: V2, b: V2): Plan {
   return { key, items };
 }
 
-/** The front's own engineers (and riflemen for trenches) near the site. */
-function frontPool(world: World, f: Faction, s: Front, site: Fort): Unit[] {
-  const out: Unit[] = [];
+/**
+ * Builders of a zone site: the zone's front's engineers (from `frontPoolR`) first, then any free
+ * engineer within `poolR`; riflemen of the zone's front near the site dig its trenches. A zone whose
+ * front dissolved (frontId null or gone) is built by whoever is in range.
+ */
+function zonePool(world: World, f: Faction, z: Zone, site: Fort): Unit[] {
+  const out: { u: Unit; rank: number; d: number }[] = [];
+  const fid = z.frontId !== null && f.fronts.some((x) => x.id === z.frontId) ? z.frontId : null;
   for (const u of world.units.values()) {
-    if (u.owner !== f.id || u.frontId !== s.id || u.opRole !== 'line' || !freeHand(f, u) || dist(u.pos, site.pos) > PLANS.zone.poolR) continue;
-    if (u.def.id === 'engineer' || canDig(u, site)) out.push(u);
+    if (u.owner !== f.id || !freeHand(f, u)) continue;
+    const d = dist(u.pos, site.pos);
+    const own = fid !== null && u.frontId === fid;
+    if (u.def.id === 'engineer') {
+      if (own ? d <= PLANS.zone.frontPoolR : d <= PLANS.zone.poolR) out.push({ u, rank: own ? 0 : 1, d });
+    } else if (own && u.opRole === 'line' && d <= PLANS.zone.poolR && canDig(u, site)) out.push({ u, rank: 2, d });
   }
-  return out;
+  return out.sort((x, y) => x.rank - y.rank || x.d - y.d || x.u.id - y.u.id).map((x) => x.u);
 }
 
 // ---------------------------------------------------------------- pressed towns (homeguard.fortifyPlace)
@@ -265,7 +305,7 @@ export function planPlaceStructure(world: World, f: Faction, centre: V2, radius:
     if (!site) return;
   }
   const s = site;
-  assignBuilders(world, [s], () => [...world.units.values()].filter((u) => u.owner === f.id && u.def.id === 'engineer' && freeHand(f, u) && dist(u.pos, s.pos) < PLANS.place.poolR));
+  assignBuilders(world, [s], () => byDistance([...world.units.values()].filter((u) => u.owner === f.id && u.def.id === 'engineer' && freeHand(f, u) && dist(u.pos, s.pos) < PLANS.place.poolR), s.pos));
 }
 
 // ---------------------------------------------------------------- shared
@@ -337,7 +377,11 @@ function advancePlan(world: World, f: Faction, plan: Plan, maxOpen: number, pool
 
 /** Start (or adopt an existing own trench at) one plan item. */
 function startItem(world: World, f: Faction, it: PlanItem): Fort | null {
-  if (enemyNear(world, f.id, it.pos, STRUCT.noBuildEnemyM)) return null;
+  if (enemyNear(world, f.id, it.pos, STRUCT.noBuildEnemyM)) {
+    // The enemy is on the site: give the instalments back (another site may collect meanwhile).
+    releaseEscrow(world, f, it);
+    return null;
+  }
   if (it.kind !== 'trench') return startStructure(world, f, it.kind, it.pos, it.facing, HOME.reserveCostMul);
   for (const w of world.forts) {
     if (w.hp > 0 && (w.kind === 'trench' || w.kind === 'sandbag') && dist(w.pos, it.pos) < WORKS.trench.length * 0.7) {
@@ -348,12 +392,19 @@ function startItem(world: World, f: Faction, it: PlanItem): Fort | null {
   }
   const cost = WORKS.trench.costP * (world.data.rules.proposed_defaults.army_scale ?? 1);
   if (it.paid < cost) {
+    // One trench collects at a time per faction (several zones must not each take half the stock).
+    const holder = escrowHolder.get(f);
+    if (holder && holder !== it && holder.paid > 0) return null;
+    escrowHolder.set(f, it);
     const take = Math.min(cost - it.paid, Math.max(0, f.p) * PLANS.escrowShare);
     if (take > 0 && trySpend(f, take, 0).ok) it.paid += take;
     if (it.paid < cost - 1e-6) return null;
   }
   const fort = startLine(world, f, 'trench', it.pos, it.facing, true);
-  if (fort) it.paid = 0;
+  if (fort) {
+    it.paid = 0;
+    if (escrowHolder.get(f) === it) escrowHolder.delete(f);
+  }
   return fort;
 }
 
@@ -361,15 +412,15 @@ function startItem(world: World, f: Faction, it: PlanItem): Fort | null {
 function releaseEscrow(world: World, f: Faction, it: PlanItem): void {
   if (it.paid > 0) refund(f, it.paid, 0, world.data.rules);
   it.paid = 0;
+  if (escrowHolder.get(f) === it) escrowHolder.delete(f);
 }
 
 /** Keep `buildersPerSite` (trenches: `diggersPerTrench`) assigned to each site, nearest first. */
 function assignBuilders(world: World, sites: Fort[], pool: () => Unit[]): void {
   for (const site of sites) {
     const want = isStructure(site.kind) ? PLANS.buildersPerSite : PLANS.diggersPerTrench;
-    const cands = pool()
-      .filter((u) => isStructure(site.kind) ? u.def.id === 'engineer' : canDig(u, site))
-      .sort((x, y) => dist(x.pos, site.pos) - dist(y.pos, site.pos) || x.id - y.id);
+    // The pool's order is the preference (nearest first, or ranked by the pool).
+    const cands = pool().filter((u) => isStructure(site.kind) ? u.def.id === 'engineer' : canDig(u, site));
     let have = 0;
     for (const u of cands) {
       if (jobOf(world, u) === site.id) {

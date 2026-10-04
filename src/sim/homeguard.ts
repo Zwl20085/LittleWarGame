@@ -8,7 +8,7 @@ import { dig, openWork, startLine, WORKS } from './works';
 import { isCommander } from './formulas';
 import { planPlaceStructure, planStructures } from './fortplans';
 import { eligibleCapturer } from './capture';
-import { leaveStructure } from './structures';
+import { capitalBuildingSlots, leaveStructure } from './structures';
 import { counterStrikes, frontById } from './frontref';
 import type { Faction, Front, Unit } from './types';
 import { angleDiff, dist, headingTo, type V2 } from './vec';
@@ -131,6 +131,12 @@ export const STANDING = {
   fromS: 120,
   /** A recall / counter-strike front is taken last by the recall (cost added to its rank). */
   counterStrikeCost: 3,
+  /**
+   * 2.1 (user: 测试单位是否会利用永备工事进行防御): the standing garrison grows by one squad per
+   * finished capital building slot (strongpoint and capital-line pillboxes), at most this many, so
+   * the buildings are manned while the HQ-point holders stay on the point.
+   */
+  manExtraMax: 3,
 } as const;
 
 /** A group in the middle of an assault, a breakthrough or a siege of its own. */
@@ -559,7 +565,7 @@ function recall(world: World, f: Faction, groups: Map<number, GroupInfo>, guards
     const window = Math.max(0, ht.etaMean) + HOME.reachSlackS;
     const maxGroups = want >= army * HOME.allGroupsShare ? f.fronts.length : f.fronts.length - 1;
     const cands = f.fronts
-      .filter((s) => !s.manualTarget && !ht.recall.includes(s.id) && (groups.get(s.id)?.n ?? 0) > 0 && dist(centre(s.id), hq) / HOME.marchMps <= window)
+      .filter((s) => recallable(f, s) && !ht.recall.includes(s.id) && (groups.get(s.id)?.n ?? 0) > 0 && dist(centre(s.id), hq) / HOME.marchMps <= window)
       // Round 4: an assault / storm under way is not called off (op success −3.7 pts in round 3), unless the enemy is at the gates.
       .filter((s) => !stormOn() || !storming(s) || ht.eta <= HOME.gatesEtaS)
       .map((s) => {
@@ -599,26 +605,29 @@ function recall(world: World, f: Faction, groups: Map<number, GroupInfo>, guards
  */
 function releaseGuards(world: World, f: Faction, guards: Unit[]): void {
   if (f.command.homeThreat.fortify) return;
-  const keep = new Set(world.time >= STANDING.fromS ? rankStanding(world, f, guards).slice(0, standingSize(world)) : []);
+  const keep = new Set(world.time >= STANDING.fromS ? rankStanding(world, f, guards).slice(0, standingSize(world, f)) : []);
   const kept = guards.filter((u) => keep.has(u));
   for (const u of guards) if (!keep.has(u)) toLine(u);
   guards.length = 0;
   guards.push(...kept);
 }
 
-const standingSize = (world: World): number => world.data.rules.command.capital_standing_garrison;
+const standingSize = (world: World, f: Faction): number =>
+  world.data.rules.command.capital_standing_garrison + Math.min(STANDING.manExtraMax, capitalBuildingSlots(world, f.id));
 
 /** Standing-guard preference: infantry (diggers), then crews, then the rest; nearest the capital first. */
 function rankStanding(world: World, f: Faction, units: Unit[]): Unit[] {
   const hq = world.hqPos(f.id);
-  const rank = (u: Unit): number => (u.def.kind === 'infantry' ? 0 : u.def.kind === 'crew' ? 1 : 2);
+  // 2.1: riflemen before engineers — engineers build and never man the capital's pillboxes (soak
+  // seed 7: a standing garrison of 4 engineers left all 4 capital pillboxes empty for 20 min).
+  const rank = (u: Unit): number => (u.def.kind === 'infantry' ? (u.def.id === 'engineer' ? 1 : 0) : u.def.kind === 'crew' ? 2 : 3);
   return [...units].sort((a, b) => rank(a) - rank(b) || dist(a.pos, hq) - dist(b.pos, hq) || a.id - b.id);
 }
 
 /** Top the standing garrison up to `capital_standing_garrison` (from `STANDING.fromS`). */
 function keepStanding(world: World, f: Faction, guards: Unit[]): void {
   if (world.time < STANDING.fromS) return;
-  const missing = standingSize(world) - guards.length;
+  const missing = standingSize(world, f) - guards.length;
   if (missing <= 0) return;
   // Squads only (rifle / engineer / motorised): crews posted by the standing garrison sat 'unreachable' (soak seed 13).
   const pool = rankStanding(world, f, guardPool(world, f, false, 0, true).filter((u) => u.def.kind === 'infantry'));
@@ -890,4 +899,27 @@ export function restoreOrders(s: Front): boolean {
   return true;
 }
 
-export const isRecalled = (f: Faction, s: Front): boolean => !s.manualTarget && f.command.homeThreat.recall.includes(s.id);
+export const isRecalled = (f: Faction, s: Front): boolean => f.command.homeThreat.recall.includes(s.id);
+
+/**
+ * 2.1 binding orders vs the capital (user rule 8): a front on the player's order is recalled only
+ * when the enemy is at the gates (a breach, or the nearest aimed group ≤ `gatesEtaS` out) and the
+ * order predates the alarm — an order given during the alarm is the supreme HQ's explicit choice.
+ * The recall keeps `order` and `line`; `restoreOrders` gives the objective back afterwards.
+ */
+function recallable(f: Faction, s: Front): boolean {
+  if (!s.manualTarget) return true;
+  const ht = f.command.homeThreat;
+  const gates = ht.breach || (ht.eta >= 0 && ht.eta <= HOME.gatesEtaS && ht.aimed >= HOME.minThreat);
+  return gates && s.order.issuedAt < ht.since;
+}
+
+/** A new order for a recalled front (the player's): it leaves the recall, its saved orders are void. */
+export function releaseRecall(f: Faction, s: Front): void {
+  saved.delete(s);
+  const ht = f.command.homeThreat;
+  if (!ht.recall.includes(s.id)) return;
+  ht.recall = ht.recall.filter((id) => id !== s.id);
+  const { [s.id]: _gone, ...rest } = ht.recallAt;
+  ht.recallAt = rest;
+}

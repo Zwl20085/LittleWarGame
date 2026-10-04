@@ -212,6 +212,22 @@ export interface Front {
   opPhase: string;
 }
 
+/**
+ * 2.1 fortified zone (筑垒地域): a permanent engineering project along a line, created by a
+ * Fortify order and kept until finished, cancelled or lost — a later order to the same front
+ * does not abandon it (user finding: 筑垒地域是永备工事). Works are built by fortplans.ts.
+ */
+export interface Zone {
+  readonly id: number;
+  readonly a: V2;
+  readonly b: V2;
+  /** Front that holds the line (null once that front dissolves; any front may garrison it). */
+  frontId: number | null;
+  readonly createdAt: number;
+  /** Set by the supreme HQ to stop work and release what was escrowed. */
+  cancelled: boolean;
+}
+
 export interface ProductionOrder {
   readonly id: number;
   readonly unitId: string;
@@ -278,6 +294,9 @@ export interface Faction {
   mainFront: number;
   /** Next front id (fronts are created and dissolved during the match). */
   frontSeq: number;
+  /** Permanent fortified-zone projects (2.1). */
+  zones: Zone[];
+  zoneSeq: number;
   incomeP: number;
   incomeM: number;
   overflowWarnAt: number;

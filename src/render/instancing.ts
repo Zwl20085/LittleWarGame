@@ -26,6 +26,20 @@ export class GeoBuilder {
   private readonly swing: number[] = [];
   private animated = false;
 
+  /** Copy every vertex of another builder into this one. */
+  append(o: GeoBuilder): this {
+    for (const [dst, src] of [[this.pos, o.pos], [this.nor, o.nor], [this.col, o.col], [this.tint, o.tint], [this.swing, o.swing]] as const) {
+      for (let i = 0; i < src.length; i++) dst.push(src[i]);
+    }
+    this.animated ||= o.animated;
+    return this;
+  }
+
+  /** Nothing has been added yet. */
+  get empty(): boolean {
+    return this.pos.length === 0;
+  }
+
   /** Emit a per-vertex `swing` weight (legs of animated soldiers; see soldierMaterial). */
   withSwing(): this {
     this.animated = true;

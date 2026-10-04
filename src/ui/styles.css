@@ -237,6 +237,52 @@ svg.brass-gauge .needle { transform-origin: 30px 31px; transition: transform 400
 .fc-detail .kv b { text-align: right; font-weight: 600; }
 .fc-detail .row { margin: 5px 0 0; }
 .fc-detail .btn { font-size: var(--fs-s); padding: 2px 8px; }
+/* 2.1: binding orders — "Ordered" stamps are inked solid, the commander's own are outlined faint. */
+.order-stamp.own { opacity: 0.62; border-style: dashed; font-size: calc(10px * var(--ui)); }
+.order-stamp.manual { background: rgba(255, 255, 255, 0.32); }
+.fc-mini { display: none; font-size: calc(11px * var(--ui)); color: var(--ink-muted); }
+.fc-detail .kv.obey { display: grid; grid-template-columns: auto 1fr auto; gap: 6px; align-items: center; }
+.obey-bar, .zr-bar { height: 5px; background: rgba(0, 0, 0, 0.12); border: 1px solid var(--border); overflow: hidden; }
+.obey-bar i, .zr-bar i { display: block; height: 100%; background: var(--oc, var(--olive)); transform-origin: left; transition: transform 400ms var(--ease); }
+.fc-detail .row { flex-wrap: wrap; gap: 4px; }
+.fc-detail .btn.disband { margin-left: auto; color: var(--danger); border-color: var(--danger); }
+.fc-detail .btn.disband.armed { background: var(--danger); color: #f4ecd9; }
+/* More than three fronts: collapsed cards are one row (index, name, ★, troops, stamp). */
+.front-cards.compact { gap: 3px; }
+.front-cards.compact .front-card:not(.open) { padding-top: 3px; padding-bottom: 3px; }
+.front-cards.compact .front-card:not(.open) .fc-cmd,
+.front-cards.compact .front-card:not(.open) .fc-reason { display: none; }
+.front-cards.compact .front-card:not(.open) .fc-mini { display: inline; }
+.front-cards.compact .front-card:not(.open) .fc-name { font-size: calc(13px * var(--ui)); }
+.front-cards.compact .front-card:not(.open)::after { display: none; }
+
+/* 2.1: New-front button and the fortified-zone list on the supreme-HQ card. */
+.hq-fronts { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
+.btn.newfront { flex: 1; font-size: var(--fs-s); padding: 3px 8px; display: flex; align-items: center; gap: 2px; font-family: var(--font-title); letter-spacing: 0.04em; }
+.btn.newfront kbd { margin-left: auto; font-family: var(--font-num); font-size: calc(9px * var(--ui)); color: var(--ink-muted); }
+.btn.newfront.on { background: var(--olive); color: #f4ecd9; }
+.btn.newfront.on kbd { color: #f4ecd9; }
+.hq-fcount { font-size: var(--fs-s); color: var(--ink-muted); }
+.hq-fcount.full { color: var(--danger); font-weight: 700; }
+.zones { margin-top: 4px; border-top: 1px dashed var(--border); padding-top: 3px; }
+.zones-head { display: flex; align-items: baseline; gap: 5px; width: 100%; background: none; border: 0; padding: 1px 0; color: var(--ink); cursor: pointer; font-family: var(--font-title); font-size: var(--fs-s); letter-spacing: 0.06em; text-align: left; }
+.zones-head .zh-caret { color: var(--ink-muted); width: 1em; }
+.zones-head .zh-n { margin-left: auto; color: var(--ink-muted); }
+.zones-list { display: flex; flex-direction: column; gap: 2px; max-height: calc(120px * var(--ui)); overflow-y: auto; scrollbar-width: thin; padding-right: 2px; }
+.zone-row {
+  --oc: #8a6420; position: relative; display: grid; grid-template-columns: auto 1fr auto auto; column-gap: 5px; align-items: center;
+  font-size: var(--fs-s); padding: 1px 3px 4px 5px; border-left: 3px double #6f6a5a; cursor: pointer; background: rgba(255, 255, 255, 0.16);
+}
+.zone-row:hover .zr-front { text-decoration: underline; }
+.zone-row.done { --oc: var(--olive); }
+.zr-id { color: var(--ink-muted); font-size: calc(10px * var(--ui)); }
+.zr-front { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; font-weight: 600; }
+.zr-works { white-space: nowrap; color: var(--ink-muted); }
+.btn.zr-cancel { font-size: calc(10px * var(--ui)); padding: 0 5px; line-height: 1.5; }
+.zr-bar { position: absolute; left: 5px; right: 3px; bottom: 0; height: 3px; border: 0; }
+/* Many fronts: drop the HQ card's tutorial line and staff notes (the capital alert stays). */
+.left.busy .order-how, .left.busy .hq-row:not(.alert) { display: none; }
+.left.busy .zones-list { max-height: calc(78px * var(--ui)); }
 
 /* Opening briefing: a typed slip with a SECRET stamp. */
 .briefing { position: absolute; left: 50%; bottom: calc(var(--bottom-h, 150px) + 22px); transform: translateX(-50%) rotate(-0.6deg); width: min(calc(560px * var(--ui)), 46vw); padding: 8px 14px 10px; font-size: var(--fs-m); line-height: 1.55; animation: drop var(--t-panel) var(--ease); border-top: 3px double var(--danger); }
@@ -512,6 +558,13 @@ svg.brass-gauge .needle { transform-origin: 30px 31px; transition: transform 400
 @media (max-height: 820px) {
   .order-how, .hq-row:not(.alert) { display: none; }
   .fc-reason { -webkit-line-clamp: 1; line-clamp: 1; }
+  /* 2.1, many fronts on a short screen: one zone row visible (scrolls), the open card sheds its reason line. */
+  .left.busy .zones-list { max-height: calc(25px * var(--ui)); }
+  .front-cards.compact .front-card.open .fc-reason { display: none; }
+  .front-cards.compact .fc-detail { margin-top: 3px; padding-top: 2px; }
+  .front-cards.compact .fc-detail .kv { padding: 1px 0; }
+  .front-cards.compact .fc-detail .row { margin-top: 3px; }
+  .left.busy .order-target, .front-cards.compact .fc-detail .kv.plan { display: none; }
 }
 @media (max-height: 760px) {
   .ts-sub { margin-bottom: 3vh; }

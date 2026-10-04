@@ -4,7 +4,8 @@ import { hostileMask } from './spatial';
 import { EAGER, eagerOn } from './strategyai';
 import { defendingHome } from './homeguard';
 import { isCommander } from './formulas';
-import { THEATRE } from './theatre';
+import { garrisonsZone, THEATRE } from './theatre';
+import { boundOrder } from './frontref';
 import type { World } from './world';
 
 const PERSONALITY_MUL: Record<Personality, Record<string, number>> = {
@@ -117,6 +118,8 @@ function balanceReserves(world: World, f: Faction, strength: ReadonlyMap<number,
     const need = Math.min(1.5, pressure.get(s.id) ?? 0);
     // A front well below the mean strength (new, or bled) gets topped up first.
     const thin = mean > 0 ? Math.max(0, 1 - (strength.get(s.id) ?? 0) / mean) : 0;
+    // 2.1: a zone garrison is topped up only when pressed (it holds a fixed line, not an axis).
+    if (garrisonsZone(s)) return 0.2 * (0.6 + need);
     return (0.6 + need + THEATRE.shareThin * thin) * (s.id === f.mainFront ? THEATRE.shareMain : 1);
   });
   const sum = raw.reduce((a, b) => a + b, 0) || 1;
@@ -128,7 +131,8 @@ function balanceReserves(world: World, f: Faction, strength: ReadonlyMap<number,
     if ((pressure.get(s.id) ?? 0) > (pressure.get(hot.id) ?? 0)) hot = s;
     if ((pressure.get(s.id) ?? 0) < (pressure.get(calm.id) ?? 0)) calm = s;
   }
-  if (hot === calm || (pressure.get(hot.id) ?? 0) < 1.2 || (pressure.get(calm.id) ?? 0) > 0.5) return;
+  // 2.1: a front under a binding order (a zone garrison) lends no troops.
+  if (hot === calm || boundOrder(calm) || (pressure.get(hot.id) ?? 0) < 1.2 || (pressure.get(calm.id) ?? 0) > 0.5) return;
   const movable: Unit[] = [];
   for (const u of world.units.values()) {
     if (u.owner === f.id && u.frontId === calm.id && u.hp > 0 && !u.fixed && !u.manual && !u.spearhead && u.opRole === 'line'

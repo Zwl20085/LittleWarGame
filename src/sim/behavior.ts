@@ -5,7 +5,7 @@ import { dig, openWork } from './works';
 import { FORT } from './config';
 import { moveTo, stop } from './movement';
 import { commanderPost, lerpV } from './fronts';
-import { frontOf } from './frontref';
+import { boundLine, boundOrder, frontOf } from './frontref';
 import { hostileMask } from './spatial';
 import { trySpend } from './economy';
 import { ESCORT_REACT_S } from './damage';
@@ -138,8 +138,10 @@ export function thinkUnit(world: World, u: Unit): void {
   if (u.opRole === 'siege' && thinkSiegeParty(world, u, s)) return;
   if (u.opRole === 'raid' && thinkOpRaid(world, u)) return;
   if (u.opRole === 'rearguard' && thinkRearGuard(world, u)) return;
-  if ((u.def.id === 'recon' || u.def.id === 'light_tank') && thinkRaid(world, u)) return;
-  if (u.def.kind !== 'crew' && thinkEscort(world, u)) return;
+  // 2.1: a unit on a binding line order keeps its place on the line (no truck hunts / escorts away from it).
+  const onLine = boundLine(s);
+  if (!onLine && (u.def.id === 'recon' || u.def.id === 'light_tank') && thinkRaid(world, u)) return;
+  if (!onLine && u.def.kind !== 'crew' && thinkEscort(world, u)) return;
   if (s.posture === 'withdraw') {
     u.behavior = 'rally';
     u.status = 'status.withdraw';
@@ -176,6 +178,13 @@ export function thinkUnit(world: World, u: Unit): void {
     default: break;
   }
   thinkAssault(world, u, s);
+  if (boundOrder(s)) orderStatus(u, s);
+}
+
+/** 2.1: a unit of a front on a binding order shows that order while it marches to / holds its place (the player sees obedience). */
+function orderStatus(u: Unit, s: Front): void {
+  if (u.status === 'status.advancing' || u.status === 'status.assaultCity') u.status = s.order.kind === 'attack' ? 'status.orderAttack' : 'status.orderMove';
+  else if (u.status === 'status.holding') u.status = s.order.kind === 'attack' ? 'status.orderAttack' : 'status.orderHold';
 }
 
 function thinkAssault(world: World, u: Unit, s: Front): void {
@@ -327,7 +336,8 @@ function thinkCrewWeapon(world: World, u: Unit, s: Front): void {
   const front = s.front;
   const slot = s.slots[u.id];
   // Round 4: on the axis of the group's fight, inside range of the enemy mass (crewai.ts).
-  const post = stormOn() ? crewPost(world, u, s) : null;
+  // 2.1: on a binding line order the crew takes its slot on the ordered line.
+  const post = stormOn() && !boundLine(s) ? crewPost(world, u, s) : null;
   const want = post ?? slot ?? behind(world, u, front, homeFor(world, u), back);
   const off = post || slot ? { x: 0, z: 0 } : spread(u, 25);
   const pos = { x: want.x + off.x, z: want.z + off.z };

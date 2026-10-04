@@ -4,6 +4,8 @@ import type { GameContext } from './context';
 import { fmtTime, h } from './dom';
 import { t } from './i18n';
 import { frontLabel, localizeParams } from './labels';
+import type { V2 } from '../sim/vec';
+import { inPosition, ZonesSection } from './zones';
 
 /** Palette order and hotkeys (see `ORDER_KEYS` in input.ts). */
 const ORDERS: { kind: OrderKind; key: string }[] = [
@@ -14,6 +16,10 @@ const ORDERS: { kind: OrderKind; key: string }[] = [
 const GLYPH: Record<OrderKind, string> = { attack: '➤', defend: '┳', fortify: '♜', fallBack: '↶', auto: '✥' };
 /** Game seconds the opening briefing stays up (unless dismissed or an order is given). */
 const BRIEFING_S = 150;
+/** Disband needs a second click within this (ms) — no accidental loss of a front. */
+const DISBAND_CONFIRM_MS = 3000;
+/** More fronts than this: collapsed cards shrink to one row (the expanded one keeps the detail). */
+const COMPACT_OVER = 3;
 
 /**
  * Left column (2.0): the player is the supreme HQ. A stamped orders card (palette Z/X/C/V/B and
@@ -39,18 +45,26 @@ export class FrontsPanel {
   /** Last seen order per front (`issuedAt|kind`) to stamp / announce fresh orders. */
   private seenOrders = new Map<number, string>();
   private fresh = new Map<number, number>();
+  /** Fortified-zone list on the supreme-HQ card (2.1). */
+  private readonly zones: ZonesSection;
+  /** Front whose Disband button was clicked once (and when), awaiting the confirming click. */
+  private disbandArm: { id: number; at: number } | null = null;
+  /** Front last scrolled into view (only a newly expanded card is scrolled to). */
+  private scrolledTo: number | null = null;
 
   constructor(private readonly ctx: GameContext) {
     this.command = h('section', { class: 'hq-card orders panel paper-stack' });
     this.cards = h('div', { class: 'front-cards' });
     this.briefing = h('div', { class: 'briefing panel' });
     this.log = h('div', { class: 'eventlog' });
+    this.zones = new ZonesSection(ctx);
     this.el = h('aside', { class: 'left' }, this.command, this.cards, this.log);
   }
 
   /** Expand / collapse a front (the expanded front is the target of the next order). */
   toggle(id: number | null): void {
     this.expanded = this.expanded === id ? null : id;
+    if (this.expanded === null) this.scrolledTo = null;
     this.sig = '';
     this.cmdSig = '';
     const m = this.ctx.mode;
@@ -61,6 +75,41 @@ export class FrontsPanel {
     this.sig = '';
     this.cmdSig = '';
     this.lastLogSig = '';
+    this.zones.relabel();
+  }
+
+  /** N / the card button: arm "open a front where I click" (again disarms); refused at the limit. */
+  pickNewFront(): void {
+    const w = this.ctx.match.world;
+    const f = w.factions[this.ctx.playerId];
+    if (!f || this.ctx.spectator) return;
+    if (this.ctx.mode.kind === 'newFront') {
+      this.ctx.mode = { kind: 'normal' };
+      return;
+    }
+    if (f.fronts.length >= w.data.rules.command.fronts_max) {
+      this.ctx.toast(t('fail.frontLimit', { n: w.data.rules.command.fronts_max }), 'warn');
+      return;
+    }
+    this.ctx.mode = { kind: 'newFront' };
+  }
+
+  /** The input controller picked the place for a new front. */
+  openFrontAt(a: V2): void {
+    const w = this.ctx.match.world;
+    const f = w.factions[this.ctx.playerId];
+    if (!f) return;
+    if (f.fronts.length >= w.data.rules.command.fronts_max) {
+      this.ctx.toast(t('fail.frontLimit', { n: w.data.rules.command.fronts_max }), 'warn');
+      return;
+    }
+    const cost = this.commanderCost();
+    if (f.p < cost) {
+      this.ctx.toast(t('fail.frontNoP', { n: cost }), 'warn');
+      return;
+    }
+    this.ctx.issue({ type: 'newFront', a: { x: a.x, z: a.z } });
+    this.briefingDone = true;
   }
 
   /** Palette / hotkey: arm an order for placement on the map (same key again disarms). */
@@ -93,6 +142,7 @@ export class FrontsPanel {
   /** Mode hint while an order is armed. */
   modeHint(): string {
     const m = this.ctx.mode;
+    if (m.kind === 'newFront') return t('front.newPick');
     if (m.kind !== 'frontOrder') return '';
     const w = this.ctx.match.world;
     const target = m.frontId !== null ? frontLabel(w, this.ctx.playerId, m.frontId)
@@ -111,17 +161,21 @@ export class FrontsPanel {
       if (this.expanded !== null && !frontById(f, this.expanded)) this.expanded = null;
       this.announce();
       this.renderCommand();
+      this.zones.refresh();
       this.renderBriefing();
       const counts = f.fronts.map((s) => frontUnits(w, f.id, s.id).length);
+      const openFront = this.expanded !== null ? frontById(f, this.expanded) : undefined;
+      const pos = openFront ? inPosition(w, f, openFront) : null;
+      if (this.disbandArm && performance.now() - this.disbandArm.at > DISBAND_CONFIRM_MS) this.disbandArm = null;
       const now = w.time;
       const sig = JSON.stringify([
         f.fronts.map((s) => {
           const c = w.unitAlive(s.commanderId);
-          return [s.id, s.name, s.order.kind, s.order.issuedAt, s.reason, s.reasonParams, s.op, s.opPhase, s.posture,
+          return [s.id, s.name, s.order.kind, s.order.issuedAt, s.order.manual, s.reason, s.reasonParams, s.op, s.opPhase, s.posture,
             c ? Math.round((c.hp / c.def.maxHp) * 20) : -1, c?.status, s.commanderLostAt >= 0 && !c ? Math.round(now - s.commanderLostAt) : 0,
             this.fresh.has(s.id)];
         }),
-        f.mainFront, counts, this.expanded, this.previewTarget, this.modeKey(),
+        f.mainFront, counts, this.expanded, this.previewTarget, this.modeKey(), pos, this.disbandArm?.id,
       ]);
       if (sig !== this.sig) {
         this.sig = sig;
@@ -134,6 +188,13 @@ export class FrontsPanel {
   private modeKey(): string {
     const m = this.ctx.mode;
     return m.kind === 'frontOrder' ? `${m.order}|${m.frontId}` : m.kind;
+  }
+
+  /** Stamp text: "奉命 · 突击" for the player's orders, "自主" for the commander's / staff's own. */
+  private stampText(s: Front): string {
+    const kind = t(`order.short.${s.order.kind}`);
+    if (s.order.manual && s.order.kind !== 'auto') return t('order.stampManual', { order: kind });
+    return s.order.kind === 'auto' ? t('order.stampAuto') : t('order.stampStaff', { order: kind });
   }
 
   /** Toast + stamp animation when a front receives a new manual order (the command landed). */
@@ -158,7 +219,7 @@ export class FrontsPanel {
     const f = w.factions[this.ctx.playerId];
     const home = f.command?.homeThreat;
     const dirs = (f.command?.directives ?? []).slice(0, 3);
-    const sig = JSON.stringify([this.modeKey(), this.expanded, this.expanded !== null ? frontLabel(w, f.id, this.expanded) : '', home?.active, Math.round((home?.eta ?? 0) / 10), home?.recall.length, dirs.map((d) => [d.kind, d.obj, d.assigned])]);
+    const sig = JSON.stringify([this.modeKey(), f.fronts.length, this.expanded, this.expanded !== null ? frontLabel(w, f.id, this.expanded) : '', home?.active, Math.round((home?.eta ?? 0) / 10), home?.recall.length, dirs.map((d) => [d.kind, d.obj, d.assigned])]);
     if (sig === this.cmdSig) return;
     this.cmdSig = sig;
     const m = this.ctx.mode;
@@ -191,7 +252,27 @@ export class FrontsPanel {
           onclick: () => this.pickOrder(o.kind),
         }, h('span', { class: 'og', 'aria-hidden': 'true' }, GLYPH[o.kind]), h('span', { class: 'on' }, t(`order.short.${o.kind}`)), h('kbd', {}, o.key)))),
       h('div', { class: 'order-how' }, armed ? t('order.howArmed') : t('order.how')),
+      this.newFrontRow(f.fronts.length, w.data.rules.command.fronts_max),
+      this.zones.el,
     );
+  }
+
+  private commanderCost(): number {
+    const w = this.ctx.match.world;
+    return w.data.units.get(w.data.rules.command.commander_unit)?.costP ?? 0;
+  }
+
+  /** "New front" button with the front count against the limit. */
+  private newFrontRow(n: number, max: number): HTMLElement {
+    const on = this.ctx.mode.kind === 'newFront';
+    const full = n >= max;
+    return h('div', { class: 'hq-fronts' },
+      h('button', {
+        class: `btn newfront ${on ? 'on' : ''}`, disabled: full && !on, 'aria-pressed': String(on),
+        title: full ? t('fail.frontLimit', { n: max }) : t('front.newTip', { p: this.commanderCost() }),
+        onclick: () => this.pickNewFront(),
+      }, h('span', { 'aria-hidden': 'true' }, '＋ '), t('front.new'), h('kbd', {}, 'N')),
+      h('span', { class: `hq-fcount num ${full ? 'full' : ''}`, title: t('front.countTip') }, `${n}/${max}`));
   }
 
   private renderBriefing(): void {
@@ -210,6 +291,9 @@ export class FrontsPanel {
     const f = w.factions[this.ctx.playerId];
     this.cards.innerHTML = '';
     const armed = this.ctx.mode.kind === 'frontOrder';
+    this.cards.classList.toggle('compact', f.fronts.length > COMPACT_OVER);
+    // Many fronts: the supreme-HQ card drops its tutorial line and staff notes to leave room for the cards.
+    this.el.classList.toggle('busy', f.fronts.length > COMPACT_OVER);
     f.fronts.forEach((s, i) => {
       const main = s.id === f.mainFront;
       const open = this.expanded === s.id;
@@ -225,11 +309,17 @@ export class FrontsPanel {
         h('span', { class: 'fc-idx num' }, String(i + 1)),
         h('b', { class: 'fc-name' }, frontLabel(w, f.id, s.id)),
         main ? h('span', { class: 'fc-main', title: t('front.mainTip') }, '★') : null,
-        h('span', { class: `order-stamp k-${s.order.kind}` }, t(`order.${s.order.kind}`))),
+        h('span', { class: 'fc-mini num', title: t('front.troopsTip') }, String(counts[i])),
+        h('span', { class: `order-stamp k-${s.order.kind} ${s.order.manual ? 'manual' : 'own'}` }, this.stampText(s))),
       this.commanderRow(s, counts[i]),
       h('div', { class: 'fc-reason' }, this.reasonText(s)));
-      if (open) card.append(this.detail(s));
       this.cards.append(card);
+      if (open) {
+        card.append(this.detail(s));
+        // Keep the expanded front in view when the list scrolls (8 fronts on a short screen).
+        if (this.scrolledTo !== s.id) requestAnimationFrame(() => card.scrollIntoView({ block: 'nearest' }));
+        this.scrolledTo = s.id;
+      }
     });
   }
 
@@ -272,13 +362,38 @@ export class FrontsPanel {
     const stop = (fn: () => void) => (e: Event): void => { e.stopPropagation(); fn(); };
     const plan = `${t(`op.${s.op}`)}${s.opPhase ? ` · ${t(`phase.${s.opPhase}`)}` : ''} · ${t(`posture.${s.posture}`)}`;
     const since = s.order.kind === 'auto' ? '' : t('front.orderSince', { t: fmtTime(Math.max(0, w.time - s.order.issuedAt)), who: s.order.manual ? t('front.byYou') : t('front.byHq') });
+    const pos = inPosition(w, f, s);
+    const armed = this.disbandArm?.id === s.id;
+    const canDisband = f.fronts.length > 1;
     return h('div', { class: 'fc-detail' },
-      h('div', { class: 'kv' }, h('span', {}, t('front.plan')), h('b', { title: t(`op.${s.op}Tip`) }, plan)),
+      h('div', { class: 'kv plan' }, h('span', {}, t('front.plan')), h('b', { title: t(`op.${s.op}Tip`) }, plan)),
       since ? h('div', { class: 'kv' }, h('span', {}, t('front.order')), h('b', {}, since)) : null,
+      pos && pos.total > 0 ? h('div', { class: 'kv obey', title: t('front.inPositionTip') },
+        h('span', {}, t('front.inPosition')),
+        h('span', { class: 'obey-bar', 'aria-hidden': 'true' }, h('i', { style: `transform:scaleX(${(pos.at / pos.total).toFixed(3)})` })),
+        h('b', { class: 'num' }, `${pos.at}/${pos.total}`)) : null,
       h('div', { class: 'row' },
         h('button', { class: `btn ${main ? 'on' : ''}`, disabled: main, title: t('front.mainTip'), onclick: stop(() => this.ctx.issue({ type: 'setMainFront', frontId: s.id })) }, `★ ${t('front.main')}`),
-        h('button', { class: 'btn', onclick: stop(() => this.ctx.renderer.rig.lookAt(s.targetPos.x, s.targetPos.z)) }, t('front.gotoObjective'))),
+        h('button', { class: 'btn', onclick: stop(() => this.ctx.renderer.rig.lookAt(s.targetPos.x, s.targetPos.z)) }, t('front.gotoObjective')),
+        canDisband ? h('button', {
+          class: `btn disband ${armed ? 'armed' : ''}`, title: t('front.disbandTip'),
+          onclick: stop(() => this.disband(s)),
+        }, armed ? t('front.disbandConfirm') : t('front.disband')) : null),
     );
+  }
+
+  /** First click arms, a second within DISBAND_CONFIRM_MS issues `disbandFront`. */
+  private disband(s: Front): void {
+    const arm = this.disbandArm;
+    if (arm && arm.id === s.id && performance.now() - arm.at <= DISBAND_CONFIRM_MS) {
+      this.disbandArm = null;
+      this.ctx.issue({ type: 'disbandFront', frontId: s.id });
+      this.ctx.toast(t('front.disbanded', { front: frontLabel(this.ctx.match.world, this.ctx.playerId, s.id) }));
+      if (this.expanded === s.id) this.toggle(null);
+    } else {
+      this.disbandArm = { id: s.id, at: performance.now() };
+    }
+    this.sig = '';
   }
 
   private renderLog(): void {

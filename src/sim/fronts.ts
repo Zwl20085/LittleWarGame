@@ -6,14 +6,15 @@ import { ADAPT, adaptive, EAGER, eagerOn } from './strategyai';
 import { deadCapital, maneuvering, planPincer, resetOperation, runOperation, siegeRing } from './doctrine';
 import { bridgeSiteFor } from './engineering';
 import { frontSegments, OPS, spreadAlong, planOperations } from './operations';
-import { defendingHome, homeOn, isRecalled, restoreOrders, ROUND7_AB, saveOrders } from './homeguard';
+import { defendingHome, homeOn, isRecalled, releaseRecall, restoreOrders, ROUND7_AB, saveOrders } from './homeguard';
 import { capitalSiege, stormRing } from './storm';
-import type { Faction, Objective, Front, Unit } from './types';
+import { STRUCT, structureSlots } from './structures';
+import type { Faction, Objective, Front, Unit, Zone } from './types';
 import { dist, headingTo, angleDiff, DEG, type V2 } from './vec';
 import type { World } from './world';
 import { isCommander } from './formulas';
 import { activeSegment, inMass, LINE_ORDER, lineThrough, massSlot, orderAlong, terrainLine } from './frontslots';
-import { frontById } from './frontref';
+import { boundLine, boundOrder, frontById } from './frontref';
 
 export { frontById };
 
@@ -104,6 +105,8 @@ export function issueFrontOrder(world: World, f: Faction, s: Front, order: Front
     && (prev.b === null) === (order.b === null) && (!prev.b || !order.b || dist(prev.b, order.b) < 30);
   s.order = order;
   const hq = world.hqPos(f.id);
+  // 2.1: the player's order is binding — it ends a recall of this front (the capital's own guards stay).
+  if (order.manual) releaseRecall(f, s);
   if (order.kind === 'auto') {
     s.line = null;
     s.manualTarget = false;
@@ -148,16 +151,70 @@ export function issueFrontOrder(world: World, f: Faction, s: Front, order: Front
       if (s.opPhase !== '') resetOperation(s, frontUnits(world, f.id, s.id), world);
     } else if (s.posture === 'hold' || s.posture === 'fortify') setPosture(world, s, 'cautious');
   }
+  if (order.kind === 'fortify' && s.line) addZone(world, f, s);
   if (order.kind === 'fallBack') {
     // Everyone drops what they are doing and marches back to the new line before fighting again
-    // (behavior.fallingBack keeps them marching until they reach it).
+    // (behavior.fallingBack keeps them marching until they reach it). 2.1: on the player's order
+    // town garrisons come back too (only the capital's guards stay).
     for (const u of frontUnits(world, f.id, s.id)) {
       if (u.manual || u.def.id === 'supply_truck' || isCommander(u.def)) continue;
       u.spearhead = null;
-      if (u.opRole !== 'garrison') { u.opRole = 'line'; u.opTarget = null; u.opObjective = null; }
+      if (u.opRole !== 'garrison' || (order.manual && !capitalGuard(u))) { u.opRole = 'line'; u.opTarget = null; u.opObjective = null; }
       u.behavior = 'advance';
     }
   }
+  if (boundOrder(s)) recallDetachments(s, frontUnits(world, f.id, s.id));
+}
+
+/** A home guard of the capital (standing garrison, HQ point): exempt from binding orders (user rule 8). */
+const capitalGuard = (u: Unit): boolean => u.opRole === 'garrison' && !!u.opObjective?.startsWith('hq:');
+
+/**
+ * 2.1 binding orders (COMMAND_V2 §3): the front's detachments come back — town garrisons,
+ * occupations, raids and rear guards; on a line order also manoeuvre / siege parties and
+ * spearheads, and nobody waits at the rally point. The capital's guards stay (user rule 8).
+ */
+export function recallDetachments(s: Front, units: readonly Unit[]): void {
+  const line = boundLine(s);
+  for (const u of units) {
+    if (u.manual || u.def.id === 'supply_truck' || isCommander(u.def) || capitalGuard(u)) continue;
+    const r = u.opRole;
+    if (r === 'garrison' || r === 'occupy' || r === 'raid' || r === 'rearguard' || (line && (r === 'maneuver' || r === 'infiltrate' || r === 'siege'))) {
+      u.opRole = 'line';
+      u.opTarget = null;
+      u.opObjective = null;
+    }
+    if (line) {
+      u.spearhead = null;
+      if (u.behavior === 'rally') u.behavior = 'advance';
+    }
+  }
+}
+
+/** Match radius for "the same line again" (a re-issued Fortify order binds the existing zone). */
+const ZONE_SAME_M = 40;
+/** Shortest line that counts as a zone (works are laid every ~55 m). */
+const ZONE_MIN_M = 60;
+
+/**
+ * Register the front's ordered line as a permanent fortified-zone project (2.1). A line already
+ * registered is re-bound to this front instead of duplicated; other zones of the faction are
+ * untouched, so a new Fortify order never cancels an earlier one.
+ */
+export function addZone(world: World, f: Faction, s: Front): Zone | null {
+  if (!s.line) return null;
+  const { a, b } = s.line;
+  // A zone needs a real line to lay works along (a point order resolved on the capital gave a == b).
+  if (dist(a, b) < ZONE_MIN_M) return null;
+  const same = f.zones.find((z) => !z.cancelled && ((dist(z.a, a) < ZONE_SAME_M && dist(z.b, b) < ZONE_SAME_M) || (dist(z.a, b) < ZONE_SAME_M && dist(z.b, a) < ZONE_SAME_M)));
+  if (same) {
+    same.frontId = s.id;
+    return same;
+  }
+  const z: Zone = { id: f.zoneSeq++, a: { ...a }, b: { ...b }, frontId: s.id, createdAt: world.time, cancelled: false };
+  f.zones = [...f.zones, z];
+  world.note(f.id, 'log.zonePlanned', { point: s.name }, 'info');
+  return z;
 }
 
 function setPosture(world: World, s: Front, p: Front['posture']): void {
@@ -424,21 +481,26 @@ export function thinkFronts(world: World, f: Faction): void {
     }
     // Round 7: the player's attack orders get the AI's cautious ⇄ assault rule (cityai never runs for players).
     if (f.isPlayer && ROUND7_AB.assault) orderedAssault(world, f, s, units);
+    // 2.1 binding orders: detachments come back; a line order is held frontally (no manoeuvre ops).
+    const bound = boundOrder(s);
+    if (bound) recallDetachments(s, units);
     // Battle doctrine for this group's attack (flank, pincer, infiltration, siege …).
-    runOperation(world, f, s, units);
+    if (bound && boundLine(s)) holdOperation(world, s, units);
+    else runOperation(world, f, s, units);
     // Losing badly near target → pause the push (avoid suicidal trickle). Count the whole front,
     // including units waiting at the rally point, so the gate cannot deadlock.
     const mine = strengthOf(units);
     const theirs = knownEnemyStrength(world, f.id, s.targetPos, 220);
     // A front that has just lost its commander holds its ground until the replacement arrives.
-    const outmatched = (theirs > mine * 1.6 && s.posture !== 'assault') || leaderless(world, s);
+    // 2.1: a binding attack order goes regardless (only the massing wait and river staging remain).
+    const outmatched = !bound && ((theirs > mine * 1.6 && s.posture !== 'assault') || leaderless(world, s));
     const gatherAtRally = units.filter((u) => u.behavior === 'rally' && dist(u.pos, s.rally) < 60);
     const inf = gatherAtRally.filter((u) => u.def.kind === 'infantry').length;
     if (gatherAtRally.length > 0 && s.gatheredSince < 0) s.gatheredSince = world.time;
     const waited = s.gatheredSince >= 0 && world.time - s.gatheredSince > AI.rallyMaxWait;
     const scale = world.data.rules.proposed_defaults.army_scale ?? 1;
     const needInf = Math.max(AI.rallyMinInfantry, Math.round(AI.rallyMinInfantry * scale * 0.6));
-    const release = (inf >= needInf || waited) && !outmatched && s.posture !== 'withdraw';
+    const release = ((inf >= needInf || waited) && !outmatched && s.posture !== 'withdraw') || boundLine(s);
     if (release) {
       for (const u of gatherAtRally) u.behavior = 'advance';
       s.gatheredSince = -1;
@@ -449,7 +511,26 @@ export function thinkFronts(world: World, f: Faction): void {
     if ((release || gatherAtRally.length === 0) && (s.reason === 'reason.waitGroup' || s.reason === 'reason.outmatched')) setGoalReason(s);
     s.advancing = release;
     planFront(world, f, s, units, outmatched);
+    if (bound) orderReason(s);
   }
+}
+
+/** 2.1: a line order is held frontally — no flank / pincer / infiltration / siege on a defend / fortify / fall-back order. */
+function holdOperation(world: World, s: Front, units: Unit[]): void {
+  if (s.opPhase !== '' || s.op !== 'frontal') resetOperation(s, units, world);
+  if (!s.opLocked) s.op = 'frontal';
+  s.opPhase = '';
+  s.opRoute = [];
+}
+
+/** Commander tactics reasons that read as obeying the order (a push on an attack order, a hold on a line order). */
+const ORDER_REASONS = new Set(['reason.pushFront', 'reason.holdFront', 'reason.holdRiver', 'reason.holdHigh', 'reason.holdLine', 'reason.capturePoint', 'reason.assaultCity', 'reason.outmatched']);
+
+/** 2.1: a front on a binding order shows the order (the player sees obedience), except a river staging / massing wait. */
+function orderReason(s: Front): void {
+  if (defendingHome(s) || !ORDER_REASONS.has(s.reason)) return;
+  s.reason = `reason.order.${s.order.kind}`;
+  s.reasonParams = { point: s.targetObjective ?? '' };
 }
 
 /**
@@ -482,6 +563,8 @@ function planFront(world: World, f: Faction, s: Front, units: Unit[], defensive:
     // Round 4: a capital storm pushes whatever the local ratio at the anchor (the defenders mass
     // there; the storm was launched on the mass at the capital vs its forecast defence, storm.ts).
     if (capitalSiege(s) && s.op === 'siege' && s.opPhase === 'assault' && !defensive) pushing = true;
+    // 2.1: a binding attack order pushes (eagerPush keeps only a short massing wait).
+    if (boundOrder(s) && s.order.kind === 'attack' && !defensive && !eagerOn()) pushing = true;
     if (pushing) {
       // Push the line forward toward the objective in bounded steps.
       const d = Math.min(110, dist(anchor, s.targetPos));
@@ -515,7 +598,7 @@ function planFront(world: World, f: Faction, s: Front, units: Unit[], defensive:
     const armoured = mobileFresh(units) >= EAGER.armorSpearMobile;
     const spearRatio = finishing ? Math.min(EAGER.finishSpearRatio, armoured ? EAGER.armorSpearRatio : Infinity) : armoured ? EAGER.armorSpearRatio : EAGER.spearRatio;
     const spearEvery = finishing ? 60 : armoured ? EAGER.armorSpearEveryS : EAGER.spearEveryS;
-    if (!defensive && !massing && ratio > spearRatio && world.time - s.lastSpearhead > spearEvery) launchSpearhead(world, f, s, units, anchor);
+    if (!defensive && !massing && !boundLine(s) && ratio > spearRatio && world.time - s.lastSpearhead > spearEvery) launchSpearhead(world, f, s, units, anchor);
     s.crossing = null;
   } else if (holding) {
     // Anchor near the objective (or the city) on the best defensive ground facing the threat.
@@ -643,8 +726,37 @@ function planFront(world: World, f: Faction, s: Front, units: Unit[], defensive:
       slots[u.id] = world.navFor(u).nearestPassable(p, 40) ?? p;
     });
   }
+  // 2.1: on an ordered line, squads man the finished works along it first (structures.structureSlots).
+  if (ordered && s.line) manWorks(world, f, s.line, liners, slots);
   s.slots = slots;
 }
+
+/**
+ * 2.1 (works on the ordered line): free building slots and trench bays within `STRUCT.zoneSlotM` of
+ * the line go to the nearest foot squads of the front (buildings first, as structureSlots orders
+ * them); the rest keep their line slots. Squads already inside a building keep it. O(slots × squads).
+ */
+function manWorks(world: World, f: Faction, line: { a: V2; b: V2 }, liners: Unit[], slots: Record<number, V2>): void {
+  const posts = structureSlots(world, f.id, line.a, line.b, STRUCT.zoneSlotM).filter((p) => !p.taken);
+  if (posts.length === 0) return;
+  const free = liners.filter((u) => u.def.kind === 'infantry' && u.fortId === null);
+  const used = new Set<number>();
+  for (const p of posts) {
+    let best: Unit | null = null;
+    let bd = Infinity;
+    for (const u of free) {
+      if (used.has(u.id)) continue;
+      const d = dist(u.pos, p.pos);
+      if (d < bd) { bd = d; best = u; }
+    }
+    if (!best) return;
+    used.add(best.id);
+    slots[best.id] = { ...p.pos };
+  }
+}
+
+/** 2.1: a binding attack order masses at most this long before it pushes. */
+const BOUND_MASS_WAIT_S = 30;
 
 /** Round 2 per-group push bookkeeping (not shipped to the UI / snapshot). */
 interface EagerState { holdSince: number; pushUntil: number; massSince: number; massed: number; massNeed: number }
@@ -672,7 +784,9 @@ function eagerPush(world: World, f: Faction, s: Front, units: Unit[], anchor: V2
     st.massSince = -1;
     return false;
   }
-  let push = pushing || (now < st.pushUntil && ratio >= 0.8);
+  // 2.1: a binding attack order always pushes (after the short massing wait below).
+  const ordered = boundOrder(s) && s.order.kind === 'attack';
+  let push = ordered || pushing || (now < st.pushUntil && ratio >= 0.8);
   // Lab: in hold the local ratio at the anchor was < 1 in 90 % of samples while only 10–30 % of the
   // group stood within 450 m of it — the group was strong enough, just not there. Judge patience by
   // the whole group; the push (and frontal massing) brings the rest up.
@@ -690,7 +804,7 @@ function eagerPush(world: World, f: Faction, s: Front, units: Unit[], anchor: V2
     }
     st.massed = near;
     st.massNeed = Math.ceil(liners * EAGER.frontalMassShare);
-    if (near < st.massNeed && now - st.massSince < EAGER.massWaitS) push = false;
+    if (near < st.massNeed && now - st.massSince < (ordered ? Math.min(EAGER.massWaitS, BOUND_MASS_WAIT_S) : EAGER.massWaitS)) push = false;
   }
   if (push) {
     if (s.mode !== 'push') st.pushUntil = Math.max(st.pushUntil, now + EAGER.holdPatienceS * 0.5);

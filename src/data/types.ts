@@ -66,6 +66,11 @@ export interface DefensiveStructureDef {
   readonly cover: 0 | 1 | 2 | 3;
   /** Built-in weapon (weapons.csv id) the occupant fires instead of its own; null = own weapon. */
   readonly weapon: string | null;
+  /**
+   * 2.1: firing-slit bonus to the occupants' own weapons (damage and range multipliers; a built-in
+   * `weapon` is used as it is). Optional: absent = 1 / 1.
+   */
+  readonly fire_mul?: { readonly damage: number; readonly range: number };
   /** Rear arc (deg, centred on the back) the occupants cannot fire into; 0 = none. */
   readonly blind_rear_deg: number;
   /** Blast damage multiplier for the occupants (replaces the cover level's blast factor). */

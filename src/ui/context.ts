@@ -7,7 +7,9 @@ export type InputMode =
   | { kind: 'normal' }
   | { kind: 'attackMove' }
   /** Supreme-HQ order being placed on the map (click = point; the UI may extend to drag = line). */
-  | { kind: 'frontOrder'; frontId: number | null; order: OrderKind };
+  | { kind: 'frontOrder'; frontId: number | null; order: OrderKind }
+  /** 2.1: the supreme HQ opens a new front where the player clicks. */
+  | { kind: 'newFront' };
 
 /** Shared state between the loop, input handling and HUD panels. */
 export interface GameContext {
