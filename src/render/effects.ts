@@ -288,6 +288,15 @@ export class Effects {
     });
   }
 
+  /** Factory chimney: a faint grey wisp drifting with the wind (2.1 town detail). */
+  chimneySmoke(x: number, y: number, z: number): void {
+    if (this.smokeScale <= 0 || this.smoke.free < 2500) return;
+    this.smoke.emit(x + (Math.random() - 0.5) * 0.6, y, z + (Math.random() - 0.5) * 0.6, {
+      color: COL.smokeLight, alpha: 0.22 * Math.min(1, this.smokeScale), life: 6 + Math.random() * 3, size: 1.6, grow: 7, drift: 1.2, drag: 0.3, fadeIn: 0.15,
+      vx: (Math.random() - 0.5) * 0.4, vy: 1.6, vz: (Math.random() - 0.5) * 0.4,
+    });
+  }
+
   /** Water surface under (x, z), or NaN on dry ground. */
   private waterAt(x: number, z: number): number {
     const t = this.terrain;

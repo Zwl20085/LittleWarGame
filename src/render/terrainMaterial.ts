@@ -10,13 +10,22 @@ export interface TerrainUniforms {
   readonly uFieldCols: { value: THREE.Color[] };
   readonly uHedge: { value: THREE.Color };
   readonly uRoad: { value: THREE.Color };
+  /** Town paving: setts, kerb stone, pavement flags, square flags. */
+  readonly uSett: { value: THREE.Color };
+  readonly uKerb: { value: THREE.Color };
+  readonly uFlag: { value: THREE.Color };
+  readonly uGarden: { value: THREE.Color };
 }
 
 const VERT_PARS = /* glsl */ `
 attribute float aFarm;
 attribute float aFieldAng;
 attribute float aRoadD;
+attribute vec4 aTown;
+attribute float aSquare;
 varying float vRoadD;
+varying vec4 vTown;
+varying float vSquare;
 varying vec3 vWPos;
 varying vec3 vWNor;
 varying float vFarm;
@@ -29,6 +38,8 @@ vWNor = normalize(mat3(modelMatrix) * objectNormal);
 vFarm = aFarm;
 vFieldAng = aFieldAng;
 vRoadD = aRoadD;
+vTown = aTown;
+vSquare = aSquare;
 `;
 
 const FRAG_PARS = /* glsl */ `
@@ -39,7 +50,13 @@ uniform float uOverlayK;
 uniform vec3 uFieldCols[6];
 uniform vec3 uHedge;
 uniform vec3 uRoad;
+uniform vec3 uSett;
+uniform vec3 uKerb;
+uniform vec3 uFlag;
+uniform vec3 uGarden;
 varying float vRoadD;
+varying vec4 vTown;
+varying float vSquare;
 varying vec3 vWPos;
 varying vec3 vWNor;
 varying float vFarm;
@@ -102,6 +119,48 @@ if (vRoadD < 30.0 && vRoadD > -30.0) {
   float verge = smoothstep(3.6, 4.1, d) * (1.0 - smoothstep(4.3, 5.6, d));
   diffuseColor.rgb *= 1.0 - 0.14 * verge;
 }
+// Town streets (2.1): granite setts in transverse courses between kerbs, flagged pavements,
+// garden ground inside the blocks, a flagged square with a kerb ring. The street distance is
+// computed per fragment from interpolated grid coordinates (exact, crisp at any zoom).
+if (vTown.z > 0.5) {
+  vec2 q = vTown.xy / vTown.z;
+  vec2 fq = abs(fract(q + 0.5) - 0.5) * vTown.z;
+  bool alongV = fq.x < fq.y;
+  float dGrid = min(fq.x, fq.y);
+  // Map roads crossing the town are paved too (no course direction for them).
+  float d = min(dGrid, abs(vRoadD));
+  float along = alongV ? vTown.y : vTown.x;
+  // Streets fade out over the last metres instead of ending in a clipped rim.
+  float inTown = smoothstep(-10.0, 0.0, vTown.w);
+  float aa = max(fwidth(d), 0.03);
+  float fine = 1.0 - smoothstep(0.12, 0.35, fwidth(along * 2.2));
+  float n1 = th(floor(vec2(along * 2.2, d * 2.6)));
+  float n2 = th(floor(vWPos.xz * 0.35) + 31.0);
+  // Garden / yard ground deep inside the blocks, with a little plot variation.
+  float yard = smoothstep(9.0, 13.0, d) * inTown;
+  diffuseColor.rgb = mix(diffuseColor.rgb, uGarden * (0.9 + 0.16 * n2), yard * 0.5);
+  float carriage = 1.0 - smoothstep(3.6 - aa, 3.6 + aa, d);
+  float kerbIn = 1.0 - smoothstep(4.05 - aa, 4.05 + aa, d);
+  float walkOut = 1.0 - smoothstep(6.0 - aa, 6.0 + aa, d);
+  float course = lineAA(along / 0.42, 0.9) * fine * step(dGrid, d + 0.01);
+  float gutter = 1.0 - smoothstep(0.0, 0.35, abs(d - 3.35));
+  vec3 sett = uSett * (0.9 + 0.16 * n1 * fine) * (1.0 - 0.18 * course) * (1.0 - 0.12 * gutter);
+  // From far away the setts lighten toward the flags so street grids do not read as dark hashes.
+  sett = mix(sett, uFlag * 0.86, 0.5 * smoothstep(0.25, 1.2, aa));
+  float joint = max(lineAA(along / 1.5, 0.9), lineAA((d - 4.05) / 1.0, 0.9) * step(4.5, d)) * fine;
+  vec3 flag = uFlag * (0.96 + 0.07 * th(floor(vec2(along / 1.5, d)))) * (1.0 - 0.12 * joint);
+  vec3 street = mix(flag, uKerb, kerbIn);
+  street = mix(street, sett, carriage);
+  diffuseColor.rgb = mix(diffuseColor.rgb, street, walkOut * 0.96 * inTown);
+  float ds = vSquare;
+  float aas = max(fwidth(ds), 0.03);
+  float sq = 1.0 - smoothstep(13.0 - aas, 13.0 + aas, ds);
+  float ring = sq - (1.0 - smoothstep(12.4 - aas, 12.4 + aas, ds));
+  float sqCourse = lineAA(ds / 1.8, 1.0) * fine;
+  vec3 sqc = uFlag * (1.04 + 0.05 * n1 * fine) * (1.0 - 0.12 * sqCourse);
+  diffuseColor.rgb = mix(diffuseColor.rgb, sqc, sq);
+  diffuseColor.rgb = mix(diffuseColor.rgb, uKerb * 0.92, ring);
+}
 vec4 ov = texture2D(uOverlay, vec2(vWPos.x / uSize.x, 1.0 - vWPos.z / uSize.y));
 diffuseColor.rgb = mix(diffuseColor.rgb, ov.rgb, ov.a * uOverlayK);
 if (uTerrainLayer > 0.5) {
@@ -127,6 +186,10 @@ export function terrainMaterial(overlay: THREE.Texture, width: number, depth: nu
     uFieldCols: { value: PAL.fields.slice(0, 6) },
     uHedge: { value: PAL.hedge },
     uRoad: { value: PAL.road },
+    uSett: { value: PAL.sett },
+    uKerb: { value: PAL.kerb },
+    uFlag: { value: PAL.flag },
+    uGarden: { value: PAL.garden },
   };
   const material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.97, metalness: 0 });
   material.onBeforeCompile = (shader) => {
@@ -138,6 +201,6 @@ export function terrainMaterial(overlay: THREE.Texture, width: number, depth: nu
       .replace('#include <common>', `#include <common>\n${FRAG_PARS}`)
       .replace('#include <color_fragment>', `#include <color_fragment>\n${FRAG_MAIN}`);
   };
-  material.customProgramCacheKey = () => 'terrain-v3';
+  material.customProgramCacheKey = () => 'terrain-v4';
   return { material, uniforms };
 }

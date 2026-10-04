@@ -106,10 +106,16 @@ export class GameRenderer {
     this.haze = new Haze(this.scene, Math.max(w.terrain.width, w.terrain.depth) / 2, 4500);
     const hemi = new THREE.HemisphereLight(LIGHT.skyColor, LIGHT.groundColor, LIGHT.hemiIntensity);
     this.scene.add(hemi);
+    // Fixed in world space (lights the south faces the default camera sees); no shadows.
+    const fill = new THREE.DirectionalLight(LIGHT.fillColor, LIGHT.fillIntensity);
+    fill.position.copy(LIGHT.fillDir).multiplyScalar(1000);
+    this.scene.add(fill);
     this.sun = new THREE.DirectionalLight(LIGHT.sunColor, LIGHT.sunIntensity);
     this.sun.castShadow = true;
     this.sun.shadow.mapSize.set(2048, 2048);
-    this.sun.shadow.bias = -0.0006;
+    // Bias follows the shadow texel size every frame (see frame()): a fixed 0.6 m normal bias
+    // detached every shadow from its caster at close zoom (texels ~5 cm), so units floated.
+    this.sun.shadow.bias = -0.0002;
     this.sun.shadow.normalBias = 0.6;
     const sc = this.sun.shadow.camera;
     sc.left = -260;
@@ -122,7 +128,8 @@ export class GameRenderer {
 
     this.terrainView = new TerrainView(w.terrain);
     this.scene.add(this.terrainView.group);
-    this.units = new UnitViews(w);
+    // Units stand on the rendered surface (the same triangles and eased banks as the mesh).
+    this.units = new UnitViews(w, (x, z) => this.terrainView.surfaceAt(x, z));
     this.scene.add(this.units.group);
     this.overlay = new ScreenOverlay(canvas);
     this.counters = new UnitCounters(w, this.units);
@@ -452,6 +459,10 @@ export class GameRenderer {
     sc.left = -ext; sc.right = ext; sc.top = ext; sc.bottom = -ext;
     sc.far = 3000 + ext * 2;
     sc.updateProjectionMatrix();
+    // ~1.5 shadow texels of normal offset: enough against acne on slopes, small enough that
+    // shadows start at the feet and tracks.
+    const texel = (2 * ext) / Math.max(1, this.sun.shadow.mapSize.x);
+    this.sun.shadow.normalBias = Math.min(0.6, Math.max(0.03, texel * 1.5));
     const back = 1500 + ext;
     this.sun.position.set(t.x - this.sunDir.x * -back, t.y + this.sunDir.y * back, t.z - this.sunDir.z * -back);
     this.sun.target.position.copy(t);
@@ -460,6 +471,10 @@ export class GameRenderer {
     this.haze.update(ppm);
     const q = this.quality.profile;
     this.terrainView.scatter.visible = ppm > 1 && q.scatter;
+    // Town detail: sub-pixel at the overview, and dropped on the medium / low tiers.
+    const townDetail = ppm > 2.5 && q.townProps;
+    this.terrainView.settlements.setDetail(townDetail);
+    if (townDetail) this.chimneySmoke(dt, t, ext);
     this.frontLines.update(realDt, ppm);
     this.opArrows.sync(w, this.playerId, this.spectator, this.layers.fronts);
     this.opArrows.update(ppm);
@@ -467,6 +482,7 @@ export class GameRenderer {
     FLAG_TIME.value += realDt;
     this.terrainView.uniforms.uOverlayK.value = ppm > 4 ? 0.5 : ppm > 1.5 ? 0.8 : 1;
     this.units.showSoldiers = ppm > 0.7;
+    this.units.showBlobs = ppm > 1.2;
     this.units.setSoldierShadows(ppm > 3.5 && q.soldierShadows);
     // Far zoom: the shadow map barely changes on screen — refresh it a few times a second.
     this.shadowTick++;
@@ -500,6 +516,17 @@ export class GameRenderer {
     this.labels.draw(this.overlay, ppm, this.rig.zoom, lang(), null);
     this.counters.draw(this.overlay, ppm, this.playerId, this.fog);
     this.orderLines.drawLabels(this.overlay, w, this.playerId, this.spectator, this.layers.fronts);
+  }
+
+  /** Faint smoke from the factory chimneys near the view (a wisp every ~1.5 s each). */
+  private chimneySmoke(dt: number, at: THREE.Vector3, ext: number): void {
+    if (dt <= 0) return;
+    const r2 = ext * ext;
+    for (const c of this.terrainView.settlements.chimneys) {
+      const dx = c.x - at.x;
+      const dz = c.z - at.z;
+      if (dx * dx + dz * dz < r2 && Math.random() < dt * 0.7) this.effects.chimneySmoke(c.x, c.y, c.z);
+    }
   }
 
   /** Player setting: fixed tier, or auto (start high, step down on slow frames). */

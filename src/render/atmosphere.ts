@@ -6,9 +6,17 @@ export const LIGHT = {
   sunIntensity: 2.35,
   skyColor: '#e2e4e0',
   groundColor: '#6b5a40',
-  hemiIntensity: 1.15,
-  /** Toward the sun: west-north-west, ~42° above the horizon. */
+  hemiIntensity: 1.0,
+  /** Toward the sun: west-north-west, ~42° above the horizon (cartographic top-left light). */
   sunDir: new THREE.Vector3(-300, 335, -190).normalize(),
+  /**
+   * Shadowless fill from the default camera side (south-south-east, low): the key light sits
+   * behind the camera, so without it every wall, hull side and uniform the player looks at is
+   * in core shadow and model detail reads as a dark silhouette (2.1 visual pass).
+   */
+  fillColor: '#dfe6ee',
+  fillIntensity: 0.55,
+  fillDir: new THREE.Vector3(140, 160, 420).normalize(),
 } as const;
 
 const HAZE_COLOR = new THREE.Color('#d3c9b4');

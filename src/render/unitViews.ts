@@ -3,10 +3,12 @@ import { aliveMembers } from '../sim/formulas';
 import { Ground } from '../sim/terrain';
 import type { Unit } from '../sim/types';
 import type { World } from '../sim/world';
+import { ContactShadows } from './contactShadows';
+import { groundNormal, setYZ, writeTilted, writeYZcs } from './unitMatrices';
 import { InstanceBatch, soldierMaterial, tintedMaterial } from './instancing';
 import { PAL } from './palette';
 import { choosePattern, crewSlot, slot, vhash, type Situation } from './formations';
-import { modelSpec, SOLDIER_SCALE, unitGeometry, VEHICLE_SCALE, type ModelSpec } from './unitModels';
+import { modelSpec, SOLDIER_SCALE, TRUCK_FOOT, unitGeometry, VEHICLE_SCALE, type ModelSpec } from './unitModels';
 import { SC, snapSoldier, SOL_STRIDE, sortSlots, SS, step, stepSoldier, STRIDE_AMP, SV, SX, SZ, Trail, walkCap, wrapAngle } from './soldierMotion';
 
 /** Per-unit render state (no Three.js objects — everything is drawn through shared batches). */
@@ -27,7 +29,11 @@ export interface UnitView {
   /** Sim tick of the last heading sample (a new tick restarts the interpolation). */
   tick: number;
   turretRel: number;
+  /** Rendered hull pitch (nose up) and roll (right side up), eased toward the ground's. */
   pitch: number;
+  roll: number;
+  /** Tilt has been initialised (first sighting snaps instead of easing). */
+  tilted: boolean;
   /** Gun recoil 0..1 (kicked by a big muzzle flash, springs back). */
   recoil: number;
   /** Not hidden by fog this frame. */
@@ -56,8 +62,9 @@ export interface UnitView {
   patternN: number;
   patternFace: number;
   settled: boolean;
-  /** Cached soldier matrices for static squads. */
+  /** Cached soldier matrices for static squads (and their ground heights, for the blobs). */
   readonly cache: Float32Array;
+  readonly cacheGround: Float32Array;
   readonly cacheKneel: Uint8Array;
   cacheN: number;
   cacheSit: string;
@@ -91,6 +98,13 @@ const _v = new THREE.Vector3();
 const _s = new THREE.Vector3();
 const _e = new THREE.Euler();
 const _slot: [number, number] = [0, 0];
+/** Scratch: the ground normal under the unit being drawn. */
+const _n = new Float32Array(3);
+/** Contact blob half-size of one soldier (m) and how far apart the slope samples are. */
+const BLOB_SOLDIER = 0.42 * SOLDIER_SCALE;
+const NORMAL_STEP = 2;
+/** Tilt easing rate (1/s): smooths the facet-to-facet steps of the triangulated ground. */
+const TILT_RATE = 9;
 // Generous enough for an opened-up squad (SQUAD_SPREAD) or a big vehicle.
 const _sphere = new THREE.Sphere(new THREE.Vector3(), 30);
 /** A fallen soldier lies on its side: lift by half its (scaled) body width. */
@@ -102,40 +116,13 @@ const RING_COLOR = new THREE.Color('#f4ecd9');
 /** Motorized column: lead truck ahead of the unit centre, second truck trailing at GAP. */
 const CONVOY_LEAD = 6;
 const CONVOY_GAP = 12.5;
-const TRUCK_HALF = 2.4 * VEHICLE_SCALE;
+/** Scratch result of restOn: [y, pitch, roll]. */
+const _rest = new Float32Array(3);
 /** `?perf`: log the average unit-view update cost (ms) every PERF_WINDOW frames. */
 const PERF = typeof location !== 'undefined' && new URLSearchParams(location.search).has('perf');
 const PERF_WINDOW = 300;
 let perfAcc = 0;
 let perfFrames = 0;
-
-/**
- * T(x,y,z)·Ry(a)·Rz(b)·S(s) into 16 floats of `te` at `o`, with the yaw given as (cos a, sin a)
- * (soldiers keep their facing as a vector); small tilts use a Taylor expansion.
- */
-function writeYZcs(te: Float32Array, o: number, x: number, y: number, z: number, c: number, sn: number, b: number, s: number): void {
-  const small = b > -0.2 && b < 0.2;
-  const cb = small ? 1 - b * b * 0.5 : Math.cos(b);
-  const sb = small ? b - (b * b * b) / 6 : Math.sin(b);
-  te[o] = c * cb * s; te[o + 1] = sb * s; te[o + 2] = -sn * cb * s; te[o + 3] = 0;
-  te[o + 4] = -c * sb * s; te[o + 5] = cb * s; te[o + 6] = sn * sb * s; te[o + 7] = 0;
-  te[o + 8] = sn * s; te[o + 9] = 0; te[o + 10] = c * s; te[o + 11] = 0;
-  te[o + 12] = x; te[o + 13] = y; te[o + 14] = z; te[o + 15] = 1;
-}
-
-/** Write T(x,y,z)·Ry(a)·Rz(b)·S(s) straight into a matrix. */
-function setYZ(m: THREE.Matrix4, x: number, y: number, z: number, a: number, b: number, s: number): THREE.Matrix4 {
-  const c = Math.cos(a);
-  const sn = Math.sin(a);
-  const cb = Math.cos(b);
-  const sb = Math.sin(b);
-  const te = m.elements;
-  te[0] = c * cb * s; te[1] = sb * s; te[2] = -sn * cb * s; te[3] = 0;
-  te[4] = -c * sb * s; te[5] = cb * s; te[6] = sn * sb * s; te[7] = 0;
-  te[8] = sn * s; te[9] = 0; te[10] = c * s; te[11] = 0;
-  te[12] = x; te[13] = y; te[14] = z; te[15] = 1;
-  return m;
-}
 
 /** Interpolate angle a → b by t along the short way. */
 function lerpAngle(a: number, b: number, t: number): number {
@@ -179,8 +166,15 @@ export class UnitViews {
   onTrackDust: ((x: number, y: number, z: number, heading: number) => void) | null = null;
   /** Draw soldier figures (off at the farthest zoom where they are sub-pixel). */
   showSoldiers = true;
+  /** Contact shadows under units (off at far zoom where they are sub-pixel). */
+  showBlobs = true;
+  private readonly blobs: ContactShadows;
+  /** Height of the rendered ground (units stand on the visible surface, not the sim grid). */
+  private readonly ground: (x: number, z: number) => number;
 
-  constructor(private readonly world: World) {
+  constructor(private readonly world: World, ground?: (x: number, z: number) => number) {
+    this.ground = ground ?? ((x, z) => world.terrain.heightAt(x, z));
+    this.blobs = new ContactShadows(this.group);
     const ringGeo = new THREE.RingGeometry(0.85, 1, 32).rotateX(-Math.PI / 2);
     const ringMat = new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.9, depthWrite: false });
     this.rings = new InstanceBatch(this.group, ringGeo, ringMat, 32, false);
@@ -215,12 +209,12 @@ export class UnitViews {
       id: u.id, spec, color: this.factionColor(u.owner),
       members: u.def.kind === 'vehicle' ? 0 : u.def.memberCount,
       x: u.pos.x, y: u.y, z: u.pos.z, heading: u.heading, hFrom: u.heading, turretYaw: u.turret, tFrom: u.turret, tick: -1,
-      turretRel: 0, pitch: 0, recoil: 0, visible: true, onScreen: true, seen: 0,
+      turretRel: 0, pitch: 0, roll: 0, tilted: false, recoil: 0, visible: true, onScreen: true, seen: 0,
       offs: new Float32Array(n * 2), laidOut: false,
       goal: new Float32Array(n * 2), sol: new Float32Array(n * SOL_STRIDE), order: new Uint8Array(n),
       trail: spec.body || spec.turret ? null : new Trail(), drawn: false, still: 0, spd: 0,
       pattern: '', patternN: -1, patternFace: 0, settled: false,
-      cache: new Float32Array(Math.max(1, u.def.memberCount) * 16), cacheKneel: new Uint8Array(Math.max(1, u.def.memberCount)),
+      cache: new Float32Array(Math.max(1, u.def.memberCount) * 16), cacheGround: new Float32Array(Math.max(1, u.def.memberCount)), cacheKneel: new Uint8Array(Math.max(1, u.def.memberCount)),
       cacheN: -1, cacheSit: '', cacheX: 0, cacheZ: 0, cacheFace: 0, mounted: false, convoy: null,
     };
     this.views.set(u.id, v);
@@ -247,7 +241,7 @@ export class UnitViews {
       const o = v.members * SOL_STRIDE;
       const wx = v.drawn ? sol[o + SX] : v.x;
       const wz = v.drawn ? sol[o + SZ] : v.z;
-      const y = w.terrain.heightAt(wx, wz) + CORPSE_LIFT;
+      const y = this.ground(wx, wz) + CORPSE_LIFT;
       this.addCorpse({
         key: v.spec.soldier, m: setYZ(new THREE.Matrix4(), wx, y, wz, Math.random() * 6, Math.PI / 2, SOLDIER_SCALE),
         color: v.color, wreck: false, maxLife: 25, smoke: false, pos: new THREE.Vector3(wx, y, wz),
@@ -292,14 +286,22 @@ export class UnitViews {
     const restFace = v.patternFace;
     const standB = this.batch(v.spec.soldier);
     const kneelB = this.batch('soldierKneel');
+    // Member 0 is the squad leader, member 1 the LMG gunner (casualties come off the end).
+    const leadB = v.spec.leader ? this.batch(v.spec.leader) : standB;
+    const gunB = v.spec.gunner ? this.batch(v.spec.gunner) : standB;
+    const standFor = (k: number): InstanceBatch => (k === 0 ? leadB : k === 1 ? gunB : standB);
     // Static squads (everyone in place, nothing changed) reuse last frame's matrices.
+    const blobs = this.showBlobs;
+    if (blobs) groundNormal(this.ground, v.x, v.z, NORMAL_STEP, _n);
     if (v.settled && v.drawn && !moving && v.cacheN === n && v.cacheSit === sit && v.cacheX === v.x && v.cacheZ === v.z && v.cacheFace === restFace) {
-      for (let k = 0; k < n; k++) (v.cacheKneel[k] ? kneelB : standB).pushArray(v.cache, k * 16, v.color);
+      for (let k = 0; k < n; k++) {
+        (v.cacheKneel[k] ? kneelB : standFor(k)).pushArray(v.cache, k * 16, v.color);
+        if (blobs) this.soldierBlob(v.cache[k * 16 + 12], v.cacheGround[k], v.cache[k * 16 + 14], v.cache[k * 16], v.cache[k * 16 + 2]);
+      }
       return;
     }
     const snap = !v.drawn;
     v.drawn = true;
-    const terrain = w.terrain;
     const jitterAmp = sit === 'engaged' || sit === 'pinned' ? 0.35 : moving ? 0.2 : 0.9;
     const ca = Math.cos(moving ? v.heading : restFace);
     const sa = Math.sin(moving ? v.heading : restFace);
@@ -339,16 +341,25 @@ export class UnitViews {
         tilt = -1.25;
         lift = 0.2 * SOLDIER_SCALE;
       } else if ((sit === 'engaged' && r <= 0.6) || (sit === 'idle' && r < 0.3)) kneel = true;
-      const y = terrain.heightAt(sx, sz) + lift;
+      if (kneel && k === 1 && v.spec.gunner) {
+        // The LMG gunner goes prone behind his gun instead of kneeling.
+        kneel = false;
+        tilt = -1.25;
+        lift = 0.2 * SOLDIER_SCALE;
+      }
+      const gy = this.ground(sx, sz);
+      const y = gy + lift;
       v.cacheKneel[k] = kneel ? 1 : 0;
+      v.cacheGround[k] = gy;
+      if (blobs) this.soldierBlob(sx, gy, sz, sol[o + SC], sol[o + SS], tilt < -1);
       if (moving) {
         // Marching squads never use the cache: write straight into the batch.
-        const b = kneel ? kneelB : standB;
+        const b = kneel ? kneelB : standFor(k);
         const at = b.next(v.color, kneel ? 0 : stride); // may grow the batch: read matrices after
         writeYZcs(b.matrices, at, sx, y, sz, sol[o + SC], -sol[o + SS], tilt, SOLDIER_SCALE);
       } else {
         writeYZcs(v.cache, k * 16, sx, y, sz, sol[o + SC], -sol[o + SS], tilt, SOLDIER_SCALE);
-        (kneel ? kneelB : standB).pushArray(v.cache, k * 16, v.color, kneel ? 0 : stride);
+        (kneel ? kneelB : standFor(k)).pushArray(v.cache, k * 16, v.color, kneel ? 0 : stride);
       }
     }
     v.settled = settled;
@@ -359,14 +370,44 @@ export class UnitViews {
     v.cacheFace = restFace;
   }
 
-  /** A truck on the ground at (x, z), pitched to the slope along its heading. */
-  private truckMatrix(x: number, z: number, heading: number, out: THREE.Matrix4): THREE.Matrix4 {
-    const t = this.world.terrain;
+  /**
+   * Rest a rigid body of half-extents (a along, b across, metres) on the rendered ground: four
+   * samples give pitch and roll; the centre sits on the higher of the centre sample and the
+   * mean of the four (so a hull bridges a dip and rides over a crest without sinking).
+   * Results in _rest = [y, pitch, roll].
+   */
+  private restOn(x: number, z: number, heading: number, a: number, b: number): Float32Array {
     const ch = Math.cos(heading);
     const sh = Math.sin(heading);
-    const ahead = t.heightAt(x + ch * TRUCK_HALF, z + sh * TRUCK_HALF);
-    const behind = t.heightAt(x - ch * TRUCK_HALF, z - sh * TRUCK_HALF);
-    return setYZ(out, x, t.heightAt(x, z), z, -heading, Math.atan2(ahead - behind, TRUCK_HALF * 2), VEHICLE_SCALE);
+    const g = this.ground;
+    const hA = g(x + ch * a, z + sh * a);
+    const hB = g(x - ch * a, z - sh * a);
+    const hR = g(x - sh * b, z + ch * b);
+    const hL = g(x + sh * b, z - ch * b);
+    const hC = g(x, z);
+    _rest[0] = Math.max(hC, (hA + hB + hR + hL) * 0.25);
+    _rest[1] = Math.atan2(hA - hB, 2 * a);
+    _rest[2] = Math.atan2(hR - hL, 2 * b);
+    return _rest;
+  }
+
+  /** A truck resting on the ground at (x, z), pitched and rolled to the slope. */
+  private truckMatrix(x: number, z: number, heading: number, out: THREE.Matrix4): THREE.Matrix4 {
+    const r = this.restOn(x, z, heading, TRUCK_FOOT[0] * VEHICLE_SCALE, TRUCK_FOOT[1] * VEHICLE_SCALE);
+    writeTilted(out.elements, 0, x, r[0], z, heading, r[1], r[2], VEHICLE_SCALE);
+    if (this.showBlobs) this.hullBlob(x, r[0], z, heading, TRUCK_FOOT[0] * VEHICLE_SCALE, TRUCK_FOOT[1] * VEHICLE_SCALE);
+    return out;
+  }
+
+  /** Contact blob under one soldier (prone figures get a longer one). */
+  private soldierBlob(x: number, y: number, z: number, fc: number, fs: number, prone = false): void {
+    this.blobs.push(x, y, z, _n[0], _n[1], _n[2], fc, fs, prone ? BLOB_SOLDIER * 2.1 : BLOB_SOLDIER, BLOB_SOLDIER);
+  }
+
+  /** Contact blob under a hull / gun of half-extents (a, b) metres, along the ground normal. */
+  private hullBlob(x: number, y: number, z: number, heading: number, a: number, b: number): void {
+    groundNormal(this.ground, x, z, Math.max(NORMAL_STEP, b), _n);
+    this.blobs.push(x, y, z, _n[0], _n[1], _n[2], Math.cos(heading), Math.sin(heading), a * 1.12 + 0.6, b * 1.15 + 0.6);
   }
 
   /**
@@ -426,7 +467,8 @@ export class UnitViews {
 
   /** Body / turret / crew matrices for a unit with a hull or a gun. */
   private bodyMatrix(v: UnitView, out: THREE.Matrix4): THREE.Matrix4 {
-    return setYZ(out, v.x, v.y, v.z, -v.heading, v.pitch, v.spec.scale);
+    writeTilted(out.elements, 0, v.x, v.y, v.z, v.heading, v.pitch, v.roll, v.spec.scale);
+    return out;
   }
 
   private turretMatrix(v: UnitView, body: THREE.Matrix4, out: THREE.Matrix4, extraYaw = 0): THREE.Matrix4 {
@@ -455,7 +497,7 @@ export class UnitViews {
       v.members--;
       const [cx, cz] = crewSlot(u.vseed, v.members, _slot);
       const p = new THREE.Vector3(cx, 0, cz).applyMatrix4(turret);
-      p.y = this.world.terrain.heightAt(p.x, p.z) + CORPSE_LIFT;
+      p.y = this.ground(p.x, p.z) + CORPSE_LIFT;
       this.addCorpse({
         key: 'soldier', m: setYZ(new THREE.Matrix4(), p.x, p.y, p.z, Math.random() * 6, Math.PI / 2, SOLDIER_SCALE),
         color: v.color, wreck: false, maxLife: 25, smoke: false, pos: p,
@@ -502,13 +544,15 @@ export class UnitViews {
       const kneel = v.cacheKneel[k] === 1 && sol[o + SV] <= WALKING;
       const b = kneel ? kneelCrew : standCrew;
       const at = b.next(v.color, kneel ? 0 : step.stride);
-      writeYZcs(b.matrices, at, sx, this.world.terrain.heightAt(sx, sz), sz, sol[o + SC], -sol[o + SS], 0, SOLDIER_SCALE);
+      const gy = this.ground(sx, sz);
+      writeYZcs(b.matrices, at, sx, gy, sz, sol[o + SC], -sol[o + SS], 0, SOLDIER_SCALE);
+      if (this.showBlobs) this.soldierBlob(sx, gy, sz, sol[o + SC], sol[o + SS]);
     }
   }
 
   private toWreck(v: UnitView): void {
     const spec = v.spec;
-    if (!v.onScreen) v.y = this.world.terrain.heightAt(v.x, v.z);
+    if (!v.onScreen) v.y = this.ground(v.x, v.z);
     if (v.mounted && v.convoy) {
       // Shot up on the road: both trucks burn out.
       const c = v.convoy;
@@ -526,7 +570,7 @@ export class UnitViews {
       for (let k = 0; k < v.members; k++) {
         const x = v.drawn ? v.sol[k * SOL_STRIDE + SX] : v.x;
         const z = v.drawn ? v.sol[k * SOL_STRIDE + SZ] : v.z;
-        const y = this.world.terrain.heightAt(x, z) + CORPSE_LIFT;
+        const y = this.ground(x, z) + CORPSE_LIFT;
         this.addCorpse({ key: spec.soldier, m: setYZ(new THREE.Matrix4(), x, y, z, Math.random() * 6, Math.PI / 2, SOLDIER_SCALE), color: v.color, wreck: false, maxLife: 25, smoke: false, pos: new THREE.Vector3(x, y, z) });
       }
       return;
@@ -595,6 +639,8 @@ export class UnitViews {
     for (const b of this.batches.values()) b.begin();
     for (const b of this.wreckBatches.values()) b.begin();
     this.rings.begin();
+    this.blobs.begin();
+    this.blobs.visible = this.showBlobs;
     const fogOn = fog && w.factions[playerId]?.alive !== false;
     for (const u of w.units.values()) {
       if (u.hp <= 0) continue;
@@ -608,17 +654,21 @@ export class UnitViews {
       // Cull with last frame's height (the sphere is generous); ground only what is on screen.
       _sphere.center.set(v.x, v.y, v.z);
       v.onScreen = this.frustum.intersectsSphere(_sphere);
-      if (v.onScreen) v.y = w.terrain.heightAt(v.x, v.z);
       const draw = v.visible && v.onScreen;
-      if (draw && v.spec.vehicle) {
-        // Pitch to the slope along the hull.
-        const half = 2.4 * VEHICLE_SCALE;
-        const ch = Math.cos(v.heading);
-        const sh = Math.sin(v.heading);
-        const ahead = w.terrain.heightAt(v.x + ch * half, v.z + sh * half);
-        const behind = w.terrain.heightAt(v.x - ch * half, v.z - sh * half);
-        v.pitch = Math.atan2(ahead - behind, half * 2);
-      }
+      if (draw && v.spec.tilt) {
+        // Hulls and gun carriages rest on the ground: pitch and roll to the local slope.
+        const sc = v.spec.scale;
+        const r = this.restOn(v.x, v.z, v.heading, v.spec.foot[0] * sc, v.spec.foot[1] * sc);
+        v.y = r[0];
+        const k = v.tilted ? Math.min(1, dt * TILT_RATE) : 1;
+        v.pitch += (r[1] - v.pitch) * k;
+        v.roll += (r[2] - v.roll) * k;
+        v.tilted = true;
+        if (this.showBlobs) this.hullBlob(v.x, v.y, v.z, v.heading, v.spec.foot[0] * sc, v.spec.foot[1] * sc);
+      } else if (v.onScreen) {
+        v.y = this.ground(v.x, v.z);
+        if (draw && this.showBlobs && v.spec.foot[0] > 0) this.hullBlob(v.x, v.y, v.z, v.heading, v.spec.foot[0] * v.spec.scale, v.spec.foot[1] * v.spec.scale);
+      } else v.tilted = false;
       if (v.recoil > 0) v.recoil = Math.max(0, v.recoil - dt * 2.2);
       if (draw && v.spec.vehicle && u.moving && this.onTrackDust && Math.random() < dt * 3.5) {
         const g = w.terrain.groundAt(v.x, v.z);
@@ -646,6 +696,7 @@ export class UnitViews {
     for (const b of this.batches.values()) b.end();
     for (const b of this.wreckBatches.values()) b.end();
     this.rings.end();
+    this.blobs.end();
   }
 
   private syncCorpses(dt: number): void {
