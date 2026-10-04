@@ -89,3 +89,46 @@ the 2 048² shadow pass), labels 0.3–0.8 ms (canvas text), units.sync 0.5–0.
 Ideas not done yet, in order of payoff: hierarchical (16 m) long-haul flow fields; scratch arrays
 for every spatial query call site (GC); text sprites for map labels; merging vegetation /
 settlement tiles into fewer instanced meshes at the overview zoom.
+
+## 2.0 round (command hierarchy, structures, challenge lab)
+
+2.0 added a theatre planner (every 5 s per AI faction), dynamic fronts with commander units,
+pillbox / bunker construction and garrison checks, fortification planners, order lines and the
+new effects. Profiled on the 2.0 tree (`node scripts/profile.mjs 600 7 --no-inline`, seed 7,
+10 game-minutes, ~390 units): the new systems are each under 1 % of sim CPU (theatre planner,
+`seekGarrison`, fort plans). The hot set is unchanged — flow-field settle 10 %, movement 6 %,
+spatial queries + rebuild 5.5 %, the front field and its distance transform 7.4 % combined,
+terrain height sampling 3 %. Two new leaves appeared behind the line planners:
+`crossesWater` / `defensivePosition` (1.5 %) and recon cover searches (3.8 % inclusive).
+
+| Change | Effect |
+|---|---|
+| Enemy-distance transform (`frontai.ts`) on a 32 m grid instead of the 16 m field; the front cells stay at 16 m; the two full-grid passes are one pass | `chamfer` 2.8 % → 0.8 % of sim CPU |
+| `defensivePosition` results cached 20 s per anchor cell / bearing step / radius (terrain is static apart from pontoons) | `crossesWater` / `defensivePosition` leave the top 30 |
+| Recon cover spot reuses the line-slot cover cache (recomputed only when the post moves > 8 m) | recon think 3.8 % → under 1 % inclusive |
+| `World.fortById`: per-tick id → fort index for hit resolution, garrison checks and builders (they scanned the fort list linearly; 100+ works late in a war) | removes an O(forts) scan per hit |
+| Convoy truck list no longer copies/filters per truck think | fewer short-lived arrays |
+
+Paired run on the same machine, same seed, back to back (`scripts/perf.ts generated 600 7`,
+other work running):
+
+| | 2.0 foundation (before the new systems) | 2.0 head (all systems + this round) |
+|---|---|---|
+| Units at 10 min | 398 | 391 |
+| Mean tick | 1.5 ms | 1.4 ms |
+| p50 / p90 / p99 | 0.8 / 2.8 / 10.7 ms | 0.7 / 2.6 / 11.1 ms |
+
+So the whole 2.0 feature set costs nothing net per tick. Browser (headless Edge, 1600×900, high
+quality, static build, `perf-browser.mjs 7 300 15 8`): see the table below (filled from the
+release run); the visuals agent measured `renderer.frame` 4.8 ms at the overview and 3.3–3.5 ms
+in battle views with 8.00× achieved.
+
+| View (8× requested, ~380–420 units) | fps | `renderer.frame` avg / p95 | `gl.render` | snapshot apply | achieved speed |
+|---|---|---|---|---|---|
+| overview | 59.6 | 5.1 / 8.1 ms | 2.6 ms | 0.43 ms × 852/s | 8.00× |
+| front | 59.9 | 3.9 / 6.9 ms | 2.3 ms | 0.45 ms × 864/s | 7.99× |
+| close | 59.6 | 4.7 / 8.2 ms | 2.2 ms | 0.68 ms × 813/s | 7.99× |
+
+Measured while a 60-minute soak ran on the same machine. Lag frames 0 % in every view; the new
+order lines, structures and effects together cost under 0.5 ms per frame (`forts` 0.09–0.20 ms,
+`opArrows` 0.11–0.13 ms, `fx` 0.02–0.11 ms).
