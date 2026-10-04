@@ -16,7 +16,8 @@ import { createHighCommand, thinkHighCommand } from './command';
 import { buildFrontInfoFor } from './frontai';
 import type { Faction, MatchConfig, Unit } from './types';
 import { hostileMask } from './spatial';
-import { dist } from './vec';
+import { DEG, dist } from './vec';
+import { placeStructure } from './structures';
 import { FACTION_COLORS, ROMAN, World } from './world';
 import { scaledData } from './scale';
 import { sampleStats, STATS_SAMPLE_SECONDS } from './stats';
@@ -82,7 +83,17 @@ export function createMatch(baseData: GameData, config: MatchConfig): Match {
     city.vanguard.forEach((p, k) => line(p, Math.ceil(inf / city.vanguard.length), 18, 'infantry', () => k));
     line(city.recon, init.recon ?? 1, 26, 'recon', (k) => k % 3);
     line(city.truck, init.supply_truck ?? 1, 20, 'supply_truck', (k) => k % 3);
-    for (const sp of city.strongpoints) world.spawnUnit(f.id, 'mg', sp.pos, f.mainFront, { fixed: true, facingDeg: sp.facingDeg });
+    // 2.1: the starting engineers (rules initial_units.engineer) stand behind the central vanguard
+    // and start the capital line at once (fortplans PLANS.capital.startS).
+    const vk = Math.floor((city.vanguard.length - 1) / 2);
+    const vc = city.vanguard[vk];
+    // At least one engineer whenever the rules ask for any (0.4 per scale rounds to 0 on scale-1 test maps).
+    line({ x: vc.x - Math.cos(fwd) * 30, z: vc.z - Math.sin(fwd) * 30 }, (init.engineer ?? 0) > 0 ? Math.max(1, Math.round(init.engineer)) : 0, 14, 'engineer', () => vk);
+    // 2.1: each capital starts with finished pillboxes at its strongpoints (manned by the standing
+    // garrison); a strongpoint with no buildable ground nearby keeps the 1.x fixed MG.
+    for (const sp of city.strongpoints) {
+      if (!placeStructure(world, f.id, 'pillbox', sp.pos, sp.facingDeg * DEG)) world.spawnUnit(f.id, 'mg', sp.pos, f.mainFront, { fixed: true, facingDeg: sp.facingDeg });
+    }
   }
   // Starting territory: settlements near each capital (and closer to it than to any other).
   const initR = data.rules.territory?.initial_radius_m ?? 0;

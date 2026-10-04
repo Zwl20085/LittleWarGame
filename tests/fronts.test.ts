@@ -4,12 +4,13 @@ import { createMatch, step } from '../src/sim/sim';
 import { CommandBus } from '../src/sim/commands';
 import { thinkHighCommand } from '../src/sim/command';
 import { frontById, counterStrikes } from '../src/sim/frontref';
-import { createFront, dissolveFront, frontForOrder, FRONT_OPS, reassignStale } from '../src/sim/frontops';
+import { createFront, dissolveFront, frontForOrder, FRONT_OPS, reassignStale, transferable } from '../src/sim/frontops';
 import { frontUnits, issueFrontOrder, leaderless, thinkFronts, upkeepCommander } from '../src/sim/fronts';
 import { pickFront } from '../src/sim/production';
 import { HOME } from '../src/sim/homeguard';
 import { isCommander } from '../src/sim/formulas';
-import type { Faction, FrontOrder } from '../src/sim/types';
+import type { Faction, Front, FrontOrder, Unit, Zone } from '../src/sim/types';
+import { garrisonsZone } from '../src/sim/theatre';
 import { dist, headingTo, type V2 } from '../src/sim/vec';
 import type { World } from '../src/sim/world';
 
@@ -206,6 +207,10 @@ describe('fronts (2.0 command hierarchy)', () => {
     });
     field.front = { x: rhq.x + Math.cos(back) * 600, z: rhq.z + Math.sin(back) * 600 };
     for (const u of world.units.values()) if (u.owner === raider.id && (u.fixed || dist(u.pos, rhq) < 400)) u.hp = 0;
+    // 2.1: the strongpoints are pillboxes now (fortplans / sim.createMatch) — level them too.
+    for (const w of world.forts) if (w.owner === raider.id && dist(w.pos, rhq) < 400) w.hp = 0;
+    // (2.1: its capital buildings count in the forecast defence too.)
+    for (const w of world.forts) if (w.owner === raider.id && dist(w.pos, rhq) < 400) w.hp = 0;
     victim.command.nextAt = 0;
     thinkHighCommand(world, victim);
     const ht = victim.command.homeThreat;
@@ -224,4 +229,185 @@ describe('fronts (2.0 command hierarchy)', () => {
     // …and the rush has not taken the capital.
     expect(victim.alive).toBe(true);
   }, 120_000);
+});
+
+/** Distance from `p` to segment a–b, and its signed offset across the line (+ = away from `home`). */
+function lineOffset(p: V2, a: V2, b: V2, home: V2): { d: number; ahead: number } {
+  const vx = b.x - a.x;
+  const vz = b.z - a.z;
+  const l2 = vx * vx + vz * vz;
+  const t = Math.max(0, Math.min(1, ((p.x - a.x) * vx + (p.z - a.z) * vz) / l2));
+  const q = { x: a.x + vx * t, z: a.z + vz * t };
+  const n = { x: -vz / Math.sqrt(l2), z: vx / Math.sqrt(l2) };
+  const mid = { x: (a.x + b.x) / 2, z: (a.z + b.z) / 2 };
+  const away = (mid.x - home.x) * n.x + (mid.z - home.z) * n.z >= 0 ? 1 : -1;
+  return { d: dist(p, q), ahead: ((p.x - q.x) * n.x + (p.z - q.z) * n.z) * away };
+}
+
+/** Roles a binding order forbids (detachments and manoeuvre parties). */
+const DETACHED = new Set(['occupy', 'raid', 'rearguard']);
+const isDetached = (u: Unit, f: number): boolean => DETACHED.has(u.opRole) || (u.opRole === 'garrison' && u.opObjective !== `hq:${f}`);
+
+/** Combat line troops of a front (no commander, trucks, guns, recon, engineers on works, capital guards). */
+function lineTroops(world: World, f: number, frontId: number): Unit[] {
+  return frontUnits(world, f, frontId).filter((u) => !isCommander(u.def) && !['supply_truck', 'howitzer', 'mortar', 'recon', 'engineer'].includes(u.def.id)
+    && !(u.opRole === 'garrison' && u.opObjective === `hq:${f}`));
+}
+
+describe('fronts 2.1: binding orders, more fronts, zone garrisons', () => {
+  it('binds an attack order: the front marches on the objective and lends no detachments', () => {
+    const match = setup(90, false);
+    const { world } = match;
+    const f = world.factions[0];
+    const s = f.fronts[0];
+    // A place we do not hold, ≥ 600 m from the front's troops.
+    const c0 = lineTroops(world, 0, s.id);
+    const mid = { x: c0.reduce((a, u) => a + u.pos.x, 0) / c0.length, z: c0.reduce((a, u) => a + u.pos.z, 0) / c0.length };
+    const obj = world.objectives.filter((o) => o.owner !== 0 && dist(o.pos, mid) > 600).sort((a, b) => dist(a.pos, mid) - dist(b.pos, mid))[0];
+    expect(obj).toBeDefined();
+    const bus = new CommandBus();
+    bus.issue(match, 0, { type: 'frontOrder', frontId: s.id, kind: 'attack', a: obj.pos });
+    bus.flush(match);
+    expect(s.order.manual).toBe(true);
+    const before = new Map(lineTroops(world, 0, s.id).map((u) => [u.id, dist(u.pos, obj.pos)]));
+    let detached = 0;
+    for (let t = 0; t < 180; t++) {
+      run(match, 1);
+      detached += frontUnits(world, 0, s.id).filter((u) => isDetached(u, 0)).length;
+      if (t === 19) {
+        // Within 20 s the front's destinations lead toward the objective.
+        const troops = lineTroops(world, 0, s.id).filter((u) => before.has(u.id) && u.dest && !u.routing);
+        expect(troops.length).toBeGreaterThan(0);
+        const closer = troops.filter((u) => dist(u.dest!, obj.pos) < before.get(u.id)! - 50).length;
+        expect(closer / troops.length).toBeGreaterThan(0.6);
+        expect(s.reason).not.toBe('reason.outmatched');
+      }
+    }
+    expect(detached).toBe(0);
+    expect(s.order.kind).toBe('attack');
+    expect(dist(s.targetPos, obj.pos)).toBeLessThan(1);
+  }, 120_000);
+
+  it('binds a defend order: every line unit holds the ordered line, nobody pushes past it', () => {
+    const match = setup(90, false);
+    const { world } = match;
+    const f = world.factions[0];
+    const s = f.fronts[0];
+    const hq = world.hqPos(0);
+    const p = world.nav(false, 35).nearestPassable({ x: hq.x + (s.front.x - hq.x) * 0.5, z: hq.z + (s.front.z - hq.z) * 0.5 }, 60)!;
+    const bus = new CommandBus();
+    bus.issue(match, 0, { type: 'frontOrder', frontId: s.id, kind: 'defend', a: p });
+    bus.flush(match);
+    expect(s.posture).toBe('hold');
+    const line = s.line!;
+    let loose = 0;
+    for (let t = 0; t < 180; t++) {
+      run(match, 1);
+      loose += frontUnits(world, 0, s.id).filter((u) => u.spearhead !== null || isDetached(u, 0) || u.opRole === 'maneuver' || u.opRole === 'siege' || u.opRole === 'infiltrate').length;
+    }
+    expect(loose).toBe(0);
+    expect(s.reason.startsWith('reason.order.') || s.reason === 'reason.homeDefence').toBe(true);
+    const troops = lineTroops(world, 0, s.id).filter((u) => !u.routing && !u.manual && u.behavior === 'advance' && u.fortId === null);
+    expect(troops.length).toBeGreaterThan(3);
+    const off = troops.map((u) => lineOffset(u.pos, line.a, line.b, hq));
+    expect(off.filter((o) => o.d <= 80).length / off.length).toBeGreaterThan(0.9);
+    expect(off.every((o) => o.ahead <= 80)).toBe(true);
+  }, 120_000);
+
+  it('a new manual order ends a recall of that front; a recall keeps the order and line and restores the objective', () => {
+    const { world } = setup(60);
+    const f = world.factions[1];
+    const s = f.fronts[0];
+    const hq = world.hqPos(1);
+    const p = world.nav(false, 35).nearestPassable({ x: hq.x + (s.front.x - hq.x) * 0.5, z: hq.z + (s.front.z - hq.z) * 0.5 }, 60)!;
+    issueFrontOrder(world, f, s, order(world, 'defend', p));
+    const line = s.line!;
+    const target = { ...s.targetPos };
+    const ht = f.command.homeThreat;
+    ht.recall = [s.id];
+    thinkFronts(world, f);
+    expect(s.reason).toBe('reason.homeDefence');
+    expect(s.order.kind).toBe('defend');
+    expect(s.line).toBe(line);
+    ht.recall = [];
+    thinkFronts(world, f);
+    expect(s.reason).toBe('reason.order.defend');
+    expect(dist(s.targetPos, target)).toBeLessThan(1);
+    expect(s.line).toBe(line);
+    // A fresh order while recalled: it leaves the recall at once.
+    ht.recall = [s.id];
+    thinkFronts(world, f);
+    issueFrontOrder(world, f, s, order(world, 'attack', world.hqPos(2)));
+    expect(ht.recall).not.toContain(s.id);
+  });
+
+  it('allows 8 fronts, plans fronts without units, and opens a player front with newFront', () => {
+    const match = setup(60, false);
+    const { world } = match;
+    const ai = world.factions[1];
+    ai.p = 1e6;
+    const max = world.data.rules.command.fronts_max;
+    expect(max).toBe(8);
+    const objs = world.objectives.filter((o) => o.owner !== ai.id);
+    let k = 0;
+    while (ai.fronts.length < max) expect(createFront(world, ai, objs[k++ % objs.length], 0)).not.toBeNull();
+    expect(createFront(world, ai, objs[0], 0)).toBeNull();
+    // Fronts with no troops (only a commander) plan without errors.
+    thinkFronts(world, ai);
+    ai.command.nextAt = 0;
+    thinkHighCommand(world, ai);
+    expect(frontIdsValid(world)).toBe(true);
+    // Player: newFront appoints a commander, adopts nearby free troops and holds the point.
+    const f = world.factions[0];
+    f.p = 10_000;
+    const s0 = f.fronts[0];
+    const own = lineTroops(world, 0, s0.id).filter(transferable);
+    expect(own.length).toBeGreaterThan(0);
+    const at = world.nav(false, 35).nearestPassable(own[0].pos, 30)!;
+    const bus = new CommandBus();
+    bus.issue(match, 0, { type: 'newFront', a: at });
+    bus.flush(match);
+    const s = f.fronts[f.fronts.length - 1];
+    expect(s.id).not.toBe(s0.id);
+    expect(world.unitAlive(s.commanderId)?.frontId).toBe(s.id);
+    expect(s.order).toMatchObject({ kind: 'defend', manual: true });
+    expect(s.posture).toBe('hold');
+    expect(frontUnits(world, 0, s.id).filter((u) => !isCommander(u.def)).length).toBeGreaterThan(0);
+    run(match, 4);
+    const line = s.line!;
+    const slots = Object.values(s.slots);
+    expect(slots.length).toBeGreaterThan(0);
+    expect(slots.filter((q) => lineOffset(q, line.a, line.b, world.hqPos(0)).d < 80).length / slots.length).toBeGreaterThan(0.8);
+  }, 60_000);
+
+  it('opens a garrison front for a finished fortified zone nobody holds', () => {
+    const match = setup(60);
+    const { world } = match;
+    const f = world.factions[1];
+    f.p = 1e6;
+    const hq = world.hqPos(1);
+    const ex = world.cityOf(1).exit;
+    const dir = headingTo(hq, ex);
+    const c = world.nav(false, 35).nearestPassable({ x: hq.x + Math.cos(dir) * 500, z: hq.z + Math.sin(dir) * 500 }, 80)!;
+    const along = dir + Math.PI / 2;
+    const a = { x: c.x + Math.cos(along) * 120, z: c.z + Math.sin(along) * 120 };
+    const b = { x: c.x - Math.cos(along) * 120, z: c.z - Math.sin(along) * 120 };
+    const zone: Zone = { id: f.zoneSeq++, a, b, frontId: null, createdAt: world.time, cancelled: false };
+    f.zones = [...f.zones, zone];
+    world.forts.push({ id: world.newId(), owner: 1, kind: 'pillbox', pos: { ...c }, facing: dir, hp: 2000, maxHp: 2000, progress: 1, occupant: null, capacity: 1, occupants: [] });
+    let s: Front | undefined;
+    for (let t = 0; t < 120 && !s; t += 5) {
+      run(match, 5);
+      s = f.fronts.find((x) => garrisonsZone(x));
+    }
+    expect(s).toBeDefined();
+    expect(zone.frontId).toBe(s!.id);
+    expect(s!.order).toMatchObject({ kind: 'defend', manual: true });
+    expect(dist(s!.line!.a, a) + dist(s!.line!.b, b)).toBeLessThan(1);
+    expect(world.unitAlive(s!.commanderId)).toBeTruthy();
+    expect(frontUnits(world, 1, s!.id).filter((u) => !isCommander(u.def)).length).toBeGreaterThan(0);
+    // Later passes do not open another front for the same zone.
+    run(match, 60);
+    expect(f.fronts.filter((x) => garrisonsZone(x)).length).toBe(1);
+  }, 60_000);
 });

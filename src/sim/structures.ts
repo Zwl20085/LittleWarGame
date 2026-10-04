@@ -9,7 +9,7 @@ import { availableM } from './production';
 import { hostileMask } from './spatial';
 import { Ground } from './terrain';
 import { dig, openWork } from './works';
-import type { Faction, Fort, FortKind, Front, Unit } from './types';
+import type { Faction, Fort, FortKind, Front, Unit, Zone } from './types';
 import { angleDiff, DEG, dist, headingTo, type V2 } from './vec';
 import type { World } from './world';
 
@@ -49,6 +49,13 @@ export const STRUCT = {
   startEverySeconds: 10,
   /** Bunker slots: occupants sit this far apart along the front face. */
   slotSpreadM: 2.4,
+  /** 2.1: a steady front mans works within this of its fortified zones' lines (and `frontHoldM` of its battle line). */
+  zoneManM: 80,
+  /** Manning points: works within this of a zone's line belong to it (`zoneSlots`). */
+  zoneSlotM: 60,
+  /** Trench manning points: two per trench bay, at these fractions of its length, this far behind the parapet. */
+  trenchSlotT: [0.3, 0.7],
+  trenchSlotBackM: 2,
 } as const;
 
 export type StructureKind = Extract<FortKind, 'pillbox' | 'bunker'>;
@@ -88,8 +95,11 @@ export function garrisonOf(u: Unit): Garrison | null {
 
 export const isGarrisoned = (u: Unit): boolean => garrisonOf(u) !== null;
 
-/** Weapon the unit fires: the building's built-in gun when it has one, else its own primary. */
-export const weaponOf = (u: Unit): WeaponDef | null => garrisonOf(u)?.weapon ?? u.primary;
+/** Weapon the unit fires: the building's built-in gun, its own primary through the slits (bunker), or its primary. */
+export const weaponOf = (u: Unit): WeaponDef | null => {
+  const g = garrisonOf(u);
+  return g ? g.weapon : u.primary;
+};
 
 /** Extra muzzle / eye height inside a building (fires over the parapet, sees farther). */
 export const garrisonRaise = (u: Unit): number => garrisonOf(u)?.def.muzzle_raise_m ?? 0;
@@ -120,7 +130,8 @@ function accepts(def: DefensiveStructureDef, u: Unit): boolean {
 
 /** Drop dead / departed occupants (immutably) and keep the single-occupant mirror in step. */
 function prune(world: World, fort: Fort): readonly number[] {
-  const occ = (fort.occupants ?? []).filter((id) => world.unitAlive(id)?.fortId === fort.id);
+  const cur = fort.occupants ?? [];
+  const occ = cur.every((id) => world.unitAlive(id)?.fortId === fort.id) ? cur : cur.filter((id) => world.unitAlive(id)?.fortId === fort.id);
   fort.occupants = occ;
   fort.occupant = occ[0] ?? null;
   return occ;
@@ -136,12 +147,32 @@ function hasRoom(world: World, fort: Fort, def: DefensiveStructureDef, u: Unit, 
   return crews < def.max_crews;
 }
 
+/** Scaled copies of unit weapons fired through a building's slits (2.1 `fire_mul`), one per weapon and multiplier. */
+const slitWeapons = new WeakMap<WeaponDef, Map<string, WeaponDef>>();
+
+/**
+ * The weapon an occupant fires: the building's built-in gun (pillbox `pillbox_mg`), else its own
+ * primary with the building's `fire_mul` (bunker firing slits: +damage, +range).
+ */
+function garrisonWeapon(world: World, u: Unit, def: DefensiveStructureDef): WeaponDef | null {
+  if (def.weapon) return world.data.weapons.get(def.weapon) ?? null;
+  const w = u.primary;
+  const m = def.fire_mul;
+  if (!w || !m || (m.damage === 1 && m.range === 1)) return w;
+  const key = `${m.damage}:${m.range}`;
+  let byMul = slitWeapons.get(w);
+  if (!byMul) slitWeapons.set(w, (byMul = new Map()));
+  let out = byMul.get(key);
+  if (!out) byMul.set(key, (out = { ...w, damage: w.damage * m.damage, range: w.range * m.range }));
+  return out;
+}
+
 function enter(world: World, u: Unit, fort: Fort, def: DefensiveStructureDef): void {
   fort.occupants = [...prune(world, fort), u.id];
   fort.occupant = fort.occupants[0];
   u.fortId = fort.id;
   u.cover = def.cover;
-  garrisons.set(u, { fort, def, weapon: def.weapon ? world.data.weapons.get(def.weapon) ?? null : null });
+  garrisons.set(u, { fort, def, weapon: garrisonWeapon(world, u, def) });
   claims.delete(u);
   snapToSlot(u, fort, def);
 }
@@ -155,16 +186,19 @@ export function leaveStructure(world: World, u: Unit): void {
   if (fort) prune(world, fort);
 }
 
-/** Occupants sit at fixed slots (bunkers: side by side along the front face). */
-function snapToSlot(u: Unit, fort: Fort, def: DefensiveStructureDef): void {
-  const i = (fort.occupants ?? []).indexOf(u.id);
-  const off = def.capacity > 1 ? (i - (def.capacity - 1) / 2) * STRUCT.slotSpreadM * 2 : 0;
+/** Occupant slot `i` of a building (bunkers: side by side along the front face). */
+export function slotPos(fort: Fort, capacity: number, i: number): V2 {
+  const off = capacity > 1 ? (i - (capacity - 1) / 2) * STRUCT.slotSpreadM * 2 : 0;
   const along = fort.facing + Math.PI / 2;
-  const x = fort.pos.x + Math.cos(along) * off;
-  const z = fort.pos.z + Math.sin(along) * off;
-  if (Math.hypot(u.pos.x - x, u.pos.z - z) > 0.8) {
-    u.pos.x = x;
-    u.pos.z = z;
+  return { x: fort.pos.x + Math.cos(along) * off, z: fort.pos.z + Math.sin(along) * off };
+}
+
+/** Occupants sit at fixed slots. */
+function snapToSlot(u: Unit, fort: Fort, def: DefensiveStructureDef): void {
+  const p = slotPos(fort, def.capacity, Math.max(0, (fort.occupants ?? []).indexOf(u.id)));
+  if (Math.hypot(u.pos.x - p.x, u.pos.z - p.z) > 0.8) {
+    u.pos.x = p.x;
+    u.pos.z = p.z;
   }
 }
 
@@ -175,6 +209,8 @@ export function structuresOf(world: World): readonly Fort[] {
   if (!c || c.tick !== world.tick) {
     c = { tick: world.tick, list: world.forts.filter((f) => isStructure(f.kind) && f.hp > 0) };
     structureCache.set(world, c);
+    // Occupants that died or left outside the garrison path (elimination, evacuation) drop out at once.
+    for (const f of c.list) if (f.occupant !== null || (f.occupants?.length ?? 0) > 0) prune(world, f);
   }
   return c.list;
 }
@@ -216,7 +252,7 @@ function rebind(world: World, u: Unit): Garrison | null {
     return null;
   }
   const def = structureDef(world, fort.kind);
-  const g = { fort, def, weapon: def.weapon ? world.data.weapons.get(def.weapon) ?? null : null };
+  const g = { fort, def, weapon: garrisonWeapon(world, u, def) };
   garrisons.set(u, g);
   return g;
 }
@@ -317,6 +353,28 @@ export function startStructure(world: World, f: Faction, kind: StructureKind, po
   return fort;
 }
 
+/**
+ * A finished building placed for free (2.1: each capital starts with pillboxes at its map
+ * strongpoints), on the nearest good ground within `searchM` of `pos`. Null when there is none.
+ */
+export function placeStructure(world: World, owner: number, kind: StructureKind, pos: V2, facing: number, searchM = 36): Fort | null {
+  let at: V2 | null = structureSiteOk(world, pos) ? pos : null;
+  for (let r = 6; !at && r <= searchM; r += 6) {
+    for (let k = 0; k < 12 && !at; k++) {
+      const q = { x: pos.x + Math.cos((k * Math.PI) / 6) * r, z: pos.z + Math.sin((k * Math.PI) / 6) * r };
+      if (structureSiteOk(world, q)) at = q;
+    }
+  }
+  if (!at) return null;
+  const d = structureDef(world, kind);
+  const fort: Fort = {
+    id: world.newId(), owner, kind, pos: { ...at }, facing, hp: d.max_hp, maxHp: d.max_hp,
+    progress: 1, occupant: null, capacity: d.capacity, occupants: [],
+  };
+  world.forts.push(fort);
+  return fort;
+}
+
 /** Any known armed enemy within r of p. */
 export function enemyNear(world: World, owner: number, p: V2, r: number): boolean {
   return world.spatial.findOwner(p.x, p.z, r, hostileMask(world, owner), (e) => e.hp > 0 && e.primary !== null && world.knows(owner, e)) !== null;
@@ -383,24 +441,43 @@ function pendingFor(world: World, fort: Fort): number {
   return n;
 }
 
-/** Where a holding unit may man buildings: its garrison place or its front's battle line. */
-function holdAnchor(world: World, u: Unit, s: Front): { at: V2; r: number } | null {
-  if (u.spearhead) return null;
-  if (u.opRole === 'garrison') {
-    if (u.opObjective === `hq:${u.owner}`) return { at: world.hqPos(u.owner), r: STRUCT.placeHoldM };
-    const o = world.objectives.find((x) => x.id === u.opObjective);
-    return o ? { at: o.pos, r: o.radius + STRUCT.placeHoldM * 0.5 } : null;
+/**
+ * 2.1: a front that is not pushing mans its works — hold / fortify postures, and a cautious front
+ * whose commander is holding its line (`mode === 'hold'`). Soak 2.0 at 30 min: 2 garrisoned
+ * squads per seed, because only hold / fortify fronts looked for buildings at all.
+ */
+const steadyFront = (s: Front): boolean => s.posture === 'hold' || s.posture === 'fortify' || (s.posture === 'cautious' && s.mode === 'hold');
+
+/** A non-cancelled fortified zone of the unit's faction held by this front (or by no front) runs within `zoneManM` of p. */
+function inFrontZone(world: World, owner: number, s: Front, p: V2): boolean {
+  for (const z of world.factions[owner]?.zones ?? []) {
+    if (z.cancelled || (z.frontId !== null && z.frontId !== s.id)) continue;
+    if (segDistance(p, z.a, z.b) <= STRUCT.zoneManM) return true;
   }
-  if (u.opRole !== 'line') return null;
-  if (s.posture === 'hold' || s.posture === 'fortify') return { at: s.front, r: STRUCT.frontHoldM };
-  if (s.posture === 'cautious' || s.posture === 'assault') return { at: s.front, r: STRUCT.frontAttackStayM };
-  return null;
+  return false;
+}
+
+/**
+ * May `u` man `fort` under its current orders? Garrisons: buildings around their place. Line
+ * troops of a steady front: around the battle line or along the front's fortified zones; of an
+ * attacking front: only right at the line (they stay while it is still close).
+ */
+function mayHold(world: World, u: Unit, s: Front, fort: Fort): boolean {
+  if (u.spearhead) return false;
+  if (u.opRole === 'garrison') {
+    if (u.opObjective === `hq:${u.owner}`) return dist(world.hqPos(u.owner), fort.pos) <= STRUCT.placeHoldM;
+    const o = world.objectives.find((x) => x.id === u.opObjective);
+    return !!o && dist(o.pos, fort.pos) <= o.radius + STRUCT.placeHoldM * 0.5;
+  }
+  if (u.opRole !== 'line') return false;
+  if (steadyFront(s)) return dist(s.front, fort.pos) <= STRUCT.frontHoldM || inFrontZone(world, u.owner, s, fort.pos);
+  if (s.posture === 'cautious' || s.posture === 'assault') return dist(s.front, fort.pos) <= STRUCT.frontAttackStayM;
+  return false;
 }
 
 /** Occupant: hold the building (fight from it) while its orders keep it here. */
 function holdGarrison(world: World, u: Unit, s: Front, g: Garrison): boolean {
-  const anchor = holdAnchor(world, u, s);
-  if (!anchor || dist(anchor.at, g.fort.pos) > anchor.r) return false;
+  if (!mayHold(world, u, s, g.fort)) return false;
   stop(u);
   u.status = 'status.garrisoned';
   selectTarget(world, u, null);
@@ -416,9 +493,8 @@ function seekGarrison(world: World, u: Unit, s: Front): boolean {
     claims.delete(u);
     if (world.time < (nextSeek.get(u) ?? -1)) return false;
     nextSeek.set(u, world.time + STRUCT.seekEverySeconds);
-    const anchor = s.posture === 'cautious' || s.posture === 'assault' ? null : holdAnchor(world, u, s);
-    if (!anchor || digsFirst(world, u)) return false;
-    fort = pickBuilding(world, u, anchor);
+    if (u.spearhead || (u.opRole !== 'garrison' && !(u.opRole === 'line' && steadyFront(s))) || digsFirst(world, u)) return false;
+    fort = pickBuilding(world, u, s);
     if (!fort) return false;
     claims.set(u, { fortId: fort.id, until: world.time + STRUCT.claimSeconds });
   }
@@ -434,16 +510,16 @@ function seekGarrison(world: World, u: Unit, s: Front): boolean {
   return true;
 }
 
-function pickBuilding(world: World, u: Unit, anchor: { at: V2; r: number }): Fort | null {
+function pickBuilding(world: World, u: Unit, s: Front): Fort | null {
   const seekR = garrisonRules(world).seek_radius_m;
   let best: Fort | null = null;
   let bd = seekR;
   for (const fort of structuresOf(world)) {
-    if (fort.owner !== u.owner || fort.progress < 1 || dist(fort.pos, anchor.at) > anchor.r) continue;
+    if (fort.owner !== u.owner || fort.progress < 1) continue;
     const d = dist(fort.pos, u.pos);
     if (d >= bd) continue;
     const def = structureDef(world, fort.kind as StructureKind);
-    if (!accepts(def, u) || !hasRoom(world, fort, def, u, pendingFor(world, fort))) continue;
+    if (!accepts(def, u) || !mayHold(world, u, s, fort) || !hasRoom(world, fort, def, u, pendingFor(world, fort))) continue;
     bd = d;
     best = fort;
   }
@@ -491,4 +567,79 @@ export function structureDuty(world: World, u: Unit, s: Front): boolean {
     } else dropJob(u);
   }
   return seekGarrison(world, u, s);
+}
+
+// ---------------------------------------------------------------- manning points (2.1, for the front planner)
+
+/** One place a squad can fight from in a finished own work. */
+export interface ManningSlot {
+  readonly pos: V2;
+  /** Direction the work faces (the enemy side). */
+  readonly facing: number;
+  readonly fortId: number;
+  readonly kind: FortKind;
+  /** Building slot already taken (by an occupant); trench points are never marked taken. */
+  readonly taken: boolean;
+}
+
+/**
+ * Manning points of the finished, standing works of `owner` within `r` of the segment a–b (b null:
+ * of the point a): one per building slot (pillbox 1, bunker 2, where the occupant snaps to) and
+ * two per trench bay, just behind the parapet. Buildings first (fill them before the trenches),
+ * then trenches, each nearest the segment's centre first. O(works); call it per front think, not
+ * per unit.
+ */
+export function structureSlots(world: World, owner: number, a: V2, b: V2 | null, r: number): ManningSlot[] {
+  const end = b ?? a;
+  const c = { x: (a.x + end.x) / 2, z: (a.z + end.z) / 2 };
+  const bld: { s: ManningSlot; d: number }[] = [];
+  const tr: { s: ManningSlot; d: number }[] = [];
+  for (const w of world.forts) {
+    if (w.owner !== owner || w.hp <= 0 || w.progress < 1 || segDistance(w.pos, a, end) > r) continue;
+    const d = dist(w.pos, c);
+    if (isStructure(w.kind)) {
+      const cap = structureDef(world, w.kind).capacity;
+      const occ = prune(world, w).length;
+      for (let i = 0; i < cap; i++) bld.push({ s: { pos: slotPos(w, cap, i), facing: w.facing, fortId: w.id, kind: w.kind, taken: i < occ }, d });
+    } else if (w.kind === 'trench' && w.start && w.end) {
+      const st = w.start;
+      const en = w.end;
+      for (const t of STRUCT.trenchSlotT) {
+        const pos = {
+          x: st.x + (en.x - st.x) * t - Math.cos(w.facing) * STRUCT.trenchSlotBackM,
+          z: st.z + (en.z - st.z) * t - Math.sin(w.facing) * STRUCT.trenchSlotBackM,
+        };
+        tr.push({ s: { pos, facing: w.facing, fortId: w.id, kind: w.kind, taken: false }, d });
+      }
+    }
+  }
+  const order = (x: { d: number; s: ManningSlot }, y: { d: number; s: ManningSlot }): number => x.d - y.d || x.s.fortId - y.s.fortId;
+  return [...bld.sort(order), ...tr.sort(order)].map((x) => x.s);
+}
+
+/** Manning points of a fortified zone's finished works (buildings first, then trench bays). */
+export function zoneSlots(world: World, f: Faction, zone: Zone): ManningSlot[] {
+  return structureSlots(world, f.id, zone.a, zone.b, STRUCT.zoneSlotM);
+}
+
+/** Slots of the finished own buildings around the capital (where its garrison mans them). */
+export function capitalBuildingSlots(world: World, owner: number): number {
+  const hq = world.hqPos(owner);
+  let n = 0;
+  for (const w of structuresOf(world)) {
+    if (w.owner === owner && w.progress >= 1 && dist(w.pos, hq) <= STRUCT.placeHoldM) n += structureDef(world, w.kind as StructureKind).capacity;
+  }
+  return n;
+}
+
+/** Share of the finished building slots of `owner` that are manned (soak metric; 1 when none). */
+export function mannedShare(world: World, owner: number): { slots: number; manned: number } {
+  let slots = 0;
+  let manned = 0;
+  for (const w of structuresOf(world)) {
+    if (w.owner !== owner || w.progress < 1) continue;
+    slots += structureDef(world, w.kind as StructureKind).capacity;
+    manned += prune(world, w).length;
+  }
+  return { slots, manned };
 }

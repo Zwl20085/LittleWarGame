@@ -77,7 +77,7 @@
     "node_p_bonus_cap": 40,
     "node_m_bonus_cap": 30,
     "node_activation_seconds": 30,
-    "initial_units": {"infantry": 3, "recon": 1, "supply_truck": 1, "engineer": 2}
+    "initial_units": {"infantry": 3, "recon": 1, "supply_truck": 1, "engineer": 0.4}
   },
   "territory": {
     "comment": "User decision 2026-10-02: income and production grow with held settlements; values are per army_scale=1 and get multiplied by army_scale.",
@@ -172,13 +172,13 @@
     "defensive": {
       "comment": "2.0 defensive buildings (user: 工兵可以建设筑垒区域、炮楼、堡垒，需要步兵/侦察等单位进入驻防，不占人口). Built by engineers (structures.ts); costs are per building and NOT × army_scale (like unit costs). Buildings cost no population and squads inside them do not count against the population cap. A fortified zone (筑垒地域) is a planned layout of trenches + pillboxes + a bunker along a line, not a building of its own.",
       "structures": [
-        {"id": "pillbox", "label_zh": "炮楼", "cost_p": 10, "cost_m": 80, "work_seconds": 70, "max_hp": 2200, "capacity": 1, "max_crews": 1, "accepts": ["infantry", "recon", "engineer", "motor_inf", "mg"], "cover": 3, "weapon": "mg", "blind_rear_deg": 90, "occupant_blast_mul": 0.55, "muzzle_raise_m": 2.2},
-        {"id": "bunker", "label_zh": "堡垒", "cost_p": 20, "cost_m": 160, "work_seconds": 120, "max_hp": 4500, "capacity": 2, "max_crews": 1, "accepts": ["infantry", "recon", "engineer", "motor_inf", "mg", "at_gun"], "cover": 3, "weapon": null, "blind_rear_deg": 0, "occupant_blast_mul": 0.4, "muzzle_raise_m": 0.8}
+        {"id": "pillbox", "label_zh": "炮楼", "cost_p": 6, "cost_m": 50, "work_seconds": 60, "max_hp": 2750, "capacity": 1, "max_crews": 1, "accepts": ["infantry", "recon", "engineer", "motor_inf", "mg"], "cover": 3, "weapon": "pillbox_mg", "fire_mul": {"damage": 1, "range": 1}, "blind_rear_deg": 90, "occupant_blast_mul": 0.55, "muzzle_raise_m": 2.2},
+        {"id": "bunker", "label_zh": "堡垒", "cost_p": 12, "cost_m": 100, "work_seconds": 100, "max_hp": 5625, "capacity": 2, "max_crews": 1, "accepts": ["infantry", "recon", "engineer", "motor_inf", "mg", "at_gun"], "cover": 3, "weapon": null, "fire_mul": {"damage": 1.2, "range": 1.15}, "blind_rear_deg": 0, "occupant_blast_mul": 0.4, "muzzle_raise_m": 0.8}
       ],
       "garrison": {
         "enter_radius_m": 6,
         "leave_radius_m": 9,
-        "seek_radius_m": 160,
+        "seek_radius_m": 200,
         "absorb_share": 0.5,
         "collapse_suppression": 60,
         "collapse_damage_ratio": 0.15

@@ -11,7 +11,7 @@ import type { World } from './world';
  * attackers off the map — and attackers can't simply shell a dug-in garrison.
  */
 export const WORKS = {
-  trench: { costP: 12, workSeconds: 40, hp: 2600, length: 46, coverRadiusM: 6 },
+  trench: { costP: 8, workSeconds: 40, hp: 2600, length: 46, coverRadiusM: 6 },
   sandbag: { costP: 6, workSeconds: 22, hp: 1600, length: 16, coverRadiusM: 4 },
   /** Fire from within ±this of the work's facing is stopped by the parapet. */
   frontArc: 110 * DEG,

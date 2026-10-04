@@ -18,9 +18,9 @@ function faction(over: Partial<Faction> = {}): Faction {
 }
 
 describe('data loading (AGENT_HANDOFF §2)', () => {
-  it('loads all 13 units (incl. motorized rifles and the front commander) and 12 weapons with valid references', () => {
+  it('loads all 13 units (incl. motorized rifles and the front commander) and 13 weapons (incl. the pillbox MG) with valid references', () => {
     expect(data.units.size).toBe(13);
-    expect(data.weapons.size).toBe(12);
+    expect(data.weapons.size).toBe(13);
   });
   it('reports the offending field when a value is missing', () => {
     const units = 'id,label_zh,kind,facility,cost_p,cost_m,population,supply_demand,build_seconds,unlock_seconds,max_hp,member_count,speed_mps,vision_m,primary_weapon,secondary_weapon,armor_front,armor_side,armor_rear,max_slope_deg,hull_turn_degps,turret_turn_degps,setup_seconds,pack_seconds\nx,X,infantry,barracks,,1,1,1,1,0,10,1,1,1,,,0,0,0,1,1,0,0,0';

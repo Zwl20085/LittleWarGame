@@ -6,10 +6,12 @@ import { populationOf } from '../src/sim/production';
 import { HOME } from '../src/sim/homeguard';
 import { Ground } from '../src/sim/terrain';
 import {
-  absorbHit, buildStep, damageStructure, garrisonBlind, garrisonOf, garrisonRaise, STRUCT, startStructure,
-  structureDef, structureSiteOk, updateStructureGarrison, weaponOf,
+  absorbHit, buildStep, damageStructure, garrisonBlind, garrisonOf, garrisonRaise, placeStructure, STRUCT, startStructure,
+  structureDef, structureSiteOk, updateStructureGarrison, weaponOf, zoneSlots,
 } from '../src/sim/structures';
-import type { Fort, Unit } from '../src/sim/types';
+import { planStructures } from '../src/sim/fortplans';
+import { issueFrontOrder } from '../src/sim/fronts';
+import type { Fort, FrontOrder, Unit } from '../src/sim/types';
 import { dist, headingTo, type V2 } from '../src/sim/vec';
 import type { World } from '../src/sim/world';
 
@@ -96,6 +98,8 @@ describe('defensive buildings (structures.ts)', () => {
     const f = w.factions[0];
     f.p = 5000;
     f.m = 5000;
+    // (2.1: the capitals' strongpoint pillboxes stand from the start.)
+    const before = w.forts.filter((x) => x.kind === 'pillbox').length;
     expect(house).not.toBeNull();
     expect(structureSiteOk(w, house!)).toBe(false);
     expect(startStructure(w, f, 'pillbox', house!, 0, 0)).toBeNull();
@@ -105,7 +109,7 @@ describe('defensive buildings (structures.ts)', () => {
     }
     f.m = 10;
     expect(startStructure(w, f, 'pillbox', siteNearHome(w).p, 0, 0)).toBeNull();
-    expect(w.forts.some((x) => x.kind === 'pillbox')).toBe(false);
+    expect(w.forts.filter((x) => x.kind === 'pillbox').length).toBe(before);
   });
 
   it('a squad enters a finished pillbox, gets cover / the MG / height, keeps its population, and is thrown out when it collapses', () => {
@@ -122,7 +126,7 @@ describe('defensive buildings (structures.ts)', () => {
     // Buildings cost no population; the garrisoned squad keeps its own (lead decision).
     expect(populationOf(w, f).present).toBe(popBefore);
     // Built-in MG instead of rifles, raised muzzle, all-round cover 3, blind rear arc.
-    expect(weaponOf(u)?.id).toBe('mg');
+    expect(weaponOf(u)?.id).toBe('pillbox_mg');
     expect(garrisonRaise(u)).toBeGreaterThan(0);
     const front = { x: fort.pos.x + Math.cos(fort.facing) * 100, z: fort.pos.z + Math.sin(fort.facing) * 100 };
     const rear = { x: fort.pos.x - Math.cos(fort.facing) * 100, z: fort.pos.z - Math.sin(fort.facing) * 100 };
@@ -194,3 +198,138 @@ describe('defensive buildings (structures.ts)', () => {
     }, 120_000);
   }
 });
+
+
+/** 2.1 permanent works: zones outlive orders, cheaper and stronger buildings, capitals start fortified, works are manned. */
+describe('permanent works (2.1)', () => {
+  const fortify = (w: World, a: V2, b: V2): FrontOrder => ({ kind: 'fortify', a: { ...a }, b: { ...b }, issuedAt: w.time, manual: true });
+
+  /** A straight `len` m line of buildable ground `r` m out from faction 0's capital, square to the bearing. */
+  function lineOut(w: World, r: number, len: number): { a: V2; b: V2 } {
+    const hq = w.hqPos(0);
+    for (let a = 0; a < Math.PI * 2; a += 0.15) {
+      const c = { x: hq.x + Math.cos(a) * r, z: hq.z + Math.sin(a) * r };
+      const along = a + Math.PI / 2;
+      const p = { x: c.x - (Math.cos(along) * len) / 2, z: c.z - (Math.sin(along) * len) / 2 };
+      const q = { x: c.x + (Math.cos(along) * len) / 2, z: c.z + (Math.sin(along) * len) / 2 };
+      if ([0, 0.1, 0.5, 0.9, 1].every((t) => structureSiteOk(w, { x: p.x + (q.x - p.x) * t, z: p.z + (q.z - p.z) * t }))) return { a: p, b: q };
+    }
+    throw new Error('no line');
+  }
+
+  it('capitals start with finished pillboxes at their strongpoints and the starting engineers in the field', () => {
+    const w = smallWorld();
+    for (const f of w.factions) {
+      const city = w.cityOf(f.id);
+      const hq = w.hqPos(f.id);
+      const pills = w.forts.filter((x) => x.owner === f.id && x.kind === 'pillbox' && x.progress >= 1 && dist(x.pos, hq) < 250);
+      const fixed = [...w.units.values()].filter((u) => u.owner === f.id && u.fixed);
+      // Every strongpoint is a pillbox (or, with no buildable ground near it, the old fixed MG).
+      expect(pills.length + fixed.length).toBe(city.strongpoints.length);
+      expect(pills.length).toBeGreaterThan(0);
+      const eng = [...w.units.values()].filter((u) => u.owner === f.id && u.def.id === 'engineer');
+      // Scaled by army_scale at match creation, at least 1 (sim.createMatch).
+      expect(eng.length).toBe(Math.max(1, Math.round(w.data.rules.economy.initial_units.engineer)));
+    }
+  });
+
+  it("pillbox: dedicated MG, cheaper and tougher; bunker: firing slits boost the occupants' own weapons", () => {
+    const w = smallWorld();
+    const pill = structureDef(w, 'pillbox');
+    const bunker = structureDef(w, 'bunker');
+    const mg = w.data.weapons.get('pillbox_mg')!;
+    expect(pill.weapon).toBe('pillbox_mg');
+    expect([mg.range, mg.damage, mg.interval, mg.suppression]).toEqual([200, 90, 1, 24]);
+    expect([pill.cost_p, pill.cost_m, pill.work_seconds, pill.max_hp]).toEqual([6, 50, 60, 2750]);
+    expect([bunker.cost_p, bunker.cost_m, bunker.work_seconds, bunker.max_hp]).toEqual([12, 100, 100, 5625]);
+    const { p, facing } = siteNearHome(w);
+    const fort = placeStructure(w, 0, 'bunker', p, facing)!;
+    expect(fort.progress).toBe(1);
+    const u = w.spawnUnit(0, 'infantry', fort.pos, 0);
+    place(w, u, fort.pos);
+    garrisonCheck(w, u);
+    expect(u.fortId).toBe(fort.id);
+    const own = u.primary!;
+    const fired = weaponOf(u)!;
+    expect(fired.id).toBe(own.id);
+    expect(fired.damage).toBeCloseTo(own.damage * bunker.fire_mul!.damage);
+    expect(fired.range).toBeCloseTo(own.range * bunker.fire_mul!.range);
+    // The unit's own weapon is untouched.
+    expect(w.data.weapons.get(own.id)!.damage).toBe(own.damage);
+  });
+
+  it('a zone outlives the order that created it: a second Fortify order adds a zone, both are built; a cancelled one stops', () => {
+    const m = createMatch(data, { mapId: 'generated', factions: 2, infoMode: 'open', seed: 7, difficulty: 'normal', playerSlot: 0, armyScale: 1 });
+    const w = m.world;
+    const f = w.factions[0];
+    const s = f.fronts[0];
+    const z1 = lineOut(w, 360, 160);
+    const z2 = lineOut(w, 560, 160);
+    const rich = (): void => { f.p = Math.max(f.p, 2000); f.m = Math.max(f.m, 2000); };
+    issueFrontOrder(w, f, s, fortify(w, z1.a, z1.b));
+    for (let i = 0; i < 60 * w.tickHz; i++) { rich(); step(m); w.fx.length = 0; }
+    issueFrontOrder(w, f, s, fortify(w, z2.a, z2.b));
+    expect(f.zones.length).toBe(2);
+    expect(f.zones.every((z) => !z.cancelled)).toBe(true);
+    for (let i = 0; i < 120 * w.tickHz; i++) { rich(); step(m); w.fx.length = 0; }
+    const sitesOf = (a: V2, b: V2): Fort[] => w.forts.filter((x) => x.owner === 0 && x.hp > 0 && segD(x.pos, a, b) < 40);
+    expect(sitesOf(z1.a, z1.b).length, 'first zone keeps building after the second order').toBeGreaterThan(0);
+    expect(sitesOf(z2.a, z2.b).length, 'second zone').toBeGreaterThan(0);
+    // Cancel the first: no new sites there, what stands stays.
+    const n1 = sitesOf(z1.a, z1.b).length;
+    f.zones[0].cancelled = true;
+    for (let i = 0; i < 60 * w.tickHz; i++) { rich(); step(m); w.fx.length = 0; }
+    expect(sitesOf(z1.a, z1.b).length).toBeLessThanOrEqual(n1);
+    expect(sitesOf(z1.a, z1.b).length).toBeGreaterThan(0);
+  }, 120_000);
+
+  it('a holding front mans every pillbox / bunker of its finished zone within 90 s', () => {
+    const m = createMatch(data, { mapId: 'generated', factions: 2, infoMode: 'open', seed: 7, difficulty: 'normal', playerSlot: 0, armyScale: 1 });
+    const w = m.world;
+    const f = w.factions[0];
+    const s = f.fronts[0];
+    const { a, b } = lineOut(w, 450, 200);
+    issueFrontOrder(w, f, s, fortify(w, a, b));
+    const zone = f.zones[f.zones.length - 1];
+    const at = (t: number): V2 => ({ x: a.x + (b.x - a.x) * t, z: a.z + (b.z - a.z) * t });
+    const hq = w.hqPos(0);
+    const facing = headingTo(hq, at(0.5));
+    const works = [placeStructure(w, 0, 'pillbox', at(0.1), facing), placeStructure(w, 0, 'pillbox', at(0.9), facing), placeStructure(w, 0, 'bunker', at(0.5), facing)];
+    expect(works.every((x) => x !== null)).toBe(true);
+    const slots = zoneSlots(w, f, zone).filter((x) => x.kind === 'pillbox' || x.kind === 'bunker');
+    expect(slots.length).toBe(4);
+    const back = (t: number): V2 => w.terrain.freeNear({ x: at(t).x + (hq.x - at(t).x) * 0.15, z: at(t).z + (hq.z - at(t).z) * 0.15 }, 30);
+    for (let k = 0; k < 8; k++) w.spawnUnit(0, 'infantry', back(k / 7), s.id).behavior = 'advance';
+    let manned = 0;
+    for (let i = 0; i < 90 * w.tickHz && manned < 4; i++) {
+      step(m);
+      w.fx.length = 0;
+      manned = works.reduce((n, x) => n + (x!.occupants?.length ?? 0), 0);
+    }
+    expect(manned).toBe(4);
+    expect(zoneSlots(w, f, zone).filter((x) => x.taken).length).toBe(4);
+  }, 120_000);
+
+  it("the supreme HQ queues engineers for waiting works — the player's too — unless the engineer line is paused", () => {
+    const w = smallWorld();
+    w.tick = 30 * w.tickHz;
+    const f = w.factions[0];
+    expect(f.isPlayer).toBe(true);
+    for (const u of w.units.values()) if (u.owner === 0 && u.def.id === 'engineer') u.hp = 0;
+    f.paused = { ...f.paused, engineer: true };
+    planStructures(w, f);
+    expect(f.manualQueue.some((q) => q.unitId === 'engineer')).toBe(false);
+    f.paused = { ...f.paused, engineer: false };
+    planStructures(w, f);
+    expect(f.manualQueue.filter((q) => q.unitId === 'engineer').length).toBeGreaterThan(0);
+    expect(w.log.some((l) => l.key === 'log.engineersRequested' && l.faction === 0)).toBe(true);
+  });
+});
+
+function segD(p: V2, a: V2, b: V2): number {
+  const vx = b.x - a.x;
+  const vz = b.z - a.z;
+  const l2 = vx * vx + vz * vz;
+  const t = l2 > 0 ? Math.max(0, Math.min(1, ((p.x - a.x) * vx + (p.z - a.z) * vz) / l2)) : 0;
+  return Math.hypot(p.x - (a.x + vx * t), p.z - (a.z + vz * t));
+}
