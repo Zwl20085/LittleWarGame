@@ -5,7 +5,8 @@ const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 
 const ROOT = path.join(__dirname, '..', 'dist');
-// Only the bundled game plus Google Fonts (the UI typefaces); no remote scripts at all.
+// Only the bundled game plus Google Fonts (the UI typefaces); no remote scripts at all. The one
+// remote request is the update check against the GitHub releases API (src/ui/updateCheck.ts).
 const CSP = [
   "default-src 'self'",
   "script-src 'self'",
@@ -14,7 +15,7 @@ const CSP = [
   "font-src 'self' data: https://fonts.gstatic.com",
   "img-src 'self' data: blob:",
   "media-src 'self' blob:",
-  "connect-src 'self' blob: data:",
+  "connect-src 'self' blob: data: https://api.github.com",
   "object-src 'none'",
   "base-uri 'none'",
   "form-action 'none'",
@@ -44,6 +45,16 @@ function serveDist() {
   });
 }
 
+/** https://github.com/… only (no credentials, no other host or port). */
+function isSafeExternal(raw) {
+  try {
+    const u = new URL(raw);
+    return u.protocol === 'https:' && u.hostname === 'github.com' && u.port === '' && u.username === '' && u.password === '';
+  } catch {
+    return false;
+  }
+}
+
 function createWindow() {
   const win = new BrowserWindow({
     width: 1600,
@@ -66,9 +77,10 @@ function createWindow() {
     if (input.key === 'F11') win.setFullScreen(!win.isFullScreen());
     if (input.control && input.shift && input.key.toLowerCase() === 'i') win.webContents.toggleDevTools();
   });
-  // External links (e.g. in the README/help) open in the system browser, never inside the game.
+  // External links (the update notice's release page) open in the system browser, never inside
+  // the game, and only for GitHub pages over https.
   win.webContents.setWindowOpenHandler(({ url }) => {
-    if (url.startsWith('https://')) shell.openExternal(url);
+    if (isSafeExternal(url)) shell.openExternal(url);
     return { action: 'deny' };
   });
   // The game never navigates away from its own bundle.
