@@ -1,14 +1,16 @@
 import * as THREE from 'three';
 import { ORDER_COLOR } from '../render/orderLines';
-import { frontById, nearestFront } from '../sim/fronts';
-import type { OrderKind, Unit } from '../sim/types';
+import { nearestFront } from '../sim/fronts';
+import type { DirectiveKind, Unit } from '../sim/types';
 import type { V2 } from '../sim/vec';
 import type { GameContext } from './context';
+import { DIRECTIVE_TONE } from './fronts';
 import type { Hud } from './hud';
+import { t } from './i18n';
 import { TerrainTip } from './terrainTip';
 
-/** Supreme-HQ order hotkeys (A/H/R/G/F/U/Q/E/W/S/D/Tab/Space/1-8 are taken; N = new front). */
-export const ORDER_KEYS: Record<string, OrderKind> = { z: 'attack', x: 'defend', c: 'fortify', v: 'fallBack', b: 'auto' };
+/** 2.2 directive hotkeys (A/H/R/G/F/U/Q/E/W/S/D/Tab/Space/1-8 are taken). */
+export const DIRECTIVE_KEYS: Record<string, DirectiveKind> = { z: 'offensive', x: 'advance', c: 'defend', v: 'fortify', b: 'contract' };
 
 /** Mouse/keyboard → camera moves and CommandBus commands. Never mutates the sim directly. */
 export class InputController {
@@ -19,7 +21,7 @@ export class InputController {
   private readonly off: (() => void)[] = [];
   private lastPointer = new THREE.Vector2();
   private readonly terrainTip: TerrainTip;
-  /** Supreme-HQ order being placed: mousedown point (screen + ground); drag = line. */
+  /** Directive place being picked: mousedown point (screen + ground); drag = line (fortify). */
   private orderDrag: { x: number; y: number; a: V2 } | null = null;
   private previewOn = false;
 
@@ -67,9 +69,11 @@ export class InputController {
       return;
     }
     if (e.button === 0) {
-      if (this.ctx.mode.kind === 'frontOrder') {
+      if (this.ctx.mode.kind === 'directive') {
         const a = this.ctx.renderer.groundAt(this.ndc(e));
+        // Never fail silently: a press off the terrain says so and keeps the mode for another try.
         if (a) this.orderDrag = { x: e.clientX, y: e.clientY, a };
+        else this.ctx.toast(t('fail.noGround'), 'warn');
         return;
       }
       if (this.ctx.mode.kind !== 'normal') {
@@ -91,41 +95,47 @@ export class InputController {
       this.ctx.issue({ type: 'unitOrder', unitIds: ids, order: 'attackMove', pos: p, queue: e.shiftKey });
       this.ctx.renderer.orderMarker(p, '#e08050');
     }
-    if (m.kind === 'newFront') {
-      this.hud.fronts.openFrontAt(p);
-      this.ctx.renderer.orderMarker(p, ORDER_COLOR.defend);
-    }
   }
 
   /** Drag shorter than this (CSS px) is a point order, longer draws a line. */
   private static readonly LINE_DRAG_PX = 25;
 
-  /** Finish placing a supreme-HQ order: point (click) or line (drag a–b). Shift keeps the mode. */
+  /**
+   * Finish placing the directive's place: a click = the axis (main effort / threatened place), a
+   * drag under Fortify = a fortified line (other directives take the press point). The command bus
+   * validates it; a refusal comes back as a toast (game.ts). Shift keeps the mode.
+   */
   private finishOrder(e: MouseEvent): void {
     const drag = this.orderDrag;
     this.orderDrag = null;
     const m = this.ctx.mode;
-    if (!drag || m.kind !== 'frontOrder') return;
-    const line = Math.hypot(e.clientX - drag.x, e.clientY - drag.y) >= InputController.LINE_DRAG_PX;
+    if (!drag || m.kind !== 'directive') return;
+    const dragged = Math.hypot(e.clientX - drag.x, e.clientY - drag.y) >= InputController.LINE_DRAG_PX;
+    const line = dragged && m.directive === 'fortify';
     const b = line ? this.ctx.renderer.groundAt(this.ndc(e)) : null;
-    this.ctx.issue({ type: 'frontOrder', frontId: m.frontId, kind: m.order, a: drag.a, ...(b ? { b } : {}) });
-    const col = ORDER_COLOR[m.order];
+    if (line && !b) {
+      this.ctx.toast(t('fail.noGround'), 'warn');
+      return;
+    }
+    if (b) this.ctx.issue({ type: 'setDirective', kind: m.directive, line: { a: drag.a, b } });
+    else this.ctx.issue({ type: 'setDirective', kind: m.directive, axis: drag.a });
+    const col = ORDER_COLOR[DIRECTIVE_TONE[m.directive]];
     this.ctx.renderer.orderMarker(drag.a, col);
     if (b) this.ctx.renderer.orderMarker(b, col);
-    this.hud.fronts.ordered(m.frontId, m.order);
+    this.hud.fronts.placed(m.directive, b ? { x: (drag.a.x + b.x) / 2, z: (drag.a.z + b.z) / 2 } : drag.a, !!b);
     if (!e.shiftKey) this.ctx.mode = { kind: 'normal' };
     this.clearPreview();
   }
 
-  /** Ghost of the order under the cursor (point) or being dragged (line). */
+  /** Ghost of the directive's place under the cursor (point) or being dragged (fortify line), from the front that would take it. */
   private previewOrder(a: V2, b: V2 | null): void {
     const m = this.ctx.mode;
-    if (m.kind !== 'frontOrder') return;
+    if (m.kind !== 'directive') return;
     const w = this.ctx.match.world;
     const f = w.factions[this.ctx.playerId];
     if (!f) return;
-    const s = m.frontId !== null ? frontById(f, m.frontId) : nearestFront(f, a);
-    this.ctx.renderer.orderLines.setPreview({ kind: m.order, a, b, from: s?.front ?? null, home: w.hqPos(f.id), color: f.color });
+    const s = nearestFront(f, b ? { x: (a.x + b.x) / 2, z: (a.z + b.z) / 2 } : a);
+    this.ctx.renderer.orderLines.setPreview({ kind: DIRECTIVE_TONE[m.directive], a, b: m.directive === 'fortify' ? b : null, from: s?.front ?? null, home: w.hqPos(f.id), color: f.color });
     this.previewOn = true;
     this.hud.fronts.previewTarget = s?.id ?? null;
   }
@@ -170,7 +180,7 @@ export class InputController {
       this.ctx.renderer.rig.pan(-dx * k * 0.5, dy * k * 0.7);
       return;
     }
-    if (this.ctx.mode.kind === 'frontOrder' && (this.orderDrag || e.target === this.canvas)) {
+    if (this.ctx.mode.kind === 'directive' && (this.orderDrag || e.target === this.canvas)) {
       const p = this.ctx.renderer.groundAt(this.lastPointer);
       const drag = this.orderDrag;
       if (drag) {
@@ -292,12 +302,9 @@ export class InputController {
         this.ctx.hudHidden = !this.ctx.hudHidden;
         break;
       case 'z': case 'x': case 'c': case 'v': case 'b':
-        if (!this.ctx.spectator) this.hud.fronts.pickOrder(ORDER_KEYS[k]);
-        break;
-      case 'n':
         if (!this.ctx.spectator) {
           this.clearPreview();
-          this.hud.fronts.pickNewFront();
+          this.hud.fronts.pickDirective(DIRECTIVE_KEYS[k]);
         }
         break;
       case 'escape':
@@ -322,7 +329,7 @@ export class InputController {
 
   /** Continuous keyboard panning; call each frame. */
   update(dt: number): void {
-    if (this.previewOn && this.ctx.mode.kind !== 'frontOrder') this.clearPreview();
+    if (this.previewOn && this.ctx.mode.kind !== 'directive') this.clearPreview();
     const rig = this.ctx.renderer.rig;
     const sp = (420 * dt) / rig.zoom;
     let right = 0;
