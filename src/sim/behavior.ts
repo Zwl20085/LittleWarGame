@@ -24,6 +24,8 @@ import { takeShelter } from './shelter';
 import type { Front, Unit } from './types';
 import { dist, headingTo, type V2 } from './vec';
 import type { World } from './world';
+import { paceArmour } from './armour';
+import { thinkEconRaid } from './econwar';
 
 /** Deterministic per-unit spread offset so a squad group doesn't stack on one point. */
 function spread(u: Unit, radius: number): V2 {
@@ -649,7 +651,8 @@ function thinkSpearhead(world: World, u: Unit): boolean {
   }
   selectTarget(world, u, pos);
   const off = spread(u, 24);
-  if (u.moraleState === 'pinned') stop(u);
+  // 2.2: tanks lead the thrust but wait for the riflemen (armour.paceArmour).
+  if (u.moraleState === 'pinned' || paceArmour(world, u, pos)) stop(u);
   else moveTo(world, u, { x: pos.x + off.x, z: pos.z + off.z });
   u.status = 'status.spearhead';
   return true;
@@ -663,7 +666,7 @@ function thinkManeuver(world: World, u: Unit): boolean {
   }
   selectTarget(world, u, u.opTarget);
   const off = spread(u, 30);
-  if (u.moraleState === 'pinned') stop(u);
+  if (u.moraleState === 'pinned' || paceArmour(world, u, u.opTarget)) stop(u);
   else moveTo(world, u, { x: u.opTarget.x + off.x, z: u.opTarget.z + off.z });
   u.status = 'status.maneuver';
   return true;
@@ -701,6 +704,8 @@ function thinkInfiltrator(world: World, u: Unit): boolean {
 
 /** Raid detachment: infiltrate to the enemy rear, ambush convoys, come home when time is up. */
 function thinkOpRaid(world: World, u: Unit): boolean {
+  // 2.2: an economic raid party goes for its building (econwar.ts).
+  if (u.opObjective?.startsWith('econ:')) return thinkEconRaid(world, u);
   if (u.routing || u.manual || world.time > u.opUntil || u.hp < u.def.maxHp * 0.4 || !u.opTarget) {
     u.opRole = 'line';
     u.opTarget = null;

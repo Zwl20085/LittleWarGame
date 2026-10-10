@@ -7,6 +7,7 @@ import { dist, type V2 } from './vec';
 import { recordBuilt } from './stats';
 import { hostileMask } from './spatial';
 import { frontById } from './frontref';
+import { armourFront, isTankId } from './armour';
 
 export type OrderBlock =
   | 'LOCKED'
@@ -167,8 +168,15 @@ function startOrder(world: World, f: Faction, def: UnitDef, at: { place: Place; 
   return order;
 }
 
-/** Choose the front (id) for a new unit by reinforcement-share deficit (the supreme HQ's allocation, theatre.ts). */
-export function pickFront(world: World, f: Faction): number {
+/**
+ * Choose the front (id) for a new unit by reinforcement-share deficit (the supreme HQ's allocation,
+ * theatre.ts). 2.2 (V22_SPEC §7): a tank goes to the main effort the directive names (armour.armourFront).
+ */
+export function pickFront(world: World, f: Faction, unitId?: string): number {
+  if (unitId && isTankId(unitId)) {
+    const main = armourFront(world, f);
+    if (main >= 0) return main;
+  }
   // By front id: ids are stable but not indices (fronts are created and dissolved).
   const counts = new Map<number, number>();
   const add = (id: number, n: number): void => { counts.set(id, (counts.get(id) ?? 0) + n); };
@@ -196,7 +204,7 @@ export function scheduleProduction(world: World, f: Faction): void {
   for (let i = 0; i < f.manualQueue.length; i++) {
     const q = f.manualQueue[i];
     const def = world.data.units.get(q.unitId)!;
-    const frontId = q.frontId >= 0 && f.fronts.some((x) => x.id === q.frontId) ? q.frontId : pickFront(world, f);
+    const frontId = q.frontId >= 0 && f.fronts.some((x) => x.id === q.frontId) ? q.frontId : pickFront(world, f, q.unitId);
     let at: { place: Place; slot: number } | null = null;
     if (q.placeId) {
       // Queued at a chosen place (town panel): waits for that place's slot; dropped if the place is lost.
@@ -232,7 +240,7 @@ export function scheduleProduction(world: World, f: Faction): void {
   for (const cand of ranked) {
     const def = world.data.units.get(cand.id)!;
     if (facilitiesDone.has(def.facility)) continue;
-    const front = pickFront(world, f);
+    const front = pickFront(world, f, def.id);
     const at = pickPlace(world, f, def.facility, front);
     if (!at) continue;
     const prot = f.protectedOrder;
@@ -317,7 +325,7 @@ export function advanceProduction(world: World, f: Faction, seconds: number): vo
       jitter = atOk && nav.connected(atOk, exit) ? atOk : (nav.nearestPassable({ x: exit.x + world.rngAi.range(-12, 12), z: exit.z + world.rngAi.range(-12, 12) }, 40) ?? exit);
     }
     // The order's front may have been dissolved while it was in production (theatre.ts).
-    const u = world.spawnUnit(f.id, o.unitId, jitter, frontById(f, o.frontId) ? o.frontId : pickFront(world, f));
+    const u = world.spawnUnit(f.id, o.unitId, jitter, frontById(f, o.frontId) ? o.frontId : pickFront(world, f, o.unitId));
     u.behavior = 'rally';
     // 2.2: new units roll out with no ammunition and rearm at the stock / a truck first (par. 3.4).
     if (world.data.rules.logistics) u.ammo = 0;

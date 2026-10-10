@@ -14,6 +14,7 @@ import { reassignStale } from './frontops';
 import { boundOrder, lendsGarrisons } from './frontref';
 import { thinkTheatre } from './theatre';
 import { chooseDirective } from './directive';
+import { econWorth } from './econwar';
 import type { Faction, Objective, Unit } from './types';
 import { dist, headingTo, type V2 } from './vec';
 import type { World } from './world';
@@ -174,6 +175,9 @@ function chooseFinishTarget(world: World, f: Faction, army: number, known: Map<n
   }
 }
 
+/** 2.2: directives under which bound fronts still garrison towns with economic buildings. */
+const ECON_GUARD_DIRECTIVES = new Set(['defend', 'fortify', 'contract']);
+
 const GARRISON_TYPES = new Set(['infantry', 'motor_inf', 'mg', 'at_gun', 'engineer', 'light_tank', 'medium_tank', 'heavy_tank']);
 const OCCUPY_TYPES = new Set(['infantry', 'motor_inf', 'engineer', 'recon']);
 
@@ -224,7 +228,8 @@ export function thinkHighCommand(world: World, f: Faction): void {
       // Garrisons for towns and cities; the many villages are held by the front line itself.
       if (s.theirs > 0 && (o.kind === 'town' || o.kind === 'city' || o.kind === 'point')) {
         hc.threatAt[o.id] = world.time;
-        dirs.push({ kind: 'defend', obj: o.id, pos: o.pos, priority: v * (1 + s.theirs / (s.mine + 50)), assigned: 0 });
+        // 2.2: a town with economic buildings is defended first (raiders are after them, econwar.ts).
+        dirs.push({ kind: 'defend', obj: o.id, pos: o.pos, priority: v * (1 + s.theirs / (s.mine + 50)) * (1 + econWorth(world, o.id, f.id)), assigned: 0 });
       }
       continue;
     }
@@ -330,7 +335,9 @@ function assignGarrisons(world: World, f: Faction, defend: Directive[]): void {
     }
     // Groups in the middle of an operation (forming up, digging in, storming) keep their troops;
     // 2.1: so does a front under a binding (player) order — 2.2: except under Contract, which garrisons its towns.
-    const busy = new Set(f.fronts.filter((s) => (s.op !== 'frontal' && s.opPhase !== '') || !lendsGarrisons(f, s)).map((s) => s.id));
+    // 2.2: under the player's Defend / Fortify / Contract every front also protects the towns with economic buildings.
+    const econTown = ECON_GUARD_DIRECTIVES.has(f.directive.kind) && econWorth(world, d.obj, f.id) > 0;
+    const busy = new Set(f.fronts.filter((s) => (s.op !== 'frontal' && s.opPhase !== '') || (!lendsGarrisons(f, s) && !econTown)).map((s) => s.id));
     const pool = mine.filter((u) => freeLine(u) && !busy.has(u.frontId) && GARRISON_TYPES.has(u.def.id) && dist(u.pos, d.pos) < HQ.assignRadius)
       .sort((a, b) => dist(a.pos, d.pos) - dist(b.pos, d.pos));
     const sent: Unit[] = [];

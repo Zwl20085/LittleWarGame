@@ -9,6 +9,7 @@ import { boundOrder } from './frontref';
 import { directiveMain, RESPONSE } from './frontresponse';
 import type { World } from './world';
 import { thinkInvestment } from './econai';
+import { concentrateArmour } from './armour';
 
 const PERSONALITY_MUL: Record<Personality, Record<string, number>> = {
   balanced: {},
@@ -98,6 +99,8 @@ export function thinkCity(world: World, f: Faction): void {
   const axisMain = directiveMain(f);
   f.mainFront = f.fronts.some((s) => s.id === axisMain) ? axisMain : best;
   balanceReserves(world, f, strength, axisMain === f.mainFront);
+  // 2.2 (V22_SPEC §7): under an offensive the armour concentrates at the main effort.
+  concentrateArmour(world, f);
   // 2.2: wave-1 investment policy in economic buildings (econai.ts).
   thinkInvestment(world, f);
 }

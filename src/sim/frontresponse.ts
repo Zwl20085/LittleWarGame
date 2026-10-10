@@ -2,6 +2,7 @@ import { deadCapital, maneuvering } from './doctrine';
 import { frontDistance } from './frontops';
 import { finishNow, issueFrontOrder, nextTarget } from './fronts';
 import { centroid, enemyNear, segDist, sumValue } from './theatreq';
+import { econWorth } from './econwar';
 import type { Directive, Faction, Front, FrontOrder, Objective, OrderKind, Unit, Zone } from './types';
 import { dist, headingTo, type V2 } from './vec';
 import type { World } from './world';
@@ -45,6 +46,8 @@ export const RESPONSE = {
   contractHomeM: 900,
   /** contract: the fall back becomes a defence once the troops' centroid is within contractArriveM of the new line. */
   contractArriveM: 220,
+  /** contract: a town with economic buildings counts this much nearer when choosing the fall-back town. */
+  contractEconBonusM: 250,
   /** fortify: a front whose line is within zoneReuseM of a standing zone fortifies that zone; at zonesMax live zones a front without one just holds. */
   zoneReuseM: 350,
   zonesMax: 8,
@@ -333,7 +336,8 @@ function contractPoint(world: World, f: Faction, s: Front): V2 {
   for (const o of world.objectives) {
     if (o.owner !== f.id || o.contested || (o.kind !== 'town' && o.kind !== 'city')) continue;
     if (dist(o.pos, hq) > df - RESPONSE.contractStepM) continue;
-    const d = dist(o.pos, s.front);
+    // 2.2: a town with economic buildings is the line worth falling back to (econwar.econWorth).
+    const d = dist(o.pos, s.front) - (econWorth(world, o.id, f.id) > 0 ? RESPONSE.contractEconBonusM : 0);
     if (d < bd) { bd = d; best = o; }
   }
   if (best) return snap(world, edgeOf(best, s.front, RESPONSE.holdPadM));

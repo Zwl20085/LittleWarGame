@@ -15,6 +15,8 @@ import type { World } from './world';
 import { isCommander } from './formulas';
 import { activeSegment, inMass, LINE_ORDER, lineThrough, massSlot, orderAlong, terrainLine } from './frontslots';
 import { boundLine, boundOrder, frontById } from './frontref';
+import { armourSlots } from './armour';
+import { econWorth, planEconRaids } from './econwar';
 
 export { frontById };
 
@@ -164,7 +166,7 @@ export function issueFrontOrder(world: World, f: Faction, s: Front, order: Front
       u.behavior = 'advance';
     }
   }
-  if (boundOrder(s)) recallDetachments(s, frontUnits(world, f.id, s.id), f.directive.kind === 'contract');
+  if (boundOrder(s)) recallDetachments(s, frontUnits(world, f.id, s.id), keptGarrison(world, f));
 }
 
 /** A home guard of the capital (standing garrison, HQ point): exempt from binding orders (user rule 8). */
@@ -175,12 +177,24 @@ const capitalGuard = (u: Unit): boolean => u.opRole === 'garrison' && !!u.opObje
  * occupations, raids and rear guards; on a line order also manoeuvre / siege parties and
  * spearheads, and nobody waits at the rally point. The capital's guards stay (user rule 8).
  */
-export function recallDetachments(s: Front, units: readonly Unit[], keepGarrisons = false): void {
+/**
+ * 2.2: which town garrisons a bound front keeps — every one under Contract; under Defend / Fortify
+ * those of towns with economic buildings (the fronts protect the economy, econwar.econWorth).
+ */
+function keptGarrison(world: World, f: Faction): (u: Unit) => boolean {
+  const k = f.directive.kind;
+  if (k === 'contract') return () => true;
+  if (k !== 'defend' && k !== 'fortify') return () => false;
+  return (u) => !!u.opObjective && econWorth(world, u.opObjective, f.id) > 0;
+}
+
+export function recallDetachments(s: Front, units: readonly Unit[], keepGarrison: boolean | ((u: Unit) => boolean) = false): void {
   const line = boundLine(s);
+  const keep = typeof keepGarrison === 'function' ? keepGarrison : (): boolean => keepGarrison;
   for (const u of units) {
     if (u.manual || u.def.id === 'supply_truck' || isCommander(u.def) || capitalGuard(u)) continue;
     const r = u.opRole;
-    if ((r === 'garrison' && !keepGarrisons) || r === 'occupy' || r === 'raid' || r === 'rearguard' || (line && (r === 'maneuver' || r === 'infiltrate' || r === 'siege'))) {
+    if ((r === 'garrison' && !keep(u)) || r === 'occupy' || r === 'raid' || r === 'rearguard' || (line && (r === 'maneuver' || r === 'infiltrate' || r === 'siege'))) {
       u.opRole = 'line';
       u.opTarget = null;
       u.opObjective = null;
@@ -458,6 +472,8 @@ export function thinkFronts(world: World, f: Faction): void {
   const segs = frontSegments(world, f, world.frontInfo[f.id]?.cells ?? []);
   f.fronts.forEach((s, i) => (s.segment = segs[i] ?? []));
   planOperations(world, f);
+  // 2.2: economic raid parties against enemy buildings (econwar.ts).
+  planEconRaids(world, f);
   const groups = frontGroups(world, f);
   planPincer(world, f, groups);
   for (const s of f.fronts) {
@@ -501,7 +517,7 @@ export function thinkFronts(world: World, f: Faction): void {
     if (boundOrder(s) && ROUND7_AB.assault) orderedAssault(world, f, s, units);
     // 2.1 binding orders: detachments come back; a line order is held frontally (no manoeuvre ops).
     const bound = boundOrder(s);
-    if (bound) recallDetachments(s, units, f.directive.kind === 'contract');
+    if (bound) recallDetachments(s, units, keptGarrison(world, f));
     // Battle doctrine for this group's attack (flank, pincer, infiltration, siege …).
     if (bound && boundLine(s)) holdOperation(world, s, units);
     else runOperation(world, f, s, units);
@@ -746,6 +762,11 @@ function planFront(world: World, f: Faction, s: Front, units: Unit[], defensive:
   }
   // 2.1: on an ordered line, squads man the finished works along it first (structures.structureSlots).
   if (ordered && s.line) manWorks(world, f, s.line, liners, slots);
+  // 2.2 (V22_SPEC §7): the front's tanks fight as one block — a reserve behind the line, or
+  // assembled and then leading the infantry attack (armour.ts).
+  const approach = !contact && !holding && s.posture !== 'withdraw' && !defendingHome(s);
+  const attacking = !ordered && !siegeSlots && !defendingHome(s) && (s.mode === 'push' || attackLine || approach);
+  armourSlots(world, s, liners, slots, { front, facing, pushing: attacking && !defensive });
   s.slots = slots;
 }
 
