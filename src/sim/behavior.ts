@@ -20,6 +20,7 @@ import { crewPost, gunPost, holdAfterFire } from './crewai';
 import { coverSpot, threatCentre } from './terrainai';
 import { rearmDuty } from './settlements';
 import { isCommander } from './formulas';
+import { takeShelter } from './shelter';
 import type { Front, Unit } from './types';
 import { dist, headingTo, type V2 } from './vec';
 import type { World } from './world';
@@ -135,6 +136,8 @@ export function thinkUnit(world: World, u: Unit): void {
   }
   if (u.opRole === 'garrison' && hqDuty(world, u)) return;
   if (u.def.id !== 'supply_truck' && structureDuty(world, u, s)) return;
+  // 2.2: shelled in the open → the nearest free building's lee wall until the shelling stops (shelter.ts).
+  if (takeShelter(world, u)) return;
   if (u.def.id === 'supply_truck') return thinkConvoyTruck(world, u);
   if (u.spearhead && thinkSpearhead(world, u)) return;
   if (u.opRole === 'garrison' && thinkGarrison(world, u)) return;
