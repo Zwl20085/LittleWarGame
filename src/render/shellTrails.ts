@@ -232,5 +232,6 @@ export class ShellTrails {
     this.index.addUpdateRange(0, ni);
     this.index.needsUpdate = true;
     this.mesh.geometry.setDrawRange(0, ni);
+    this.mesh.visible = ni > 0;
   }
 }

@@ -214,6 +214,7 @@ export class ParticleSystem {
       a.needsUpdate = true;
     }
     this.geo.instanceCount = this.n;
+    this.mesh.visible = this.n > 0;
   }
 }
 
@@ -262,5 +263,6 @@ export class LinePool {
       a.needsUpdate = true;
     }
     this.lines.geometry.setDrawRange(0, this.n * 2);
+    this.lines.visible = this.n > 0;
   }
 }

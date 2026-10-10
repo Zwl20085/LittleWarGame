@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { Ground, type Terrain } from '../sim/terrain';
+import { GLSL_NOISE } from './glslNoise';
 import { PAL } from './palette';
 
 const VERT = /* glsl */ `
@@ -29,15 +30,26 @@ varying vec3 vW;
 varying float vDepth;
 varying float vFord;
 varying vec2 vFlow;
-float h2(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+${GLSL_NOISE}
+// Quintic value noise: C2-continuous, so the finite-difference normals below show no cell seams
+// (smoothstep noise left a faint grid that the specular term turned into bands).
 float vn(vec2 p) {
   vec2 i = floor(p), f = fract(p);
-  f = f * f * (3.0 - 2.0 * f);
-  return mix(mix(h2(i), h2(i + vec2(1, 0)), f.x), mix(h2(i + vec2(0, 1)), h2(i + vec2(1, 1)), f.x), f.y);
+  f = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
+  return mix(mix(hash12(i), hash12(i + vec2(1.0, 0.0)), f.x), mix(hash12(i + vec2(0.0, 1.0)), hash12(i + vec2(1.0, 1.0)), f.x), f.y);
+}
+// Flow-map ripples (2.2): two copies advected along the flow over a bounded phase and
+// cross-faded. Scrolling by flow × total time sheared the noise wherever the per-vertex flow
+// changed direction, more with every minute (the striped "circuit board" river).
+float ripple(vec2 p, vec2 off) {
+  return vn(p * 0.09 + off * 0.09) * 0.6 + vn(p * 0.23 + vec2(uTime * 0.11, -uTime * 0.09) + off * 0.23) * 0.4;
 }
 float waves(vec2 p) {
-  vec2 fl = vFlow * uTime;
-  return vn(p * 0.09 - fl * 0.1) * 0.6 + vn(p * 0.23 + vec2(uTime * 0.11, -uTime * 0.09) - fl * 0.22) * 0.4;
+  float ph0 = fract(uTime * 0.1);
+  float ph1 = fract(uTime * 0.1 + 0.5);
+  float w = abs(1.0 - 2.0 * ph0);
+  vec2 fl = -vFlow * 12.0;
+  return mix(ripple(p, fl * ph0), ripple(p + 37.0, fl * ph1), 1.0 - w);
 }
 void main() {
   float d = vDepth;
@@ -49,15 +61,19 @@ void main() {
   float detail = 1.0 - smoothstep(0.9, 3.2, px);
   float e = 1.5;
   float w0 = waves(p);
-  vec3 N = normalize(vec3((w0 - waves(p + vec2(e, 0.0))) * 0.18 * detail, 1.0, (w0 - waves(p + vec2(0.0, e))) * 0.18 * detail));
+  vec3 N = normalize(vec3((w0 - waves(p + vec2(e, 0.0))) * 0.3 * detail, 1.0, (w0 - waves(p + vec2(0.0, e))) * 0.3 * detail));
   float dif = 0.8 + 0.2 * max(dot(N, uSun), 0.0); // calm, matte diorama water (no marbling)
   vec3 H = normalize(uSun + uView);
-  float spec = pow(max(dot(N, H), 0.0), 120.0) * 0.3 * detail;
+  float spec = pow(max(dot(N, H), 0.0), 60.0) * 0.3 * detail;
+  // Ripple tone: troughs a touch darker, crests catch the sky (reads as moving water at rest).
+  col *= mix(1.0, 0.92 + 0.16 * w0, detail);
   // Bank foam: a soft broken line where the water meets the shore.
-  float foamN = mix(0.7, 0.45 + 0.55 * vn(p * 0.7 + vFlow * uTime * 0.8), detail);
+  float foamN = mix(0.7, 0.45 + 0.55 * vn(p * 0.7 + vec2(uTime * 0.13, uTime * 0.07)), detail);
   float foam = smoothstep(0.02, 0.18, d) * (1.0 - smoothstep(0.2, 0.75, d)) * foamN;
   col = col * dif + vec3(spec) + vec3(0.86, 0.86, 0.8) * foam * 0.5;
-  float a = 0.92 * smoothstep(0.0, 0.35, d);
+  // Deep water is opaque: the steep carved river bed under it shows shadow-map acne (contour
+  // banding) through a translucent sheet; shallows and fords still show their bed.
+  float a = mix(0.9, 1.0, smoothstep(0.6, 1.6, d)) * smoothstep(0.0, 0.35, d);
   if (uMap > 0.5) {
     float hatch = smoothstep(0.35, 0.0, abs(fract((vW.x - vW.z) / 5.0) - 0.5) - 0.25);
     vec3 deepMap = mix(vec3(0.05, 0.22, 0.55), vec3(0.02, 0.10, 0.35), hatch);
@@ -92,6 +108,60 @@ function smoothSurface(src: Float32Array, nx: number, nz: number): Float32Array 
     }
   }
   return out;
+}
+
+/**
+ * Per-cell flow (m/s-ish) downhill along the water surface, blurred so it turns smoothly: the
+ * ripples are advected along it, and a flow that flipped between neighbouring vertices (flat
+ * stretches fell back to a fixed drift) warped the noise into creases along the triangle edges.
+ */
+function smoothFlow(nx: number, nz: number, isWet: (i: number, j: number) => boolean, surfAt: (i: number, j: number) => number): { flowX: Float32Array; flowZ: Float32Array } {
+  let fx = new Float32Array(nx * nz);
+  let fz = new Float32Array(nx * nz);
+  // Cells that carry a water vertex: wet cells dilated by 2 (separable max filter), as a list.
+  const row = new Uint8Array(nx * nz);
+  for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) if (isWet(i, j)) for (let d = -2; d <= 2; d++) if (i + d >= 0 && i + d < nx) row[j * nx + i + d] = 1;
+  const wet = new Uint8Array(nx * nz);
+  for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) if (row[j * nx + i]) for (let d = -2; d <= 2; d++) if (j + d >= 0 && j + d < nz) wet[(j + d) * nx + i] = 1;
+  const list: number[] = [];
+  for (let k = 0; k < wet.length; k++) if (wet[k]) list.push(k);
+  for (const k of list) {
+    const i = k % nx;
+    const j = (k - i) / nx;
+    const gx = (surfAt(i + 2, j) - surfAt(i - 2, j)) || 0;
+    const gz = (surfAt(i, j + 2) - surfAt(i, j - 2)) || 0;
+    const gl = Math.hypot(gx, gz);
+    fx[k] = gl > 1e-3 ? -gx / gl : 0;
+    fz[k] = gl > 1e-3 ? -gz / gl : 0;
+  }
+  for (let pass = 0; pass < 6; pass++) {
+    const ox = new Float32Array(nx * nz);
+    const oz = new Float32Array(nx * nz);
+    for (const k of list) {
+      const i = k % nx;
+      const j = (k - i) / nx;
+      let sx = 0;
+      let sz = 0;
+      for (let dj = -1; dj <= 1; dj++) {
+        for (let di = -1; di <= 1; di++) {
+          const ii = i + di;
+          const jj = j + dj;
+          if (ii < 0 || jj < 0 || ii >= nx || jj >= nz) continue;
+          const q = jj * nx + ii;
+          if (!wet[q]) continue;
+          sx += fx[q];
+          sz += fz[q];
+        }
+      }
+      // Renormalise to unit length (direction only); still water keeps a gentle drift.
+      const l = Math.hypot(sx, sz);
+      ox[k] = l > 1e-4 ? sx / l : 0.8;
+      oz[k] = l > 1e-4 ? sz / l : 0.6;
+    }
+    fx = ox;
+    fz = oz;
+  }
+  return { flowX: fx, flowZ: fz };
 }
 
 /** Animated river surface built from `terrain.waterSurface`. Fords are lighter and shallower. */
@@ -145,13 +215,10 @@ export class WaterView {
       // neighbouring surface; their true (negative) depth keeps the shore contour smooth.
       depth.push(has(i, j) ? y - this.ground[k] : Math.min(y - this.ground[k], -0.4));
       ford.push(t.ground[k] === Ground.Ford ? 1 : 0);
-      // Flow follows the surface downhill (fallback: gentle drift).
-      const gx = (surfAt(i + 2, j) - surfAt(i - 2, j)) || 0;
-      const gz = (surfAt(i, j + 2) - surfAt(i, j - 2)) || 0;
-      const gl = Math.hypot(gx, gz);
-      flow.push(gl > 1e-3 ? (-gx / gl) * 1.2 : 0.4, gl > 1e-3 ? (-gz / gl) * 1.2 : 0.3);
+      flow.push(flowX[k], flowZ[k]);
       return vIndex[k];
     };
+    const { flowX, flowZ } = smoothFlow(nx, nz, has, surfAt);
     for (let j = 0; j < nz - 1; j++) {
       for (let i = 0; i < nx - 1; i++) {
         if (!has(i, j) && !has(i + 1, j) && !has(i, j + 1) && !has(i + 1, j + 1)) continue;

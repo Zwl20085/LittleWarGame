@@ -132,3 +132,83 @@ in battle views with 8.00× achieved.
 Measured while a 60-minute soak ran on the same machine. Lag frames 0 % in every view; the new
 order lines, structures and effects together cost under 0.5 ms per frame (`forts` 0.09–0.20 ms,
 `opArrows` 0.11–0.13 ms, `fx` 0.02–0.11 ms).
+
+## 2.2 round (render agent)
+
+Measured on the dev machine (Ryzen 7 3800X, RTX 2070 SUPER, headless Edge with the GPU on,
+1600×900, high quality, static `vite build` + `vite preview`, generated 4-faction map, 8×
+requested). Other agents were building and running soaks on the same machine during the round
+(CPU load 40–97 %), so every before/after pair below was run back to back on the 2.1 build
+(`83571b8`) and this branch; max frame times and fps are the load-sensitive numbers, the
+per-frame CPU costs are steadier.
+
+### Browser: before → after
+
+Seed 7, 20 game-minutes (~440–460 units), `perf-browser.mjs 7 1200 15 8`:
+
+| view | fps | frame p50 / p95 / max | `renderer.frame` avg / p95 | `gl.render` | snapshot apply |
+|---|---|---|---|---|---|
+| overview | 57.7 → **60.0** | 16.7 / 16.9 / 83.5 → 16.7 / 16.8 / 33.4 ms | 7.19 / 11.9 → **5.72 / 9.1** ms | 4.11 → **2.86** ms | 0.86 → **0.63** ms |
+| front (z3) | 58.4 → **60.0** | 16.7 / 16.8 / 66.8 → 16.7 / 16.8 / 17.2 ms | 5.52 / 9.9 → **4.36 / 7.2** ms | 3.29 → **2.22** ms | 0.84 → **0.63** ms |
+| close (z6) | 58.6 → **60.0** | 16.7 / 16.9 / 66.7 → 16.7 / 16.8 / 17.3 ms | 5.36 / 8.9 → **3.77 / 6.3** ms | 3.34 → **2.03** ms | 0.91 → **0.62** ms |
+
+Seed 4242, 25 game-minutes (~405–427 units), `perf-browser.mjs 4242 1500 15 8`:
+
+| view | fps | frame p95 / max | `renderer.frame` avg / p95 | `gl.render` | snapshot apply | achieved |
+|---|---|---|---|---|---|---|
+| overview | 56.8 → **60.0** | 18.7 / 66.6 → 16.8 / 17.1 ms | 7.61 / 12.9 → **5.44 / 8.4** ms | 4.54 → **2.76** ms | 1.03 → **0.70** ms | 7.92× → 7.99× |
+| front | 58.4 → **60.0** | 16.9 / 66.5 → 16.8 / 17.0 ms | 5.75 / 9.7 → **4.66 / 7.7** ms | 3.51 → **2.36** ms | 0.89 → **0.74** ms | 7.99× → 8.00× |
+| close | 59.7 → **60.0** | 16.8 / 49.9 → 16.8 / 17.1 ms | 4.80 / 9.0 → **4.12 / 7.1** ms | 2.78 → **2.04** ms | 0.83 → **0.70** ms | 8.01× → 8.00× |
+
+The 2.1 build dropped a frame every second or so (the 33–83 ms maxima) and 1–3 fps on average;
+the 2.2 build holds vsync in every view with no frame over 17.3 ms in these runs (one 33 ms
+frame at the overview in one run). Draw calls are unchanged (65–151); the gain is CPU per
+frame and the removal of the stalls.
+
+### What was found (profile first)
+
+New tool: `node scripts/profile-browser.mjs [seed] [ff] [seconds] [speed] [view]` — DevTools
+CPU profile of the running game's main thread (self / inclusive time per function;
+`CALLERS=fn` prints the stacks into a hot function). Build with `vite build --minify false` for
+readable names. `scripts/review-shots.mjs <url> <outDir> [seed] [ff]` takes the fixed visual
+review set used below.
+
+| Finding (2.1) | Cost | Fix |
+|---|---|---|
+| Overlay route lines rebuilt every 250 ms disposed their `LineDashedMaterial`s; the program was released with the last user and **relinked synchronously** on the next rebuild (`getProgramInfoLog` waits for the driver) | ~4 shader links/s, 12 ms/s of stalls, the 33–83 ms frames | materials cached per colour / style, only geometry rebuilt |
+| Minimap redrew the control field with one `fillRect` + `fillStyle` per 10 m cell at every HUD refresh (5 Hz) | ~10–12 ms per refresh (61 ms/s) | field painted once per field version into a cell-sized image, drawn scaled |
+| HUD read `offsetHeight` of two panels right after their DOM writes every refresh | forced layout, ~1.5 ms per refresh | `ResizeObserver` keeps the CSS variables |
+| Territory wash: canvas `blur(6px)` of the field onto a 2.5 m canvas (1 456² on a 3.6 km map) at every field update | ~15 ms per update, 4/s at 8× | one texel per cell, premultiplied, softened by 5 bilinear taps in the terrain shader |
+| Shell instance buffer (2 000 × 64 B) uploaded in full every frame; craters' 1 200-instance buffer in full for every new crater; shock rings likewise | 128 kB/frame + 77 kB per crater | upload only the live range / the changed slot |
+| Empty `InstancedMesh`es (unit kinds not on the map, wreck and garrison variants, idle particle pools) still went through `setProgram`, uniform upload and VAO setup in the colour **and** shadow pass | ~100 empty batches per pass | batches, particle pools and trail meshes are hidden while empty |
+| Scene root (and container groups) recomposed their matrix every frame, which flagged the whole tree dirty and forced a world-matrix multiply for ~540 objects | ~0.5 ms/frame | root, container groups and instanced batches are frozen (`matrixAutoUpdate = false`); moving objects still update |
+| Snapshots cloned all works (70–100 records, 0.30 ms per snapshot to clone) and all supply nodes (0.16 ms) every snapshot, up to 60/s | ~0.45 ms per snapshot on each thread | works every other snapshot (and whenever works are added / removed), supply nodes with the faction records (every 4th) |
+| `SimHost.fastForward` resolved on any snapshot, so a queued advance batch (or the initial snapshot) ended a fast-forward while the worker was still running it | perf harnesses intermittently measured a frozen game (0× achieved, 228 units) | a fast-forward resolves on its own (`ff`-tagged) reply |
+
+Auto quality now starts at a tier guessed from the WebGL renderer string and core count
+(software rasterisers → low; integrated GPUs or ≤ 4 cores → medium; otherwise high) instead
+of always starting high and stuttering for 3 s on weak machines; it still steps down on slow
+frames. The new procedural ground texture is part of the profile (`groundDetail`, off on low).
+
+### Simulation
+
+No change to `step()` — results are identical (determinism test green). Headless
+`perf.ts generated 1500 <seed>` on this branch, during the same machine load:
+
+| seed | units at 25 min | mean tick | p50 / p90 / p99 / max |
+|---|---|---|---|
+| 7 | 453 | 3.0 ms | 1.9 / 5.9 / 22.1 / 163 ms |
+| 4242 | 431 | 2.5 ms | 1.7 / 5.0 / 14.5 / 134 ms |
+
+(An earlier seed-7 run at ~90 % machine load gave 6.9 ms mean with the identical end state —
+453 units, 24 trucks lost, 40 raids — which also confirms the run is deterministic.)
+
+The worker holds 8× with ~450 units at 20–25 minutes in the browser runs above. A spike
+attribution from the CPU profile (`profile.mjs`) was not reliable under the machine load
+(descheduled samples inflate single calls); the hot set is unchanged from 2.0 (movement and
+flow-field paths ~25 %, spatial queries ~10 %, AI think ~25 % inclusive). The AI and economy
+code is being rewritten by the 2.2 sim agents, so no sim hot spot was touched in this round.
+
+Remaining ideas: map labels and unit counters redraw the 2D overlay canvas every frame
+(0.3–0.6 ms at the overview); the standing order ribbons keep a 45 % minimum width at close
+zoom (a 60 px band at z6 — belongs with the command rework).

@@ -58,8 +58,10 @@ function windowedWallMaterial(factory: boolean): THREE.MeshStandardMaterial {
         if (vSide > 0.5) {
           float u = vSide < 1.5 ? vMet.z : vMet.x;
           float span = vSide < 1.5 ? vSc.z : vSc.x;
-          // Rendered plinth (darker, a little warmer) along the ground.
+          // Rendered plinth (darker, a little warmer) along the ground, and ground occlusion:
+          // walls darken toward the street so buildings sit in the ground instead of on it.
           diffuseColor.rgb *= 1.0 - 0.16 * (1.0 - step(0.6, vMet.y));
+          diffuseColor.rgb *= 0.8 + 0.2 * smoothstep(0.0, 2.8, vMet.y);
           if (vMet.y > 1.2 && vMet.y < vSc.y - 0.5) {
             float fy = fract(vMet.y / ${storey.toFixed(2)});
             float fu = fract(u / ${bay.toFixed(2)});
@@ -88,7 +90,7 @@ function windowedWallMaterial(factory: boolean): THREE.MeshStandardMaterial {
           diffuseColor.rgb *= 1.0 - 0.22 * smoothstep(vSc.y - 0.5, vSc.y, vMet.y);
         }`);
   };
-  m.customProgramCacheKey = () => (factory ? 'windowed-wall-f2' : 'windowed-wall-2');
+  m.customProgramCacheKey = () => (factory ? 'windowed-wall-f3' : 'windowed-wall-3');
   return m;
 }
 
@@ -137,6 +139,7 @@ const GLASS = new THREE.Color('#3b4248');
 const DARK = new THREE.Color('#26241f');
 const STONE = new THREE.Color('#bdb4a0');
 const GOLD = new THREE.Color('#b59a52');
+const COPPER = new THREE.Color('#6f9481');
 
 type Part = 'wall' | 'factoryWall' | 'plainWall' | 'gable' | 'flat';
 
@@ -151,6 +154,20 @@ const _up = new THREE.Vector3(0, 1, 0);
 function h01(b: Building, s: number): number {
   const v = Math.sin(b.x * 12.9898 + b.z * 78.233 + s * 37.719) * 43758.5453;
   return v - Math.floor(v);
+}
+
+/** City block with a pitched roof (most) or a flat roof with a parapet. */
+function blockPitched(b: Building): boolean {
+  return h01(b, 9) < 0.72;
+}
+
+function blockRoofHeight(b: Building): number {
+  return Math.min(b.w, b.d) * (0.42 + h01(b, 10) * 0.12);
+}
+
+/** Height of a tower's set-back crown storey (m). */
+function towerCrown(b: Building): number {
+  return Math.min(7, b.h * 0.16);
 }
 
 /** House roof height above the eaves (m): shared by the roof part and the chimney. */
@@ -174,15 +191,24 @@ function partsOf(b: Building, y: number, kind: BuildingKind, emit: (p: Part, it:
       emit('gable', { m: compose(b, y, 0, b.h * 0.6, 0, b.w * 1.06, b.h * 0.5, b.d * 1.12), c: roofC });
       break;
     }
-    case 'block': case 'tower': {
+    case 'block': {
       const wall = BLOCK_WALLS[Math.floor(r * BLOCK_WALLS.length)].clone();
-      if (kind === 'tower') wall.lerp(new THREE.Color('#a9a596'), 0.4);
       emit('wall', { m: compose(b, y, 0, 0, 0, b.w, b.h, b.d), c: wall });
-      emit('flat', { m: compose(b, y, 0, b.h, 0, b.w, kind === 'tower' ? 1.4 : 1, b.d), c: PAL.roofB.clone().multiplyScalar(0.75 + r * 0.2) });
-      if (kind === 'tower') {
-        // Set-back crown storey for a readable skyline (its battlements are baked in the landmarks).
-        emit('wall', { m: compose(b, y, 0, b.h, 0, b.w * 0.6, Math.min(8, b.h * 0.18), b.d * 0.6), c: wall });
-      }
+      // 2.2: most city blocks are tenements with a pitched slate or tile roof along the street
+      // (the flat-roofed ones keep their parapet); the cornice and dormers are landmarks.
+      if (blockPitched(b)) emit('gable', { m: compose(b, y, 0, b.h + 0.35, 0, b.w * 1.02, blockRoofHeight(b), b.d * 1.04), c: (h01(b, 8) < 0.6 ? SLATE : roofC).clone().multiplyScalar(0.9 + r * 0.15) });
+      else emit('flat', { m: compose(b, y, 0, b.h, 0, b.w, 1, b.d), c: PAL.roofB.clone().multiplyScalar(0.75 + r * 0.2) });
+      break;
+    }
+    case 'tower': {
+      // 2.2: a period civic / office tower: rusticated stone base, rendered shaft, a set-back
+      // crown storey under a patinated copper hipped roof (landmarks add quoins and the roof).
+      const wall = BLOCK_WALLS[Math.floor(r * BLOCK_WALLS.length)].clone().lerp(new THREE.Color('#b7ab93'), 0.35);
+      const base = Math.min(5, b.h * 0.18);
+      emit('plainWall', { m: compose(b, y, 0, 0, 0, b.w * 1.05, base, b.d * 1.05), c: STONE.clone().multiplyScalar(0.92) });
+      emit('wall', { m: compose(b, y, 0, 0, 0, b.w, b.h, b.d), c: wall });
+      emit('flat', { m: compose(b, y, 0, b.h, 0, b.w, 0.7, b.d), c: PAL.roofB.clone().multiplyScalar(0.8 + r * 0.15) });
+      emit('wall', { m: compose(b, y, 0, b.h, 0, b.w * 0.62, towerCrown(b), b.d * 0.62), c: wall });
       break;
     }
     case 'church': {
@@ -245,23 +271,57 @@ function factoryTop(k: Frame, b: Building, y: number): void {
   k.box(1.6, 1.0, 1.6, -b.w * 0.2, y + b.h + th + 0.4, -b.d * 0.2, SLATE);
 }
 
-/** Tower: crenellated parapet around the set-back crown storey, a water tank on the roof. */
+/**
+ * Tower: stone quoins up the corners, a cornice under the roof terrace, a balustrade, and a
+ * patinated copper hipped roof with a lantern on the set-back crown storey.
+ */
 function towerTop(k: Frame, b: Building, y: number): void {
-  const top = y + b.h + Math.min(8, b.h * 0.18);
-  const w = b.w * 0.6;
-  const d = b.d * 0.6;
-  k.box(w * 1.04, 0.35, d * 1.04, 0, top + 0.17, 0, STONE);
-  for (const [len, across, alongX] of [[w, d, true], [d, w, false]] as const) {
-    const n = Math.max(3, Math.round(len / 1.6));
-    for (let i = 0; i < n; i++) {
-      const t = -len / 2 + (len * (i + 0.5)) / n;
-      for (const s of [-1, 1]) {
-        if (alongX) k.box(len / n * 0.55, 0.9, 0.3, t, top + 0.8, s * across / 2, STONE);
-        else k.box(0.3, 0.9, len / n * 0.55, s * across / 2, top + 0.8, t, STONE);
-      }
+  const crown = towerCrown(b);
+  const top = y + b.h + crown;
+  for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) k.box(0.9, b.h, 0.9, sx * (b.w / 2 - 0.3), y + b.h / 2, sz * (b.d / 2 - 0.3), STONE);
+  k.box(b.w * 1.06, 0.6, b.d * 1.06, 0, y + b.h - 0.1, 0, STONE);
+  // Balustrade around the roof terrace.
+  for (const [len, across, alongX] of [[b.w, b.d, true], [b.d, b.w, false]] as const) {
+    for (const s of [-1, 1]) {
+      if (alongX) k.box(len, 0.9, 0.25, 0, y + b.h + 0.6, s * (across / 2 - 0.15), STONE);
+      else k.box(0.25, 0.9, len, s * (across / 2 - 0.15), y + b.h + 0.6, 0, STONE);
     }
   }
-  k.cyl(1.0, 1.0, 1.8, 8, w * 0.15, top + 1.25, -d * 0.1, new THREE.Color('#6f6a60'));
+  const w = b.w * 0.62;
+  const d = b.d * 0.62;
+  k.box(w * 1.08, 0.45, d * 1.08, 0, top + 0.2, 0, STONE);
+  k.pyramid(w * 1.1, Math.max(w, d) * 0.55, d * 1.1, 0, top + 0.4, 0, COPPER);
+  const ridge = top + 0.4 + Math.max(w, d) * 0.55;
+  k.box(1.4, 1.6, 1.4, 0, ridge + 0.2, 0, COPPER);
+  k.pyramid(1.7, 1.4, 1.7, 0, ridge + 1.0, 0, COPPER.clone().multiplyScalar(0.85));
+  k.box(0.12, 1.6, 0.12, 0, ridge + 2.9, 0, DARK);
+}
+
+/** Tenement block: a cornice line, and dormers along a pitched roof. */
+function blockTop(k: Frame, b: Building, y: number): void {
+  k.box(b.w * 1.03, 0.45, b.d * 1.05, 0, y + b.h + 0.12, 0, STONE.clone().multiplyScalar(0.95));
+  if (!blockPitched(b)) return;
+  const rh = blockRoofHeight(b);
+  const n = Math.max(2, Math.floor(b.w / 4.2));
+  for (const s of [-1, 1]) {
+    for (let i = 0; i < n; i++) {
+      if (h01(b, 30 + i + (s > 0 ? 17 : 0)) < 0.3) continue;
+      const x = -b.w / 2 + (b.w * (i + 0.5)) / n;
+      // Front face where the roof is 38 % of its height up; the box runs 1.6 m back into it.
+      const hs = b.d * 0.52;
+      const zf = hs * 0.62;
+      const yb = y + b.h + 0.35 + rh * 0.38 - 0.15;
+      const z = s * (zf - 0.8);
+      k.box(1.3, 1.5, 1.6, x, yb + 0.75, z, BLOCK_WALLS[0]);
+      k.box(0.7, 0.8, 0.06, x, yb + 0.8, s * (zf + 0.01), GLASS);
+      k.pyramid(1.6, 0.6, 1.8, x, yb + 1.5, z, SLATE);
+    }
+  }
+  // Chimney stacks on the ridge.
+  for (const sx of [-0.32, 0.32]) {
+    k.box(0.9, 1.6, 0.7, sx * b.w, y + b.h + 0.35 + rh * 0.85 + 0.8, 0, BRICK.clone().multiplyScalar(0.8 + h01(b, 11) * 0.3));
+    k.box(1.05, 0.16, 0.85, sx * b.w, y + b.h + 0.35 + rh * 0.85 + 1.65, 0, SOOT);
+  }
 }
 
 /** House / block chimney stack on the roof slope, with a pot. */
@@ -326,6 +386,7 @@ export function buildSettlements(t: Terrain, props: ReadonlyMap<string, GeoBuild
       factoryTop(k, b, y);
       chimneys.push(k.point(b.w * 0.38, y + b.h * 2.85, b.d * 0.3));
     } else if (kind === 'tower') towerTop(k, b, y);
+    else if (kind === 'block') blockTop(k, b, y);
     else if (kind === 'house' && h01(b, 4) < 0.85) houseChimney(k, b, y);
   }
   for (const tile of tiles.values()) {
