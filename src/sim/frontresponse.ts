@@ -91,6 +91,11 @@ function axisTargetOf(world: World, f: Faction, axis: V2): { pos: V2; obj: Objec
   for (const e of world.factions) {
     if (e.alive && world.isHostile(f.id, e.id) && dist(world.hqPos(e.id), axis) < RESPONSE.axisCapitalM) return { pos: world.hqPos(e.id), obj: null, city: e.id };
   }
+  // The place the axis was put on stays the axis objective once taken: the main effort holds what it
+  // won instead of drifting to whatever other place lies near the point (merge 792e571: a captured
+  // axis place retargeted the main effort 287 m sideways).
+  const on = world.objectives.find((o) => dist(o.pos, axis) <= Math.max(40, o.radius));
+  if (on) return { pos: on.pos, obj: on, city: null };
   let best: Objective | null = null;
   let bd: number = RESPONSE.axisObjM;
   for (const o of world.objectives) {
@@ -168,7 +173,8 @@ function offensive(world: World, f: Faction, s: Front, combat: Unit[], mine: num
   const at = centroid(combat, s.front);
   if (t && (s === ctx.main || dist(at, t.pos) <= RESPONSE.supportM)) {
     give(world, f, s, 'attack', t.pos, null, ctx.bind);
-    setResponse(s, s === ctx.main ? 'resp.main' : 'resp.support', placeParams(world, t.obj, t.city, t.pos));
+    const held = t.obj !== null && t.obj.owner === f.id;
+    setResponse(s, held ? 'resp.axisHeld' : s === ctx.main ? 'resp.main' : 'resp.support', placeParams(world, t.obj, t.city, t.pos));
     return;
   }
   // Own objective (the 1.x / 2.1 choice), kept ≥ retargetS unless it fell or the finish target calls.
