@@ -24,14 +24,14 @@ const post = (msg: unknown, transfer: Transferable[] = []): void => (self as unk
 
 bus.onResult = (env, out) => post({ t: 'cmdResult', env, out });
 
-function send(ran: number): void {
+function send(ran: number, ff = false): void {
   if (!match) return;
   const snap = makeSnapshot(match, cursor, observer);
   const o = snap.objectives;
   const transfer: Transferable[] = [snap.units.buffer, o.owner.buffer, o.contested.buffer, o.activeAt.buffer, o.leader.buffer, o.progress.buffer];
   if (snap.front) transfer.push(snap.front.owner.buffer);
   if (snap.frontView) transfer.push(snap.frontView.owner.buffer);
-  post({ t: 'snap', snap, ran }, transfer);
+  post({ t: 'snap', snap, ran, ff }, transfer);
 }
 
 self.onmessage = (e: MessageEvent<ToWorker>): void => {
@@ -70,7 +70,7 @@ self.onmessage = (e: MessageEvent<ToWorker>): void => {
           n++;
         }
         w.fx.length = 0;
-        send(n);
+        send(n, true);
         break;
       }
     }

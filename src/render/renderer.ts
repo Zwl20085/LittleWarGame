@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import { CONTESTED, NEUTRAL, type FrontlineField } from '../sim/frontline';
 import type { MapFeature } from '../sim/mapdef';
+import { placeOwner, stockCap } from '../sim/settlements';
+import type { Place } from '../sim/types';
 import type { Match } from '../sim/sim';
 import type { Ground } from '../sim/terrain';
 import type { V2 } from '../sim/vec';
@@ -10,13 +12,13 @@ import { CameraRig } from './camera';
 import { Effects } from './effects';
 import { MapLabels } from './mapLabels';
 import { ObjectiveMarkers } from './objectiveMarkers';
-import { QualityGovernor, type QualityLevel, type QualityMode } from './quality';
+import { deviceHint, initialLevel, QualityGovernor, type QualityLevel, type QualityMode } from './quality';
 import { OpArrows } from './opArrows';
 import { OrderLines } from './orderLines';
 import { clothFlag, FLAG_TIME } from './flags';
 import { FieldWorks, isLineWork } from './fieldWorks';
-import { StructureViews } from './structures';
-import { EconBuildingViews } from './econBuildings';
+import { StructureViews, type StructureRecord } from './structures';
+import { registerEconModels } from './econModels';
 import { FrontLines } from './frontLines';
 import { fortModel } from './models';
 import { PontoonView } from './pontoon';
@@ -71,8 +73,14 @@ export class GameRenderer {
   private readonly fieldWorks: FieldWorks;
   /** Pillboxes / bunkers (instanced; works agent). */
   private readonly structureViews: StructureViews;
-  /** 2.2 economic buildings (placeholder views, logistics agent). */
-  private readonly econViews: EconBuildingViews;
+  /**
+   * 2.2 hook for the economy wave: further structures (economic buildings, town supply depots)
+   * drawn through the structure-kind registry (render/structureKinds.ts). Whoever wires them
+   * sets this to return the current records (e.g. from the snapshot mirror) and registers each
+   * kind's parts; ids only need to be unique within this source.
+   */
+  extraStructures: (() => readonly StructureRecord[]) | null = null;
+  private readonly extraViews: StructureViews;
   private readonly opArrows: OpArrows;
   /** Supreme-HQ standing orders and the order being placed (2.0). */
   readonly orderLines: OrderLines;
@@ -103,6 +111,7 @@ export class GameRenderer {
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.05;
+    this.quality.setAutoStart(initialLevel(deviceHint(this.renderer.getContext())));
     this.scene.background = roomBackground();
 
     this.rig = new CameraRig({ w: w.terrain.width, d: w.terrain.depth });
@@ -148,8 +157,11 @@ export class GameRenderer {
     this.scene.add(this.fieldWorks.group);
     this.structureViews = new StructureViews(w.terrain, (owner) => w.factions[owner]?.color ?? '#888888');
     this.scene.add(this.structureViews.group);
-    this.econViews = new EconBuildingViews(w.terrain, (owner) => w.factions[owner]?.color ?? '#888888');
-    this.scene.add(this.econViews.group);
+    this.extraViews = new StructureViews(w.terrain, (owner) => w.factions[owner]?.color ?? '#888888');
+    // 2.2 economic buildings (factory, recruitment office, depot) through the kind registry.
+    registerEconModels();
+    this.extraStructures = () => w.econ;
+    this.scene.add(this.extraViews.group);
     this.opArrows = new OpArrows((x, z) => w.terrain.heightAt(x, z));
     this.scene.add(this.opArrows.mesh);
     this.orderLines = new OrderLines((x, z) => w.terrain.heightAt(x, z));
@@ -170,6 +182,13 @@ export class GameRenderer {
         o.updateMatrix();
         o.matrixAutoUpdate = false;
       });
+    }
+    // The scene root and the container groups never move. With matrixAutoUpdate on, the root
+    // recomposed its matrix every frame and flagged itself dirty, which forced a world-matrix
+    // multiply for every object in the scene; now only objects that move pay for it.
+    for (const o of [this.scene, this.units.group, this.effects.group, this.overlayGroup, this.fieldWorks.group, this.structureViews.group, this.extraViews.group, this.orderLines.group]) {
+      o.updateMatrix();
+      o.matrixAutoUpdate = false;
     }
     this.scene.updateMatrixWorld(true);
   }
@@ -286,8 +305,11 @@ export class GameRenderer {
     this.fieldWorks.sync(w.forts, w.time);
     for (let i = 0; i < this.fieldWorks.siteCount; i++) this.effects.workSite(this.fieldWorks.sites[i], dt);
     this.structureViews.sync(w.forts, w.time);
-    this.econViews.sync(w.econ);
     for (let i = 0; i < this.structureViews.siteCount; i++) this.effects.workSite(this.structureViews.sites[i], dt);
+    if (this.extraStructures) {
+      this.extraViews.sync(this.extraStructures(), w.time);
+      for (let i = 0; i < this.extraViews.siteCount; i++) this.effects.workSite(this.extraViews.sites[i], dt);
+    }
     for (const f of w.forts) {
       if (f.hp <= 0 || isLineWork(f.kind) || f.kind === 'pillbox' || f.kind === 'bunker') continue;
       seen.add(f.id);
@@ -329,38 +351,53 @@ export class GameRenderer {
     this.frontVersion = field.version;
     const cv = this.terrainView.overlayCanvas;
     const g = cv.getContext('2d')!;
-    g.clearRect(0, 0, cv.width, cv.height);
     if (!this.layers.front) {
+      g.clearRect(0, 0, cv.width, cv.height);
       this.terrainView.overlayTex.needsUpdate = true;
       this.frontLines.clear();
       return;
     }
     const nx = field.nx;
     const nz = field.nz;
-    if (this.fieldCanvas.width !== nx) { this.fieldCanvas.width = nx; this.fieldCanvas.height = nz; }
-    const fill = this.fieldCanvas.getContext('2d')!.createImageData(nx, nz);
     const w = this.match.world;
     const cols = w.factions.map((f) => new THREE.Color(f.color));
-    for (let j = 0; j < nz; j++) {
-      for (let i = 0; i < nx; i++) {
-        const o = field.owner[j * nx + i];
-        const k = (j * nx + i) * 4;
-        if (o === NEUTRAL) continue;
-        if (o === CONTESTED) {
-          fill.data[k] = 235; fill.data[k + 1] = 195; fill.data[k + 2] = 95; fill.data[k + 3] = 48;
-          continue;
-        }
-        const c = cols[o];
-        fill.data[k] = c.r * 255; fill.data[k + 1] = c.g * 255; fill.data[k + 2] = c.b * 255; fill.data[k + 3] = 40;
+    // One pixel per field cell straight into the overlay texture (the terrain shader softens it).
+    const direct = cv.width === nx && cv.height === nz;
+    if (!direct && this.fieldCanvas.width !== nx) { this.fieldCanvas.width = nx; this.fieldCanvas.height = nz; }
+    const target = direct ? g : this.fieldCanvas.getContext('2d')!;
+    const fill = target.createImageData(nx, nz);
+    const d = fill.data;
+    for (let k = 0; k < nx * nz; k++) {
+      const o = field.owner[k];
+      if (o === NEUTRAL) continue;
+      const p = k * 4;
+      if (o === CONTESTED) {
+        d[p] = 235; d[p + 1] = 195; d[p + 2] = 95; d[p + 3] = 48;
+        continue;
       }
+      const c = cols[o];
+      if (!c) continue;
+      d[p] = c.r * 255; d[p + 1] = c.g * 255; d[p + 2] = c.b * 255; d[p + 3] = 40;
     }
-    this.fieldCanvas.getContext('2d')!.putImageData(fill, 0, 0);
-    g.imageSmoothingEnabled = true;
-    g.filter = 'blur(6px)';
-    g.drawImage(this.fieldCanvas, 0, 0, cv.width, cv.height);
-    g.filter = 'none';
+    target.putImageData(fill, 0, 0);
+    if (!direct) {
+      g.clearRect(0, 0, cv.width, cv.height);
+      g.drawImage(this.fieldCanvas, 0, 0, cv.width, cv.height);
+    }
     this.terrainView.overlayTex.needsUpdate = true;
     this.frontLines.rebuild(field, cols, (x, z) => w.terrain.heightAt(x, z));
+  }
+
+  private readonly overlayMaterials = new Map<string, THREE.Material>();
+
+  /** Overlay materials are shared and kept for the match (a handful of colour / style keys). */
+  private overlayMaterial(key: string, make: () => THREE.Material): THREE.Material {
+    let m = this.overlayMaterials.get(key);
+    if (!m) {
+      m = make();
+      this.overlayMaterials.set(key, m);
+    }
+    return m;
   }
 
   /** Rebuild route/supply/range lines a few times a second (not every frame), disposing the old ones. */
@@ -370,20 +407,19 @@ export class GameRenderer {
     if (this.overlayTimer > 0 && key === this.overlayKey) return;
     this.overlayTimer = 0.25;
     this.overlayKey = key;
-    for (const o of this.overlayGroup.children) {
-      const m = o as THREE.Mesh;
-      m.geometry?.dispose();
-      (m.material as THREE.Material | undefined)?.dispose();
-    }
+    // Geometry is rebuilt; materials come from a cache and stay alive. (Disposing them released
+    // their shader programs, and the next rebuild recompiled them — a synchronous link stall
+    // four times a second.)
+    for (const o of this.overlayGroup.children) (o as THREE.Mesh).geometry?.dispose();
     this.overlayGroup.clear();
     const w = this.match.world;
     const f = w.factions[this.playerId];
     if (!f) return;
     const mk = (pts: THREE.Vector3[], color: string, dashed: boolean, opacity = 0.9): THREE.Line => {
       const geo = new THREE.BufferGeometry().setFromPoints(pts);
-      const mat = dashed
+      const mat = this.overlayMaterial(`${dashed ? 'dash' : 'line'}|${color}|${opacity}`, () => dashed
         ? new THREE.LineDashedMaterial({ color, dashSize: 6, gapSize: 4, transparent: true, opacity, depthTest: false })
-        : new THREE.LineBasicMaterial({ color, transparent: true, opacity, depthTest: false });
+        : new THREE.LineBasicMaterial({ color, transparent: true, opacity, depthTest: false }));
       const l = new THREE.Line(geo, mat);
       if (dashed) l.computeLineDistances();
       l.renderOrder = 5;
@@ -400,7 +436,7 @@ export class GameRenderer {
         const main = s.id === f.mainFront;
         this.overlayGroup.add(mk(along(exit, s.rally, 3).concat(along(s.rally, s.targetPos, 3)), main ? '#f4ecd9' : '#d8cfb8', true, main ? 0.95 : 0.6));
         const tip = lift(s.targetPos, 3);
-        const head = new THREE.Mesh(new THREE.ConeGeometry(4, 9, 3), new THREE.MeshBasicMaterial({ color: '#f4ecd9', depthTest: false, transparent: true, opacity: 0.9 }));
+        const head = new THREE.Mesh(new THREE.ConeGeometry(4, 9, 3), this.overlayMaterial('head', () => new THREE.MeshBasicMaterial({ color: '#f4ecd9', depthTest: false, transparent: true, opacity: 0.9 })));
         head.position.copy(tip).setY(tip.y + 8);
         head.rotation.x = Math.PI;
         head.renderOrder = 6;
@@ -412,7 +448,7 @@ export class GameRenderer {
       for (const n of nodes) {
         if (n.parent) this.overlayGroup.add(mk(along(n.parent, n.pos, 2.5), n.cut ? '#a63f36' : '#e0c070', n.cut, 0.9));
         if (n.radius > 0) {
-          const ring = new THREE.Mesh(new THREE.RingGeometry(n.radius - 1.5, n.radius, 64).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: '#e0c070', transparent: true, opacity: 0.35, depthTest: false }));
+          const ring = new THREE.Mesh(new THREE.RingGeometry(n.radius - 1.5, n.radius, 64).rotateX(-Math.PI / 2), this.overlayMaterial('supplyRing', () => new THREE.MeshBasicMaterial({ color: '#e0c070', transparent: true, opacity: 0.35, depthTest: false })));
           ring.position.set(n.pos.x, w.terrain.heightAt(n.pos.x, n.pos.z) + 2, n.pos.z);
           this.overlayGroup.add(ring);
         }
@@ -477,6 +513,7 @@ export class GameRenderer {
     this.haze.update(ppm);
     const q = this.quality.profile;
     this.terrainView.scatter.visible = ppm > 1 && q.scatter;
+    this.terrainView.uniforms.uDetail.value = q.groundDetail ? 1 : 0;
     // Town detail: sub-pixel at the overview, and dropped on the medium / low tiers.
     const townDetail = ppm > 2.5 && q.townProps;
     this.terrainView.settlements.setDetail(townDetail);
@@ -486,7 +523,9 @@ export class GameRenderer {
     this.opArrows.update(ppm);
     this.orderLines.sync(w, this.playerId, this.spectator, this.layers.fronts, ppm);
     FLAG_TIME.value += realDt;
-    this.terrainView.uniforms.uOverlayK.value = ppm > 4 ? 0.5 : ppm > 1.5 ? 0.8 : 1;
+    // Territory wash: full at the overview, fading down among the troops (the blurred 10 m
+    // field smeared the close-up ground; the inked contact line stays).
+    this.terrainView.uniforms.uOverlayK.value = Math.min(1, Math.max(0.22, 1.2 - 0.12 * ppm));
     this.units.showSoldiers = ppm > 0.7;
     this.units.showBlobs = ppm > 1.2;
     this.units.setSoldierShadows(ppm > 3.5 && q.soldierShadows);
@@ -519,10 +558,36 @@ export class GameRenderer {
     this.terrainView.water.update(realDt, this.rig.camera, this.sunDir, mapMode);
     this.renderer.render(this.scene, this.rig.camera);
     this.overlay.begin(this.rig.camera);
-    this.labels.draw(this.overlay, ppm, this.rig.zoom, lang(), null);
+    this.labels.draw(this.overlay, ppm, this.rig.zoom, lang(), null, this.stockOf);
     this.counters.draw(this.overlay, ppm, this.playerId, this.fog);
     this.orderLines.drawLabels(this.overlay, w, this.playerId, this.spectator, this.layers.fronts);
   }
+
+  private readonly placeOfFeature = new Map<MapFeature, Place | null>();
+
+  /**
+   * Supply-stock fill of the place a map label names (2.2 gauge): own places (all, when
+   * spectating; none of the enemy's in fog), null for villages and features without a place.
+   */
+  private readonly stockOf = (f: MapFeature): number | null => {
+    const w = this.match.world;
+    if (w.places.length === 0) return null;
+    let p = this.placeOfFeature.get(f);
+    if (p === undefined) {
+      p = null;
+      let best = Math.max(60, f.radius);
+      for (const q of w.places) {
+        const d = Math.hypot(q.pos.x - f.pos.x, q.pos.z - f.pos.z);
+        if (d < best) { best = d; p = q; }
+      }
+      this.placeOfFeature.set(f, p);
+    }
+    if (!p) return null;
+    const owner = placeOwner(w, p);
+    if (owner < 0 || (!this.spectator && owner !== this.playerId)) return null;
+    const cap = stockCap(w, p);
+    return cap > 0 ? p.stock / cap : null;
+  };
 
   /** Faint smoke from the factory chimneys near the view (a wisp every ~1.5 s each). */
   private chimneySmoke(dt: number, at: THREE.Vector3, ext: number): void {
@@ -576,7 +641,7 @@ export class GameRenderer {
 
   dispose(): void {
     this.structureViews.dispose();
-    this.econViews.dispose();
+    this.extraViews.dispose();
     this.objectiveMarkers.dispose();
     this.overlay.dispose();
     this.renderer.dispose();

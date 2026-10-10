@@ -29,7 +29,8 @@ const WIDTH = 9;
 const SPECTATOR_K = 0.6;
 const LIFT = 3.5;
 const STEP = 8;
-const MIN_PX = 9;
+/** On-screen body width (px) at the overview zoom. */
+const MIN_PX = 7;
 const REBUILD_MIN_MS = 300;
 
 /** What an order looks like on the map (flat x,z), shared by the 3D mesh and the minimap. */
@@ -353,8 +354,10 @@ export class OrderLines {
 
   /** Per frame: rebuild on change (throttled) and keep a minimum on-screen width. */
   sync(w: World, playerId: number, spectator: boolean, visible: boolean, ppm: number): void {
-    // Never thinner than MIN_PX on screen; down among the troops it slims to a pencil line.
-    const scale = Math.min(4, Math.max(0.45, MIN_PX / (WIDTH * Math.max(0.02, ppm))));
+    // A constant, thin pencil line on screen at every zoom (2.2): ~7 px at the overview, ~4.5 px
+    // down among the troops (the 2.1 floor of 45 % width made a 60 px band at close zoom).
+    const px = ppm < 2 ? MIN_PX : ppm < 5 ? 5.5 : 4.5;
+    const scale = Math.min(4, Math.max(0.02, px / (WIDTH * Math.max(0.02, ppm))));
     this.uniforms.uScale.value = scale;
     this.previewUniforms.uScale.value = scale;
     // Slightly softer once the camera is down among the troops.
