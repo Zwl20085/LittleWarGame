@@ -120,7 +120,8 @@ export function selectTarget(world: World, u: Unit, objective: V2 | null): void 
       const housed = housedIn(world, t) >= 0;
       // 2.2 wave 2: a shell must be worth it — supply is short, so guns hold fire on a lone squad
       // inside a building or a single vehicle and keep their rounds for exposed concentrations.
-      if (shellWorth(suit, housed, cluster) < ARTY.minWorth + (u.ammo < ARTY.lowAmmo ? ARTY.lowAmmoExtra : 0)) continue;
+      // (Not at an enemy capital: a storm needs every gun on the defenders, sheltered or not.)
+      if (shellWorth(suit, housed, cluster) < ARTY.minWorth + (u.ammo < ARTY.lowAmmo ? ARTY.lowAmmoExtra : 0) && !nearCapital(world, t)) continue;
       score += cluster * 0.2 - friendlyRisk(world, u, t.pos, w) * 2 + counterBatteryBonus(world, u.owner, t);
       // 2.2: guns prefer exposed targets over squads sheltering inside intact buildings (shelter.ts).
       if (housed) score -= SHELTER.artyInsidePenalty;
@@ -156,7 +157,14 @@ export const ARTY = {
   /** … and a battery under lowAmmo of its load needs lowAmmoExtra more. */
   lowAmmo: 0.5,
   lowAmmoExtra: 0.1,
+  /** Every target within this of its capital is worth a shell (capital storms). */
+  capitalR: 450,
 } as const;
+
+/** Target within ARTY.capitalR of its own faction's capital HQ. */
+function nearCapital(world: World, t: Unit): boolean {
+  return dist(t.pos, world.hqPos(t.owner)) < ARTY.capitalR;
+}
 
 export function shellWorth(suit: number, housed: boolean, cluster: number): number {
   return suit * (housed ? ARTY.housedExposure : 1) * (0.5 + cluster);

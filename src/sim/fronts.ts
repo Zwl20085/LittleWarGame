@@ -766,7 +766,8 @@ function planFront(world: World, f: Faction, s: Front, units: Unit[], defensive:
   // assembled and then leading the infantry attack (armour.ts).
   const approach = !contact && !holding && s.posture !== 'withdraw' && !defendingHome(s);
   const attacking = !ordered && !siegeSlots && !defendingHome(s) && (s.mode === 'push' || attackLine || approach);
-  armourSlots(world, s, liners, slots, { front, facing, pushing: attacking && !defensive });
+  // (A siege ring / capital storm and the home defence keep their own slots: tanks storm with the rest.)
+  if (!siegeSlots && !defendingHome(s)) armourSlots(world, s, liners, slots, { front, facing, pushing: attacking && !defensive });
   s.slots = slots;
 }
 
