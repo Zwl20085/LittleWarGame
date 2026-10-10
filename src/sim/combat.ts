@@ -1,3 +1,4 @@
+import { housedIn, SHELTER } from './shelter';
 import type { WeaponDef } from '../data/types';
 import { arcClear, solveArc } from './ballistics';
 import { COMBAT, DISPERSION, TERRAIN_COMBAT } from './config';
@@ -115,6 +116,8 @@ export function selectTarget(world: World, u: Unit, objective: V2 | null): void 
     const convoyBonus = t.def.id === 'supply_truck' ? 0.15 : 0;
     let score = convoyBonus + 0.3 * threatOf(t, u) + 0.25 * suit + 0.2 * objRel + 0.15 * (1 - d / radius) + (t.id === u.targetId ? 0.1 : 0);
     if (isIndirect(w)) score += clusterBonus(world, t) * 0.2 - friendlyRisk(world, u, t.pos, w) * 2 + counterBatteryBonus(world, u.owner, t);
+    // 2.2: guns prefer exposed targets over squads sheltering inside intact buildings (shelter.ts).
+    if (isIndirect(w) && housedIn(world, t) >= 0) score -= SHELTER.artyInsidePenalty;
     if (t.id === u.targetId) curScore = score;
     if (score > bestScore) {
       bestScore = score;
