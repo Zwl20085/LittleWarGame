@@ -15,7 +15,7 @@ import { OpArrows } from './opArrows';
 import { OrderLines } from './orderLines';
 import { clothFlag, FLAG_TIME } from './flags';
 import { FieldWorks, isLineWork } from './fieldWorks';
-import { StructureViews } from './structures';
+import { StructureViews, type StructureRecord } from './structures';
 import { FrontLines } from './frontLines';
 import { fortModel } from './models';
 import { PontoonView } from './pontoon';
@@ -70,6 +70,14 @@ export class GameRenderer {
   private readonly fieldWorks: FieldWorks;
   /** Pillboxes / bunkers (instanced; works agent). */
   private readonly structureViews: StructureViews;
+  /**
+   * 2.2 hook for the economy wave: further structures (economic buildings, town supply depots)
+   * drawn through the structure-kind registry (render/structureKinds.ts). Whoever wires them
+   * sets this to return the current records (e.g. from the snapshot mirror) and registers each
+   * kind's parts; ids only need to be unique within this source.
+   */
+  extraStructures: (() => readonly StructureRecord[]) | null = null;
+  private readonly extraViews: StructureViews;
   private readonly opArrows: OpArrows;
   /** Supreme-HQ standing orders and the order being placed (2.0). */
   readonly orderLines: OrderLines;
@@ -145,6 +153,8 @@ export class GameRenderer {
     this.scene.add(this.fieldWorks.group);
     this.structureViews = new StructureViews(w.terrain, (owner) => w.factions[owner]?.color ?? '#888888');
     this.scene.add(this.structureViews.group);
+    this.extraViews = new StructureViews(w.terrain, (owner) => w.factions[owner]?.color ?? '#888888');
+    this.scene.add(this.extraViews.group);
     this.opArrows = new OpArrows((x, z) => w.terrain.heightAt(x, z));
     this.scene.add(this.opArrows.mesh);
     this.orderLines = new OrderLines((x, z) => w.terrain.heightAt(x, z));
@@ -169,7 +179,7 @@ export class GameRenderer {
     // The scene root and the container groups never move. With matrixAutoUpdate on, the root
     // recomposed its matrix every frame and flagged itself dirty, which forced a world-matrix
     // multiply for every object in the scene; now only objects that move pay for it.
-    for (const o of [this.scene, this.units.group, this.effects.group, this.overlayGroup, this.fieldWorks.group, this.structureViews.group, this.orderLines.group]) {
+    for (const o of [this.scene, this.units.group, this.effects.group, this.overlayGroup, this.fieldWorks.group, this.structureViews.group, this.extraViews.group, this.orderLines.group]) {
       o.updateMatrix();
       o.matrixAutoUpdate = false;
     }
@@ -289,6 +299,10 @@ export class GameRenderer {
     for (let i = 0; i < this.fieldWorks.siteCount; i++) this.effects.workSite(this.fieldWorks.sites[i], dt);
     this.structureViews.sync(w.forts, w.time);
     for (let i = 0; i < this.structureViews.siteCount; i++) this.effects.workSite(this.structureViews.sites[i], dt);
+    if (this.extraStructures) {
+      this.extraViews.sync(this.extraStructures(), w.time);
+      for (let i = 0; i < this.extraViews.siteCount; i++) this.effects.workSite(this.extraViews.sites[i], dt);
+    }
     for (const f of w.forts) {
       if (f.hp <= 0 || isLineWork(f.kind) || f.kind === 'pillbox' || f.kind === 'bunker') continue;
       seen.add(f.id);
@@ -588,6 +602,7 @@ export class GameRenderer {
 
   dispose(): void {
     this.structureViews.dispose();
+    this.extraViews.dispose();
     this.objectiveMarkers.dispose();
     this.overlay.dispose();
     this.renderer.dispose();
