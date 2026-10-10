@@ -41,7 +41,7 @@ export const COMMAND_ZH: Dict = {
 export const COMMAND_EN: Dict = {
   'dir.title': 'Directive',
   'dir.offensive': 'General offensive', 'dir.advance': 'Steady advance', 'dir.defend': 'General defence', 'dir.fortify': 'Fortify and hold', 'dir.contract': 'Strategic contraction',
-  'dir.short.offensive': 'Offensive', 'dir.short.advance': 'Advance', 'dir.short.defend': 'Defend', 'dir.short.fortify': 'Fortify', 'dir.short.contract': 'Contract',
+  'dir.short.offensive': 'Attack', 'dir.short.advance': 'Advance', 'dir.short.defend': 'Defend', 'dir.short.fortify': 'Fortify', 'dir.short.contract': 'Contract',
   'dir.tip.offensive': 'Every front attacks; the front nearest the axis is the main effort (first call on reinforcements and supply); a front facing a much stronger enemy pins instead',
   'dir.tip.advance': 'Each front commander picks its own objective: strong fronts attack, weak fronts hold (default)',
   'dir.tip.defend': 'Every front holds its line and counter-attacks only a clearly weaker enemy; click a threatened place to send it the reserves',

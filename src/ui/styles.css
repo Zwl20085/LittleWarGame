@@ -580,6 +580,7 @@ svg.brass-gauge .needle { transform-origin: 30px 31px; transition: transform 400
 /* 2.2 directive palette: the directive in force is inked (a bar under it); the front's response leads its card. */
 .obtn.active { background: linear-gradient(180deg, #fffaf0, #f1e6c6); border-color: var(--oc); box-shadow: inset 0 -3px 0 var(--oc); }
 .obtn.active .on { font-weight: 800; }
+.obtn.active.armed { background: var(--oc); color: #f4ecd9; }
 .hq-row.dir-now { margin-top: 3px; border-top: 1px dashed var(--border); padding-top: 4px; }
 .hq-row.dir-now .hq-kind { background: var(--oc); }
 .fc-resp { font-size: var(--fs-s); font-weight: 700; color: var(--ink); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
