@@ -6,7 +6,7 @@ some game I just let all units attack the capital, then it wins."*
 `scripts/challenge.ts` plays one faction (the **challenger**) with a scripted supreme-HQ strategy
 and lets the normal AI play the other three. The challenger uses only the public command API, the
 same calls the UI makes: `CommandBus.issue(match, actor, cmd)` and `bus.flush(match)` before every
-`step`, like `sim.worker.ts`. It sends `frontOrder`, `setMainFront`, `setWeight` and `setCap`. It
+`step`, like `sim.worker.ts`. It sends `setDirective` (2.2: one universal directive), `setWeight` and `setCap`. It
 never writes to the world. The report shows whether the AI keeps its capital and how it defended:
 alarm, recall, works, garrison and counter-attack.
 
@@ -30,8 +30,9 @@ npx tsx scripts/challenge.ts --strategy rush,rush_micro --fog --seeds 7,11,13   
   still reads the world, so it stays omniscient. Report labels get a `/fog` suffix.
 - Setup: generated map, 4 factions, `open` information (unless `--fog`), `normal` difficulty, default personalities
   (slot id % 5). The challenger is `playerSlot` with `spectate: false`, so it is a player faction.
-  `isPlayer` switches off `cityai.thinkCity` (production mix and postures), `theatre.thinkTheatre`
-  (dynamic fronts and AI orders) and the engineer requests in `fortplans` for that faction. Everything else still runs for
+  `isPlayer` switches off the production mix in `cityai.thinkCity` and the AI's directive choice
+  (`directive.chooseDirective`) for that faction. 2.2: its fronts are opened / merged / dissolved by
+  `theatre.thinkTheatre` and answer its directive like everyone else's. Everything else still runs for
   it, the same as for a human: front commanders, home defence forecast and standing garrison, and
   the economy steward.
 - The run is deterministic per seed: strategies read only world state, use no RNG and no clock,
@@ -42,13 +43,13 @@ npx tsx scripts/challenge.ts --strategy rush,rush_micro --fog --seeds 7,11,13   
 
 | id | production (`setWeight` / `setCap`) | orders |
 |---|---|---|
-| `rush` | infantry, motor inf, light / medium / heavy tanks only | auto fronts until `--rushAt` (default 300 s), then every front gets `attack` on the nearest enemy capital, the first front is made main, and the order is re-issued every 60 s. Never defends. Once a capital falls it moves on to the next nearest. |
-| `turtle` | infantry, engineers, MG, AT, mortars | every front gets `fortify` on a point 400 m from the capital toward that front's initial objective. At 25 min it switches to a tank mix and all fronts `attack` the capital of the weaker (by army value) of the two nearest neighbours. |
-| `two_axis` | balanced | every 90 s two fronts each `attack` a different neighbour's nearest town (village at 1.5× distance, its capital once nothing else is left). The third front `defend`s 350 m out. Each front is matched to the neighbour whose bearing is closest to its axis. |
-| `raid` | motor inf, light tanks, recon | every 60 s each front `attack`s the least defended enemy village or town ≥ 900 m from its owner's capital, nearest first, using omniscient defence values. Two fronts never take the same target. |
-| `late_blitz` | armour heavy | `fortify` 450 m out until 15 min, then every front `attack`s the nearest capital with `setMainFront`, re-issued every 60 s. |
-| `rush_micro` | as `rush` | no front orders. From `--rushAt`, every 60 s, *every* combat unit gets a unit-level `unitOrder attackMove` on the nearest enemy capital. This is the literal "select all, attack the capital", bypassing the front commanders. |
-| `human_like` | balanced, tank leaning | every 30 s: (1) if ≥ 300 hostile value is within 900 m of home and outweighs 0.8× the home value, the front nearest home `defend`s toward it. (2) After 12 min it strikes a neighbour (one of the two nearest) whose capital area holds < 40 % of its army, when our army is ≥ 2.2× that capital's defence and ≥ 0.8× their army. The strike continues until the capital falls or our army drops below 50 % of its value at launch. (3) Otherwise each front `attack`s the best cheap place: value ÷ defence ÷ distance. |
+| `rush` | infantry, motor inf, light / medium / heavy tanks only | `advance` until `--rushAt` (default 300 s), then a general `offensive` with the nearest enemy capital as the axis (checked every 60 s). Never defends. Once a capital falls it moves on to the next nearest. |
+| `turtle` | infantry, engineers, MG, AT, mortars | `fortify` with a 300 m line drawn 400 m out across the nearest enemy's approach (a fortified zone; every other front fortifies its own line). At 25 min it switches to a tank mix and an `offensive` on the capital of the weaker (by army value) of the two nearest neighbours. |
+| `two_axis` | balanced | every 90 s an `offensive` whose axis alternates between the two nearest neighbours' nearest towns (village at 1.5× distance, its capital once nothing else is left). |
+| `raid` | motor inf, light tanks, recon | every 60 s an `offensive` with the least defended enemy village or town ≥ 900 m from its owner's capital as the axis, nearest to home first, using omniscient defence values. |
+| `late_blitz` | armour heavy | `fortify` (a line 450 m out) until 15 min, then an `offensive` on the nearest capital, checked every 60 s. |
+| `rush_micro` | as `rush` | no directive. From `--rushAt`, every 60 s, *every* combat unit gets a unit-level `unitOrder attackMove` on the nearest enemy capital. This is the literal "select all, attack the capital", bypassing the front commanders. |
+| `human_like` | balanced, tank leaning | every 30 s: (1) a strike under way continues (an `offensive` on that capital) until the capital falls or our army drops below 50 % of its value at launch. (2) If ≥ 300 hostile value is within 900 m of home and outweighs 0.8× the home value: `defend` with the threatened approach as the axis. (3) After 12 min it strikes a neighbour (one of the two nearest) whose capital area holds < 40 % of its army, when our army is ≥ 2.2× that capital's defence and ≥ 0.8× their army. (4) Otherwise an `offensive` on the best cheap place: value ÷ defence ÷ distance from home. |
 
 ## Adding a strategy
 
@@ -174,3 +175,12 @@ at 18:00, with the lead's rules (hopeless, finisher massing).
 The alarm became a signal. The new `homeThreat.alert` fires 1–5 min after an attack is launched,
 and is on 18–72 % of the time. The old readiness alarm `active` is on 51–94 % of the time and is
 kept for recall: gating recall on the narrow alert lost 4 more capitals.
+
+## 2.2: directives instead of front orders
+
+The strategies were ported from per-front orders (`frontOrder`, `setMainFront`) to the universal
+directive (docs/V22_SPEC.md §1): the scripted supreme HQ picks `offensive` / `advance` / `defend` /
+`fortify` / `contract` with an optional axis or fortify line, and the challenger's front commanders
+decide their own orders, exactly as for a human player. `worldq.directive` does not re-send a
+directive that already stands. The challenger now also gets the theatre's front management and the
+AI's posture / reserve rules (cityai) — it is a stronger opponent than the 2.1 challenger.

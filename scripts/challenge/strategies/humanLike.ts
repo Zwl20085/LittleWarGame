@@ -1,8 +1,8 @@
-// human_like — what a decent player does: hold home when threatened, take cheap places first,
-// mass, and strike the capital of a neighbour whose army is committed elsewhere.
+// human_like — what a decent player does with one directive: defend home when threatened, an offensive
+// on cheap places first, mass, and strike the capital of a neighbour whose army is committed elsewhere.
 import { dist, type V2 } from '../../../src/sim/vec';
 import type { Strategy, StrategyCtx } from '../types';
-import { armyValue, enemiesByDistance, frontCentre, frontIds, hostileNear, isCapital, order, setMix, towards, valueNear } from '../worldq';
+import { armyValue, directive, enemiesByDistance, hostileNear, isCapital, setMix, towards, valueNear } from '../worldq';
 import { allOnCapital } from './common';
 
 const THINK_S = 30;
@@ -56,57 +56,46 @@ function pickStrike(ctx: StrategyCtx): number | undefined {
   return best;
 }
 
-function expand(ctx: StrategyCtx, fronts: number[]): void {
+/** Expansion axis: the best cheap, valuable place near home (value ÷ defence ÷ distance). */
+function expandAxis(ctx: StrategyCtx): V2 | null {
   const w = ctx.world;
   const hq = w.hqPos(ctx.me);
-  const taken = new Set<string>();
-  for (const id of fronts) {
-    const from = frontCentre(w, ctx.me, id);
-    let best: V2 | null = null;
-    let bk = '';
-    let bs = -Infinity;
-    for (const o of w.objectives) {
-      if (o.owner === ctx.me || taken.has(o.id) || isCapital(w, o)) continue;
-      if (o.owner >= 0 && !w.isHostile(ctx.me, o.owner)) continue;
-      if (dist(o.pos, hq) > 2600) continue;
-      const def = hostileNear(w, ctx.me, o.pos, 300);
-      const score = (PLACE_VALUE[o.kind] ?? 1) / (1 + def / 200) / (1 + dist(from, o.pos) / 800);
-      if (score > bs) { bs = score; best = o.pos; bk = o.id; }
-    }
-    if (!best) continue;
-    taken.add(bk);
-    order(ctx, id, 'attack', best);
+  let best: V2 | null = null;
+  let bs = -Infinity;
+  for (const o of w.objectives) {
+    if (o.owner === ctx.me || isCapital(w, o)) continue;
+    if (o.owner >= 0 && !w.isHostile(ctx.me, o.owner)) continue;
+    if (dist(o.pos, hq) > 2600) continue;
+    const def = hostileNear(w, ctx.me, o.pos, 300);
+    const score = (PLACE_VALUE[o.kind] ?? 1) / (1 + def / 200) / (1 + dist(hq, o.pos) / 800);
+    if (score > bs) { bs = score; best = o.pos; }
   }
+  return best;
 }
 
 export const humanLike: Strategy = {
   id: 'human_like',
-  summary: 'hold home when threatened, take cheap places, mass, then strike the capital of a neighbour committed elsewhere',
+  summary: 'defend home when threatened, offensive on cheap places, mass, then an offensive on the capital of a neighbour committed elsewhere',
   setup(ctx) {
     setMix(ctx, { infantry: 30, mg: 6, at_gun: 8, mortar: 6, engineer: 3, motor_inf: 6, light_tank: 6, medium_tank: 14, heavy_tank: 4, howitzer: 2, supply_truck: 2 }, { infantry: 30, medium_tank: 10 });
   },
   tick(ctx) {
     const w = ctx.world;
     if (Math.floor(w.time) % THINK_S !== 0) return;
-    let fronts = frontIds(ctx);
-    // 1. Home first: the front nearest home holds the threatened approach.
-    const threat = homeThreat(ctx);
-    if (threat && fronts.length > 1) {
-      const hq = w.hqPos(ctx.me);
-      const home = [...fronts].sort((a, b) => dist(frontCentre(w, ctx.me, a), hq) - dist(frontCentre(w, ctx.me, b), hq) || a - b)[0];
-      order(ctx, home, 'defend', towards(hq, threat.at, 200));
-      fronts = fronts.filter((id) => id !== home);
-    }
-    // 2. A strike under way: keep it unless the target fell or the army bled out.
+    // 1. A strike under way: keep it unless the target fell or the army bled out.
     const strike = ctx.state.strike as Strike | undefined;
     if (strike) {
-      const alive = w.factions[strike.target].alive;
-      if (alive && armyValue(w, ctx.me) >= STRIKE_ABORT * strike.army) {
-        const hqT = w.hqPos(strike.target);
-        for (const id of fronts) order(ctx, id, 'attack', hqT);
+      if (w.factions[strike.target].alive && armyValue(w, ctx.me) >= STRIKE_ABORT * strike.army) {
+        allOnCapital(ctx, strike.target);
         return;
       }
       ctx.state.strike = undefined;
+    }
+    // 2. Home first: defend, with the threatened approach as the axis (it gets the reserves).
+    const threat = homeThreat(ctx);
+    if (threat) {
+      directive(ctx, 'defend', towards(w.hqPos(ctx.me), threat.at, 200));
+      return;
     }
     // 3. Mass, then strike a neighbour whose army is away from its capital.
     if (w.time >= STRIKE_FROM_S) {
@@ -114,16 +103,11 @@ export const humanLike: Strategy = {
       if (target !== undefined) {
         ctx.state.strike = { target, at: w.time, army: armyValue(w, ctx.me) } satisfies Strike;
         allOnCapital(ctx, target);
-        if (threat && fronts.length > 0) {
-          // allOnCapital orders every front; put the home front back on its line.
-          const all = frontIds(ctx);
-          const home = all.find((id) => !fronts.includes(id));
-          if (home !== undefined) order(ctx, home, 'defend', towards(w.hqPos(ctx.me), threat.at, 200));
-        }
         return;
       }
     }
-    // 4. Otherwise expand: cheap, valuable places near home.
-    expand(ctx, fronts);
+    // 4. Otherwise expand: an offensive on the best cheap, valuable place near home.
+    const axis = expandAxis(ctx);
+    if (axis) directive(ctx, 'offensive', axis);
   },
 };
