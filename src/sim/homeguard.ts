@@ -911,7 +911,8 @@ function recallable(f: Faction, s: Front): boolean {
   if (!s.manualTarget) return true;
   const ht = f.command.homeThreat;
   const gates = ht.breach || (ht.eta >= 0 && ht.eta <= HOME.gatesEtaS && ht.aimed >= HOME.minThreat);
-  return gates && s.order.issuedAt < ht.since;
+  // 2.2: front commanders re-issue their orders from the directive, so the supreme HQ's choice dates from the directive.
+  return gates && Math.min(s.order.issuedAt, f.directive.issuedAt) < ht.since;
 }
 
 /** A new order for a recalled front (the player's): it leaves the recall, its saved orders are void. */

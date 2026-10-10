@@ -11,8 +11,9 @@ import { populationCap } from './production';
 import { isCommander } from './formulas';
 import { createHomeThreat, fortifyPlace, homeOn, thinkHomeDefence, thinkHomeGuard, type HomeThreat } from './homeguard';
 import { reassignStale } from './frontops';
-import { boundOrder } from './frontref';
+import { boundOrder, lendsGarrisons } from './frontref';
 import { thinkTheatre } from './theatre';
+import { chooseDirective } from './directive';
 import type { Faction, Objective, Unit } from './types';
 import { dist, headingTo, type V2 } from './vec';
 import type { World } from './world';
@@ -262,6 +263,8 @@ export function thinkHighCommand(world: World, f: Faction): void {
   hc.directives = pickShown(dirs);
   // 2.0 supreme HQ: units of dissolved fronts rejoin; AI factions set fronts and their orders (theatre.ts).
   reassignStale(world, f);
+  // 2.2: the AI supreme HQ chooses its directive (the player issues one); fronts answer it in the theatre pass.
+  chooseDirective(world, f);
   thinkTheatre(world, f);
 }
 
@@ -326,8 +329,8 @@ function assignGarrisons(world: World, f: Faction, defend: Directive[]): void {
       continue;
     }
     // Groups in the middle of an operation (forming up, digging in, storming) keep their troops;
-    // 2.1: so does a front under a binding (player) order.
-    const busy = new Set(f.fronts.filter((s) => (s.op !== 'frontal' && s.opPhase !== '') || boundOrder(s)).map((s) => s.id));
+    // 2.1: so does a front under a binding (player) order — 2.2: except under Contract, which garrisons its towns.
+    const busy = new Set(f.fronts.filter((s) => (s.op !== 'frontal' && s.opPhase !== '') || !lendsGarrisons(f, s)).map((s) => s.id));
     const pool = mine.filter((u) => freeLine(u) && !busy.has(u.frontId) && GARRISON_TYPES.has(u.def.id) && dist(u.pos, d.pos) < HQ.assignRadius)
       .sort((a, b) => dist(a.pos, d.pos) - dist(b.pos, d.pos));
     const sent: Unit[] = [];

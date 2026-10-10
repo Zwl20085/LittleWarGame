@@ -38,7 +38,7 @@ export function newFront(world: World, f: Faction, target: Objective, wing: Fron
     targetCity: null, rally: lerpV(city.exit, target.pos, 0.35), reason: 'reason.capturePoint', reasonParams: { point: target.id }, lastRetarget: -999, postureSince: 0,
     manualTarget: false, gatheredSince: -1, advancing: false,
     front: { ...target.pos }, facing: headingTo(city.hq, target.pos), slots: {}, crossing: null, stagedSince: -1, lastSpearhead: -999, mode: 'advance', shelledAt: -999, segment: [], bridgeSite: null, bridgeCheckAt: 0,
-    op: 'frontal', opLocked: false, opRoute: [], opPhase: '',
+    op: 'frontal', opLocked: false, opRoute: [], opPhase: '', response: '', responseParams: {},
   };
 }
 
@@ -155,15 +155,16 @@ export function issueFrontOrder(world: World, f: Faction, s: Front, order: Front
   if (order.kind === 'fallBack') {
     // Everyone drops what they are doing and marches back to the new line before fighting again
     // (behavior.fallingBack keeps them marching until they reach it). 2.1: on the player's order
-    // town garrisons come back too (only the capital's guards stay).
+    // town garrisons come back too (only the capital's guards stay) — 2.2: not under Contract, which keeps its towns garrisoned.
+    const keepGarrisons = f.directive.kind === 'contract';
     for (const u of frontUnits(world, f.id, s.id)) {
       if (u.manual || u.def.id === 'supply_truck' || isCommander(u.def)) continue;
       u.spearhead = null;
-      if (u.opRole !== 'garrison' || (order.manual && !capitalGuard(u))) { u.opRole = 'line'; u.opTarget = null; u.opObjective = null; }
+      if (u.opRole !== 'garrison' || (order.manual && !capitalGuard(u) && !keepGarrisons)) { u.opRole = 'line'; u.opTarget = null; u.opObjective = null; }
       u.behavior = 'advance';
     }
   }
-  if (boundOrder(s)) recallDetachments(s, frontUnits(world, f.id, s.id));
+  if (boundOrder(s)) recallDetachments(s, frontUnits(world, f.id, s.id), f.directive.kind === 'contract');
 }
 
 /** A home guard of the capital (standing garrison, HQ point): exempt from binding orders (user rule 8). */
@@ -174,12 +175,12 @@ const capitalGuard = (u: Unit): boolean => u.opRole === 'garrison' && !!u.opObje
  * occupations, raids and rear guards; on a line order also manoeuvre / siege parties and
  * spearheads, and nobody waits at the rally point. The capital's guards stay (user rule 8).
  */
-export function recallDetachments(s: Front, units: readonly Unit[]): void {
+export function recallDetachments(s: Front, units: readonly Unit[], keepGarrisons = false): void {
   const line = boundLine(s);
   for (const u of units) {
     if (u.manual || u.def.id === 'supply_truck' || isCommander(u.def) || capitalGuard(u)) continue;
     const r = u.opRole;
-    if (r === 'garrison' || r === 'occupy' || r === 'raid' || r === 'rearguard' || (line && (r === 'maneuver' || r === 'infiltrate' || r === 'siege'))) {
+    if ((r === 'garrison' && !keepGarrisons) || r === 'occupy' || r === 'raid' || r === 'rearguard' || (line && (r === 'maneuver' || r === 'infiltrate' || r === 'siege'))) {
       u.opRole = 'line';
       u.opTarget = null;
       u.opObjective = null;
@@ -203,18 +204,35 @@ const ZONE_MIN_M = 60;
  */
 export function addZone(world: World, f: Faction, s: Front): Zone | null {
   if (!s.line) return null;
-  const { a, b } = s.line;
+  return addZoneLine(world, f, s.line.a, s.line.b, s.id, s.name);
+}
+
+/**
+ * Register a line a–b as a permanent fortified zone (2.2: also straight from a drawn Fortify
+ * directive, held by `frontId`, else unheld until a front takes the line). Same line again: re-bound.
+ */
+export function addZoneLine(world: World, f: Faction, a: V2, b: V2, frontId: number | null = null, name = ''): Zone | null {
   // A zone needs a real line to lay works along (a point order resolved on the capital gave a == b).
   if (dist(a, b) < ZONE_MIN_M) return null;
   const same = f.zones.find((z) => !z.cancelled && ((dist(z.a, a) < ZONE_SAME_M && dist(z.b, b) < ZONE_SAME_M) || (dist(z.a, b) < ZONE_SAME_M && dist(z.b, a) < ZONE_SAME_M)));
   if (same) {
-    same.frontId = s.id;
+    if (frontId !== null) same.frontId = frontId;
     return same;
   }
-  const z: Zone = { id: f.zoneSeq++, a: { ...a }, b: { ...b }, frontId: s.id, createdAt: world.time, cancelled: false };
+  const z: Zone = { id: f.zoneSeq++, a: { ...a }, b: { ...b }, frontId, createdAt: world.time, cancelled: false };
   f.zones = [...f.zones, z];
-  world.note(f.id, 'log.zonePlanned', { point: s.name }, 'info');
+  world.note(f.id, 'log.zonePlanned', { point: name || nearestPlaceId(world, { x: (a.x + b.x) / 2, z: (a.z + b.z) / 2 }) }, 'info');
   return z;
+}
+
+function nearestPlaceId(world: World, p: V2): string {
+  let best = '';
+  let bd = Infinity;
+  for (const o of world.objectives) {
+    const d = dist(o.pos, p);
+    if (d < bd) { bd = d; best = o.id; }
+  }
+  return best;
 }
 
 function setPosture(world: World, s: Front, p: Front['posture']): void {
@@ -479,11 +497,11 @@ export function thinkFronts(world: World, f: Faction): void {
         s.rally = lerpV(world.cityOf(f.id).exit, s.targetPos, t.city !== null ? 0.5 : 0.35);
       }
     }
-    // Round 7: the player's attack orders get the AI's cautious ⇄ assault rule (cityai never runs for players).
-    if (f.isPlayer && ROUND7_AB.assault) orderedAssault(world, f, s, units);
+    // Round 7: binding attack orders get the AI's cautious ⇄ assault rule (2.2: cityai sets the other fronts' postures, the player's included).
+    if (boundOrder(s) && ROUND7_AB.assault) orderedAssault(world, f, s, units);
     // 2.1 binding orders: detachments come back; a line order is held frontally (no manoeuvre ops).
     const bound = boundOrder(s);
-    if (bound) recallDetachments(s, units);
+    if (bound) recallDetachments(s, units, f.directive.kind === 'contract');
     // Battle doctrine for this group's attack (flank, pincer, infiltration, siege …).
     if (bound && boundLine(s)) holdOperation(world, s, units);
     else runOperation(world, f, s, units);

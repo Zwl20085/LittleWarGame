@@ -144,7 +144,24 @@ export interface FrontOrder {
   /** Second point of a line order (null = a point order). */
   readonly b: V2 | null;
   readonly issuedAt: number;
-  /** Who issued it: the player (manual) or the AI supreme HQ. */
+  /** Binding (2.1 rules, frontref.boundOrder): given under a player directive, or a zone garrison's standing order. */
+  readonly manual: boolean;
+}
+
+/**
+ * 2.2 universal directive of the supreme HQ (docs/V22_SPEC.md §1): one command for the whole army;
+ * every front commander decides its own front order from it (frontresponse.ts).
+ */
+export type DirectiveKind = 'offensive' | 'advance' | 'defend' | 'fortify' | 'contract';
+
+export interface Directive {
+  readonly kind: DirectiveKind;
+  /** Main effort / threatened place (optional). */
+  readonly axis: V2 | null;
+  /** Fortify only: a drawn line that becomes a permanent fortified zone. */
+  readonly line: { readonly a: V2; readonly b: V2 } | null;
+  readonly issuedAt: number;
+  /** Issued by the player (binding front orders) or chosen by the AI supreme HQ. */
   readonly manual: boolean;
 }
 
@@ -210,6 +227,9 @@ export interface Front {
   opRoute: V2[];
   /** Phase of the operation, for the UI ('form' | 'move' | 'assault' | 'dig' | ''). */
   opPhase: string;
+  /** 2.2: the commander's response to the directive (i18n key + params), shown on the front card. */
+  response: string;
+  responseParams: Record<string, string | number>;
 }
 
 /**
@@ -291,6 +311,8 @@ export interface Faction {
   orders: ProductionOrder[];
   manualQueue: { unitId: string; frontId: number }[];
   fronts: Front[];
+  /** 2.2: the supreme HQ's universal directive (player: `setDirective`; AI: directive.chooseDirective). */
+  directive: Directive;
   mainFront: number;
   /** Next front id (fronts are created and dissolved during the match). */
   frontSeq: number;

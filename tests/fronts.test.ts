@@ -4,13 +4,14 @@ import { createMatch, step } from '../src/sim/sim';
 import { CommandBus } from '../src/sim/commands';
 import { thinkHighCommand } from '../src/sim/command';
 import { frontById, counterStrikes } from '../src/sim/frontref';
-import { createFront, dissolveFront, frontForOrder, FRONT_OPS, reassignStale, transferable } from '../src/sim/frontops';
+import { createFront, dissolveFront, frontForOrder, FRONT_OPS, reassignStale } from '../src/sim/frontops';
 import { frontUnits, issueFrontOrder, leaderless, thinkFronts, upkeepCommander } from '../src/sim/fronts';
 import { pickFront } from '../src/sim/production';
 import { HOME } from '../src/sim/homeguard';
 import { isCommander } from '../src/sim/formulas';
 import type { Faction, Front, FrontOrder, Unit, Zone } from '../src/sim/types';
 import { garrisonsZone } from '../src/sim/theatre';
+import { directiveMain } from '../src/sim/frontresponse';
 import { dist, headingTo, type V2 } from '../src/sim/vec';
 import type { World } from '../src/sim/world';
 
@@ -157,20 +158,18 @@ describe('fronts (2.0 command hierarchy)', () => {
     }
   });
 
-  it('opens a new front for a player order far from every front', () => {
+  it('opens a new front for an order far from every front (internal; 2.2: the theatre opens fronts, not the player)', () => {
     const match = setup(30, false);
     const { world } = match;
     const f = world.factions[0];
     f.p = 10_000;
     const before = f.fronts.length;
     const p = farObjective(world, f);
-    const bus = new CommandBus();
-    bus.issue(match, 0, { type: 'frontOrder', frontId: null, kind: 'defend', a: p });
-    bus.flush(match);
+    const s = frontForOrder(world, f, p)!;
     expect(f.fronts.length).toBe(before + 1);
-    const s = f.fronts[f.fronts.length - 1];
+    expect(f.fronts[f.fronts.length - 1]).toBe(s);
+    issueFrontOrder(world, f, s, order(world, 'defend', p));
     expect(s.order.kind).toBe('defend');
-    expect(s.order.manual).toBe(true);
     // An order near an existing front goes to that front.
     expect(frontForOrder(world, f, s.targetPos)).toBe(s);
   });
@@ -255,20 +254,23 @@ function lineTroops(world: World, f: number, frontId: number): Unit[] {
 }
 
 describe('fronts 2.1: binding orders, more fronts, zone garrisons', () => {
-  it('binds an attack order: the front marches on the objective and lends no detachments', () => {
+  it('binds an attack order: the main effort of an offensive marches on the axis and lends no detachments', () => {
     const match = setup(90, false);
     const { world } = match;
     const f = world.factions[0];
-    const s = f.fronts[0];
+    const s0 = f.fronts[0];
     // A place we do not hold, ≥ 600 m from the front's troops.
-    const c0 = lineTroops(world, 0, s.id);
+    const c0 = lineTroops(world, 0, s0.id);
     const mid = { x: c0.reduce((a, u) => a + u.pos.x, 0) / c0.length, z: c0.reduce((a, u) => a + u.pos.z, 0) / c0.length };
     const obj = world.objectives.filter((o) => o.owner !== 0 && dist(o.pos, mid) > 600).sort((a, b) => dist(a.pos, mid) - dist(b.pos, mid))[0];
     expect(obj).toBeDefined();
     const bus = new CommandBus();
-    bus.issue(match, 0, { type: 'frontOrder', frontId: s.id, kind: 'attack', a: obj.pos });
+    bus.issue(match, 0, { type: 'setDirective', kind: 'offensive', axis: obj.pos });
     bus.flush(match);
-    expect(s.order.manual).toBe(true);
+    const s = frontById(f, directiveMain(f))!;
+    expect(s).toBeDefined();
+    expect(s.order).toMatchObject({ kind: 'attack', manual: true });
+    expect(s.response).toBe('resp.main');
     const before = new Map(lineTroops(world, 0, s.id).map((u) => [u.id, dist(u.pos, obj.pos)]));
     let detached = 0;
     for (let t = 0; t < 180; t++) {
@@ -292,12 +294,16 @@ describe('fronts 2.1: binding orders, more fronts, zone garrisons', () => {
     const match = setup(90, false);
     const { world } = match;
     const f = world.factions[0];
-    const s = f.fronts[0];
+    const s0 = f.fronts[0];
     const hq = world.hqPos(0);
-    const p = world.nav(false, 35).nearestPassable({ x: hq.x + (s.front.x - hq.x) * 0.5, z: hq.z + (s.front.z - hq.z) * 0.5 }, 60)!;
+    const p = world.nav(false, 35).nearestPassable({ x: hq.x + (s0.front.x - hq.x) * 0.5, z: hq.z + (s0.front.z - hq.z) * 0.5 }, 60)!;
     const bus = new CommandBus();
-    bus.issue(match, 0, { type: 'frontOrder', frontId: s.id, kind: 'defend', a: p });
+    bus.issue(match, 0, { type: 'setDirective', kind: 'defend', axis: p });
     bus.flush(match);
+    // The front nearest the threatened place holds a line through it.
+    const s = frontById(f, directiveMain(f))!;
+    expect(s.order).toMatchObject({ kind: 'defend', manual: true });
+    expect(dist(s.order.a, p)).toBeLessThan(5);
     expect(s.posture).toBe('hold');
     const line = s.line!;
     let loose = 0;
@@ -341,7 +347,7 @@ describe('fronts 2.1: binding orders, more fronts, zone garrisons', () => {
     expect(ht.recall).not.toContain(s.id);
   });
 
-  it('allows 8 fronts, plans fronts without units, and opens a player front with newFront', () => {
+  it('allows 8 fronts, plans fronts without units, and runs the player\'s fronts', () => {
     const match = setup(60, false);
     const { world } = match;
     const ai = world.factions[1];
@@ -357,27 +363,11 @@ describe('fronts 2.1: binding orders, more fronts, zone garrisons', () => {
     ai.command.nextAt = 0;
     thinkHighCommand(world, ai);
     expect(frontIdsValid(world)).toBe(true);
-    // Player: newFront appoints a commander, adopts nearby free troops and holds the point.
+    // 2.2: the player's fronts are run by the theatre too: every front answers the directive.
     const f = world.factions[0];
-    f.p = 10_000;
-    const s0 = f.fronts[0];
-    const own = lineTroops(world, 0, s0.id).filter(transferable);
-    expect(own.length).toBeGreaterThan(0);
-    const at = world.nav(false, 35).nearestPassable(own[0].pos, 30)!;
-    const bus = new CommandBus();
-    bus.issue(match, 0, { type: 'newFront', a: at });
-    bus.flush(match);
-    const s = f.fronts[f.fronts.length - 1];
-    expect(s.id).not.toBe(s0.id);
-    expect(world.unitAlive(s.commanderId)?.frontId).toBe(s.id);
-    expect(s.order).toMatchObject({ kind: 'defend', manual: true });
-    expect(s.posture).toBe('hold');
-    expect(frontUnits(world, 0, s.id).filter((u) => !isCommander(u.def)).length).toBeGreaterThan(0);
-    run(match, 4);
-    const line = s.line!;
-    const slots = Object.values(s.slots);
-    expect(slots.length).toBeGreaterThan(0);
-    expect(slots.filter((q) => lineOffset(q, line.a, line.b, world.hqPos(0)).d < 80).length / slots.length).toBeGreaterThan(0.8);
+    f.command.nextAt = 0;
+    thinkHighCommand(world, f);
+    expect(f.fronts.every((s) => s.response !== '')).toBe(true);
   }, 60_000);
 
   it('opens a garrison front for a finished fortified zone nobody holds', () => {
