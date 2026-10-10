@@ -1,5 +1,6 @@
 import type { MapDef, TownDef } from './mapdef';
 import { nearWall } from './buildings';
+import { placeRoadside } from './roadside';
 import { ValueNoise } from './noise';
 import { Rng } from './rng';
 import { clamp, type V2 } from './vec';
@@ -553,6 +554,8 @@ export class Terrain {
         this.trees.push({ x, z, s: rng.range(0.8, 1.35) });
       }
     }
+    // 2.2: single farmsteads, barns, inns, chapels and sheds along the roads (own RNG stream).
+    placeRoadside(this);
   }
 
   /**
