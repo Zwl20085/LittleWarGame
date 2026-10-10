@@ -4,9 +4,9 @@ import { generateMap } from '../src/sim/mapgen';
 import { Ground, Terrain, type Building } from '../src/sim/terrain';
 import { ROADSIDE, isRoadside } from '../src/sim/roadside';
 import { createMatch, step } from '../src/sim/sim';
-import { noteShellBurst, SHELTER, shelterSpot } from '../src/sim/shelter';
-import { shieldBuilding } from '../src/sim/buildings';
-import { coverAgainst } from '../src/sim/damage';
+import { capacityOf, housedIn, noteShellBurst, SHELTER, shelterSpot } from '../src/sim/shelter';
+import { isCollapsed, noteBuildingHit } from '../src/sim/buildings';
+import { coverAgainst, resolveBlast } from '../src/sim/damage';
 import type { Unit } from '../src/sim/types';
 import { dist, type V2 } from '../src/sim/vec';
 
@@ -73,9 +73,9 @@ describe('shelled squads take cover in buildings', () => {
     return u;
   };
 
-  it('runs to the lee wall of a roadside building, is garrisoned there, and resumes when the shelling stops', () => {
+  it('goes into a building on the first close burst, is inside it (all-round cover, blast cut), and resumes when the shelling stops', () => {
     // A roadside building with open ground 40 m off one side and the bursts 75 m off that side.
-    let pick: { b: Building; p: V2; from: V2 } | null = null;
+    let pick: { p: V2; from: V2 } | null = null;
     const probe = w.spawnUnit(0, 'infantry', { x: 0, z: 0 }, w.factions[0].fronts[0].id);
     const nav = w.navFor(probe);
     w.units.delete(probe.id);
@@ -87,41 +87,57 @@ describe('shelled squads take cover in buildings', () => {
         const p = { x: b.x + c * 40, z: b.z + s * 40 };
         const from = { x: b.x + c * 75, z: b.z + s * 75 };
         if (!nav.passable(p) || t.coverAt(p.x, p.z) !== 0 || t.groundAt(p.x, p.z) === Ground.Water) continue;
-        pick = { b, p, from };
+        pick = { p, from };
       }
     }
     expect(pick).not.toBeNull();
-    const { b, p, from } = pick!;
+    const { p, from } = pick!;
     const sq = place(w.spawnUnit(0, 'infantry', p, w.factions[0].fronts[0].id), p);
-    const spot = shelterSpot(w, sq, from);
-    expect(spot).not.toBeNull();
-    expect(shieldBuilding(w, spot!, from)).toBeGreaterThanOrEqual(0);
-    expect(Math.hypot(spot!.x - b.x, spot!.z - b.z)).toBeLessThan(Math.hypot(b.w, b.d) / 2 + 3);
+    const got = shelterSpot(w, sq, from);
+    expect(got).not.toBeNull();
+    const spot = got!.p;
+    const b = t.buildings[got!.k];
+    expect(Math.hypot(spot.x - b.x, spot.z - b.z)).toBeLessThan(Math.hypot(b.w, b.d) / 2 + 3);
+    expect(capacityOf(b)).toBeGreaterThanOrEqual(1);
     step(m); // into the spatial index
-    // Two bursts nearby: the squad heads for the building.
-    noteShellBurst(w, from);
+    // One burst 35 m away: the squad heads for the building.
     noteShellBurst(w, from);
     for (let i = 0; i < w.tickHz; i++) step(m);
     expect(sq.status).toBe('status.takingCover');
-    expect(sq.dest && dist(sq.dest, spot!)).toBeLessThan(3);
+    expect(sq.dest && dist(sq.dest, spot)).toBeLessThan(3);
     // Keep shelling while it walks there.
-    for (let s = 0; s < 60 && dist(sq.pos, spot!) > 2.5 || sq.moving; s++) {
-      if (s % 5 === 0) noteShellBurst(w, from);
+    for (let s = 0; s < 60 && (dist(sq.pos, spot) > 2.5 || sq.moving); s++) {
+      if (s % 5 === 0) noteShellBurst(w, sq.pos);
       for (let i = 0; i < w.tickHz; i++) step(m);
     }
-    expect(dist(sq.pos, spot!)).toBeLessThan(6);
-    expect(coverAgainst(w, sq, from)).toBe(3);
+    expect(housedIn(w, sq)).toBe(got!.k);
+    // Inside: all-round cover, and a burst next to it does far less than in the open.
+    expect(coverAgainst(w, sq, { x: sq.pos.x + 30, z: sq.pos.z })).toBe(3);
+    expect(coverAgainst(w, sq, { x: sq.pos.x - 30, z: sq.pos.z })).toBe(3);
+    const hp0 = sq.hp;
+    resolveBlast(w, { x: sq.pos.x + 3, y: sq.y, z: sq.pos.z + 3 }, 16, 180, 0, 1, 'howitzer_shell', 'shell', null, 'howitzer');
+    const insideLoss = hp0 - sq.hp;
+    const open = place(w.spawnUnit(0, 'infantry', p, w.factions[0].fronts[0].id), p);
+    step(m); // into the spatial index
+    const o0 = open.hp;
+    resolveBlast(w, { x: open.pos.x + 3, y: open.y, z: open.pos.z + 3 }, 16, 180, 0, 1, 'howitzer_shell', 'shell', null, 'howitzer');
+    expect(insideLoss).toBeLessThan((o0 - open.hp) * 0.5);
+    w.units.delete(open.id);
+    // The building takes the beating; once it collapses the squad is exposed.
+    for (let i = 0; i < 40 && !isCollapsed(w, got!.k); i++) noteBuildingHit(w, { x: b.x, y: t.heightAt(b.x, b.z) + 1, z: b.z }, 200);
+    expect(isCollapsed(w, got!.k)).toBe(true);
+    expect(housedIn(w, sq)).toBe(-1);
     // Shelling stops: after the hold time it goes back to its front task.
     for (let i = 0; i < (SHELTER.holdS + 2) * w.tickHz; i++) step(m);
     expect(sq.status).not.toBe('status.takingCover');
   }, 180000);
 
-  it('ignores a single stray burst and units that are not foot squads', () => {
+  it('ignores a single distant burst and units that are not foot squads', () => {
     const p = { x: w.cityOf(0).exit.x, z: w.cityOf(0).exit.z };
     const sq = place(w.spawnUnit(0, 'infantry', p, w.factions[0].fronts[0].id), p);
     const tank = place(w.spawnUnit(0, 'medium_tank', { x: p.x + 6, z: p.z }, w.factions[0].fronts[0].id), { x: p.x + 6, z: p.z });
     step(m);
-    noteShellBurst(w, { x: p.x + 20, z: p.z });
+    noteShellBurst(w, { x: p.x + 100, z: p.z });
     for (let i = 0; i < w.tickHz; i++) step(m);
     expect(sq.status).not.toBe('status.takingCover');
     noteShellBurst(w, { x: p.x + 20, z: p.z });

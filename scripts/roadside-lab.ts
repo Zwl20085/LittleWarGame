@@ -14,7 +14,7 @@ import { buildGameData } from '../src/data/loader';
 import { createMatch, step } from '../src/sim/sim';
 import { Ground } from '../src/sim/terrain';
 import { isRoadside } from '../src/sim/roadside';
-import { SHELTER_AB } from '../src/sim/shelter';
+import { housedIn, SHELTER_AB } from '../src/sim/shelter';
 import { resolveBlast } from '../src/sim/damage';
 import { Rng } from '../src/sim/rng';
 import type { V2 } from '../src/sim/vec';
@@ -62,7 +62,7 @@ for (const [k, p] of sites.entries()) {
       const x = u.pos.x + rng.normal() * sh.sigma;
       const z = u.pos.z + rng.normal() * sh.sigma;
       const before = u.hp;
-      const inCover = u.cover === 3;
+      const inCover = housedIn(w, u) >= 0;
       resolveBlast(w, { x, y: t.heightAt(x, z), z }, wd.blastRadius, wd.damage, wd.suppression, 1, sh.id, 'shell', null, sh.src);
       const acc = inCover ? perShell.wall : perShell.open;
       acc.n++;
@@ -70,11 +70,10 @@ for (const [k, p] of sites.entries()) {
     }
     for (let i = 0; i < w.tickHz; i++) step(m);
     if (u.status === 'status.takingCover') tookCover = true;
-    if (process.env.TRACE && k < 3 && s % 5 === 0) console.log(k, s, u.status, u.cover, Math.round(u.hp), u.pos.x.toFixed(0), u.pos.z.toFixed(0), u.moraleState, u.speedNow.toFixed(2));
   }
   lost += hp0 - Math.max(0, u.hp);
   if (u.hp <= 0) killed++;
   if (tookCover) covered++;
   w.units.delete(u.id);
 }
-console.log(`seed ${seed} shelter ${SHELTER_AB.enabled ? 'on' : 'off'} | trials ${sites.length} | squads that took cover ${covered} | HP lost ${Math.round(lost)} (${(lost / Math.max(1, sites.length)).toFixed(0)} per squad of ${data.units.get('infantry')!.maxHp}) | squads killed ${killed} | dmg/shell in the open ${(perShell.open.dmg / Math.max(1, perShell.open.n)).toFixed(0)} (${perShell.open.n}), at a wall ${(perShell.wall.dmg / Math.max(1, perShell.wall.n)).toFixed(0)} (${perShell.wall.n})`);
+console.log(`seed ${seed} shelter ${SHELTER_AB.enabled ? 'on' : 'off'} | trials ${sites.length} | squads that took cover ${covered} | HP lost ${Math.round(lost)} (${(lost / Math.max(1, sites.length)).toFixed(0)} per squad of ${data.units.get('infantry')!.maxHp}) | squads killed ${killed} | dmg/shell in the open ${(perShell.open.dmg / Math.max(1, perShell.open.n)).toFixed(0)} (${perShell.open.n}), inside a building ${(perShell.wall.dmg / Math.max(1, perShell.wall.n)).toFixed(0)} (${perShell.wall.n})`);
