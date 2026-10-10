@@ -35,11 +35,12 @@ describe('data loading (AGENT_HANDOFF §2)', () => {
 });
 
 describe('economy (BALANCE_SPEC §2)', () => {
-  it('default allocation yields P 123 / M 111 / L 46 / build ×1.0204', () => {
+  // 2.2 wave 2 supply tightening: logistics 6 + 30 × L (was 30 + 80 × L = 46).
+  it('default allocation yields P 123 / M 111 / L 12 / build ×1.0204', () => {
     const r = economyRates([0.35, 0.45, 0.2], rules);
     expect(r.pPerMin).toBeCloseTo(123);
     expect(r.mPerMin).toBeCloseTo(111);
-    expect(r.logistics).toBeCloseTo(46);
+    expect(r.logistics).toBeCloseTo(12);
     expect(r.buildTimeMul).toBeCloseTo(1.0204, 3);
   });
   it('E01: two purchases against stock for one — only one succeeds, never negative', () => {

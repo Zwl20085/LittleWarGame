@@ -32,7 +32,7 @@ CSV 字段中 `setup_seconds/pack_seconds` 为展开/收起工时，`member_coun
 ```text
 兵员收入 P/min = 60 + 180*xP + 地图兵员奖励
 军需收入 M/min = 30 + 180*xI + 地图军需奖励
-后勤通量 L     = 30 + 80*xL
+后勤通量 L     = 6 + 30*xL      （2.2 第二波收紧供给；2.1 为 30 + 80*xL，见 BALANCE_LAB 2026-10-10 供给）
 生产工时倍率   = 1 / (0.8 + 0.4*xI)
 ```
 
