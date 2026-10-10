@@ -159,3 +159,13 @@ README en + zh describe 2.2; version 2.2.0.
 | 2 | strategy | 6, 9-AI, balance | theatre/fronts/doctrine/operations, lab |
 | 2 | render | buildings / depots visuals | src/render/** |
 | 3 | media | 11, README, version | scripts/capture*, docs/media, README*.md |
+
+## 12. Roadside buildings as cover (item 12, added 2026-10-10)
+
+User: buildings must not exist only in towns/cities — several single buildings (farmsteads,
+barns, roadside inns, chapels, sheds) are spread along the roads so infantry can find cover when
+shelled. They are real map buildings (collide, block shells and LOS like town houses, can be
+damaged/ruined), generated deterministically from the map seed by `mapgen.ts`, kept clear of
+bridges, crossings and town cores, with sensible spacing (not every road metre). Infantry under
+artillery fire and with no works nearby move to the nearest roadside building within a short
+radius and take cover there; fronts may use them as strongpoints. Agent: "roadside" (wave 1b).
