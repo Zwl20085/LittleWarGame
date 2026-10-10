@@ -9,6 +9,7 @@ import { frontById } from './frontref';
 import { noteHit } from './events';
 import { noteBuildingHit, shieldBuilding } from './buildings';
 import { exposureSuppressionMul } from './terrainrules';
+import { noteShellBurst } from './shelter';
 import type { Fort, ProjectileKind, Unit, V3 } from './types';
 import { angleDiff, DEG, headingTo, type V2 } from './vec';
 import type { World } from './world';
@@ -149,6 +150,8 @@ export function resolveBlast(
   if (radius <= 0) return;
   // Structural damage: AP rounds are shaped for armour, not walls (capped and halved).
   noteBuildingHit(world, at, kind === 'ap' ? Math.min(damage, 150) * 0.5 : damage);
+  // 2.2: squads around an artillery / mortar burst look for a building to shelter in (shelter.ts).
+  if (kind === 'shell') noteShellBurst(world, at);
   const hits = world.spatial.query(at.x, at.z, radius + 4, SC_BLAST);
   for (const u of hits) {
     if (u.id === exclude || u.hp <= 0) continue;

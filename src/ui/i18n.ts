@@ -95,7 +95,7 @@ const zh: Dict = {
   'zone.worksTip': '工事：已建成 / 计划（堑壕、炮楼、堡垒），+在建', 'zone.cancel': '取消', 'zone.cancelTip': '停止该筑垒地域施工（已建成的工事保留）',
   // statuses
   'status.noArc': '无可行弹道', 'status.unreachable': '目标无法到达', 'status.routing': '溃退中', 'status.retreat': '撤退中',
-  'status.recovering': '休整补员', 'status.withdraw': '撤收', 'status.rally': '集结中', 'status.suppressed': '被压制，伏低',
+  'status.recovering': '休整补员', 'status.withdraw': '撤收', 'status.rally': '集结中', 'status.suppressed': '被压制，伏低', 'status.takingCover': '遭炮击，进屋隐蔽',
   'status.engaging': '交战中', 'status.holding': '据守', 'status.assaultCity': '进攻城市', 'status.advancing': '推进中',
   'status.firing': '射击', 'status.positioning': '转移阵位', 'status.covering': '架设警戒', 'status.settingUp': '架设中',
   'status.observing': '前沿观察', 'status.noBudget': '缺工程预算', 'status.building': '施工中', 'status.buildingPillbox': '修筑炮楼', 'status.buildingBunker': '修筑堡垒', 'status.garrisoned': '据守工事', 'status.enteringStructure': '进入工事驻防', 'status.supplying': '中继补给',
@@ -235,7 +235,7 @@ const en: Dict = {
   'zone.title': 'Fortified zones', 'zone.mapLabel': 'Fortified zone #{n}', 'zone.unheld': 'unheld', 'zone.works': '{n}/{of}', 'zone.building': '+{n} bldg',
   'zone.worksTip': 'Works finished / planned (trenches, pillboxes, bunkers), + under construction', 'zone.cancel': 'Cancel', 'zone.cancelTip': 'Stop work on this fortified zone (finished works remain)',
   'status.noArc': 'No firing solution', 'status.unreachable': 'Destination unreachable', 'status.routing': 'Routing', 'status.retreat': 'Retreating',
-  'status.recovering': 'Refitting', 'status.withdraw': 'Withdrawing', 'status.rally': 'Rallying', 'status.suppressed': 'Suppressed — going to ground',
+  'status.recovering': 'Refitting', 'status.withdraw': 'Withdrawing', 'status.rally': 'Rallying', 'status.suppressed': 'Suppressed — going to ground', 'status.takingCover': 'Shelled — taking cover in a building',
   'status.engaging': 'Engaging', 'status.holding': 'Holding', 'status.assaultCity': 'Assaulting city', 'status.advancing': 'Advancing',
   'status.firing': 'Firing', 'status.positioning': 'Repositioning', 'status.covering': 'Deployed, covering', 'status.settingUp': 'Deploying',
   'status.observing': 'Forward observing', 'status.noBudget': 'No works budget', 'status.building': 'Building', 'status.buildingPillbox': 'Building a pillbox', 'status.buildingBunker': 'Building a bunker', 'status.garrisoned': 'Manning a strongpoint', 'status.enteringStructure': 'Moving into a strongpoint', 'status.supplying': 'Relaying supply',
