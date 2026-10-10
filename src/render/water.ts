@@ -61,10 +61,12 @@ void main() {
   float detail = 1.0 - smoothstep(0.9, 3.2, px);
   float e = 1.5;
   float w0 = waves(p);
-  vec3 N = normalize(vec3((w0 - waves(p + vec2(e, 0.0))) * 0.18 * detail, 1.0, (w0 - waves(p + vec2(0.0, e))) * 0.18 * detail));
+  vec3 N = normalize(vec3((w0 - waves(p + vec2(e, 0.0))) * 0.3 * detail, 1.0, (w0 - waves(p + vec2(0.0, e))) * 0.3 * detail));
   float dif = 0.8 + 0.2 * max(dot(N, uSun), 0.0); // calm, matte diorama water (no marbling)
   vec3 H = normalize(uSun + uView);
-  float spec = pow(max(dot(N, H), 0.0), 60.0) * 0.22 * detail;
+  float spec = pow(max(dot(N, H), 0.0), 60.0) * 0.3 * detail;
+  // Ripple tone: troughs a touch darker, crests catch the sky (reads as moving water at rest).
+  col *= mix(1.0, 0.92 + 0.16 * w0, detail);
   // Bank foam: a soft broken line where the water meets the shore.
   float foamN = mix(0.7, 0.45 + 0.55 * vn(p * 0.7 + vec2(uTime * 0.13, uTime * 0.07)), detail);
   float foam = smoothstep(0.02, 0.18, d) * (1.0 - smoothstep(0.2, 0.75, d)) * foamN;

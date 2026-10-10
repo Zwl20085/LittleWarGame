@@ -11,6 +11,8 @@ export interface TerrainUniforms {
   readonly uTerrainLayer: { value: number };
   /** Territory tint strength (softer when zoomed in). */
   readonly uOverlayK: { value: number };
+  /** Ground texture noise on (1) / off (0, low quality tier). */
+  readonly uDetail: { value: number };
   readonly uFieldCols: { value: THREE.Color[] };
   readonly uHedge: { value: THREE.Color };
   readonly uRoad: { value: THREE.Color };
@@ -56,6 +58,7 @@ uniform vec2 uSize;
 uniform vec2 uOverlayRes;
 uniform float uTerrainLayer;
 uniform float uOverlayK;
+uniform float uDetail;
 uniform vec3 uFieldCols[6];
 uniform vec3 uHedge;
 uniform vec3 uRoad;
@@ -91,7 +94,7 @@ float mpp = length(fwidth(vWPos.xz)) * 0.7071; // metres per pixel
 // fallback when no texture is bound.
 float roadD = uRoadGrid.x > 0.0 ? texture2D(uRoadTex, (vWPos.xz / uRoadGrid.x + 0.5) / uRoadGrid.yz).r * 255.0 / uRoadScale : vRoadD;
 float flatK = smoothstep(0.55, 0.85, vWNor.y);
-{
+if (uDetail > 0.5) {
   float n0 = vnoise(vWPos.xz * 0.055 + 7.0);
   float n1 = vnoise(vWPos.xz * 0.21 + 3.0);
   float n2 = vnoise(vWPos.xz * 0.83);
@@ -237,6 +240,7 @@ export function terrainMaterial(overlay: THREE.Texture, width: number, depth: nu
     uOverlayRes: { value: overlayRes },
     uTerrainLayer: { value: 0 },
     uOverlayK: { value: 1 },
+    uDetail: { value: 1 },
     uFieldCols: { value: PAL.fields.slice(0, 6) },
     uHedge: { value: PAL.hedge },
     uRoad: { value: PAL.road },

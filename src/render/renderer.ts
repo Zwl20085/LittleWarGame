@@ -507,6 +507,7 @@ export class GameRenderer {
     this.haze.update(ppm);
     const q = this.quality.profile;
     this.terrainView.scatter.visible = ppm > 1 && q.scatter;
+    this.terrainView.uniforms.uDetail.value = q.groundDetail ? 1 : 0;
     // Town detail: sub-pixel at the overview, and dropped on the medium / low tiers.
     const townDetail = ppm > 2.5 && q.townProps;
     this.terrainView.settlements.setDetail(townDetail);
