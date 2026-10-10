@@ -33,17 +33,19 @@ export const ECON_AI = {
 /**
  * 2.2 wave 2 (V22_SPEC §5): investment vs army. Appetite 0 … ~1.5 = territory wealth (held places
  * vs the mean of the living factions) × safety (our army vs the strongest known hostile army);
- * 0 while the capital is threatened or the directive is Defend / Contract. It scales the share of
+ * 0 while an attack on the capital is coming (homeThreat.alert) or the directive is Defend / Contract. It scales the share of
  * income set aside, the sites built at once and the cash reserve kept for the army.
  */
 export const APPETITE = {
   richLo: 0.5,
   richHi: 1.6,
   /** Army ratio (ours ÷ strongest known hostile): no safety at safeLo, full at safeHi. */
-  safeLo: 0.6,
-  safeHi: 1.2,
+  safeLo: 0.5,
+  safeHi: 1.0,
   /** Safety floor of the appetite (a weak but unthreatened side still invests a little). */
-  safeFloor: 0.35,
+  safeFloor: 0.5,
+  /** Scale so a faction of average wealth and safety invests about the wave-1 share. */
+  scale: 1.25,
   /** Extra safe distance from hostile ground when unsafe (m). */
   unsafeDistance: 300,
 } as const;
@@ -51,7 +53,7 @@ export const APPETITE = {
 const clamp = (x: number, lo: number, hi: number): number => Math.max(lo, Math.min(hi, x));
 
 export function investAppetite(world: World, f: Faction): { appetite: number; safe: number } {
-  if (f.command.homeThreat.active || f.directive.kind === 'defend' || f.directive.kind === 'contract') return { appetite: 0, safe: 0 };
+  if (f.command.homeThreat.alert || f.directive.kind === 'defend' || f.directive.kind === 'contract') return { appetite: 0, safe: 0 };
   const held = new Map<number, number>();
   for (const o of world.objectives) if (o.owner >= 0 && o.kind !== 'point') held.set(o.owner, (held.get(o.owner) ?? 0) + (o.kind === 'city' ? 3 : o.kind === 'town' ? 2 : 1));
   const alive = world.factions.filter((x) => x.alive);
@@ -68,7 +70,7 @@ export function investAppetite(world: World, f: Faction): { appetite: number; sa
   const top = Math.max(0, ...theirs.values());
   const ratio = top > 0 ? mine / top : 2;
   const safe = clamp((ratio - APPETITE.safeLo) / (APPETITE.safeHi - APPETITE.safeLo), 0, 1);
-  return { appetite: rich * (APPETITE.safeFloor + (1 - APPETITE.safeFloor) * safe), safe };
+  return { appetite: APPETITE.scale * rich * (APPETITE.safeFloor + (1 - APPETITE.safeFloor) * safe), safe };
 }
 
 const appetites = new WeakMap<Faction, number>();

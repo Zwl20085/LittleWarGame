@@ -24,7 +24,7 @@ import { takeShelter } from './shelter';
 import type { Front, Unit } from './types';
 import { dist, headingTo, type V2 } from './vec';
 import type { World } from './world';
-import { paceArmour } from './armour';
+import { ARMOUR_AB, orphanTank, paceArmour } from './armour';
 import { thinkEconRaid } from './econwar';
 
 /** Deterministic per-unit spread offset so a squad group doesn't stack on one point. */
@@ -132,14 +132,16 @@ export function thinkUnit(world: World, u: Unit): void {
   // 2.0 defensive buildings (structures.ts, works agent): man a pillbox / bunker, work an assigned site, or go to a free building.
   // Round 7: HQ-point holders and breach responders before structure duty (a pillbox off the point must not hold them).
   // 2.2 (V22_SPEC §3.4): out of ammunition (fresh from production, or run dry) → nearest truck / stock first.
-  if (rearmDuty(world, u, moveTo, stop, isCommander(u.def))) {
+  // (2.2 wave 2: a raid party fights with what it carries; it does not walk home to rearm.)
+  if (u.opRole !== 'raid' && rearmDuty(world, u, moveTo, stop, isCommander(u.def))) {
     selectTarget(world, u, null);
     return;
   }
   if (u.opRole === 'garrison' && hqDuty(world, u)) return;
   if (u.def.id !== 'supply_truck' && structureDuty(world, u, s)) return;
   // 2.2: shelled in the open → the nearest free building's lee wall until the shelling stops (shelter.ts).
-  if (takeShelter(world, u)) return;
+  // (2.2 wave 2: a raid party keeps moving under fire — getting through is its job.)
+  if (u.opRole !== 'raid' && takeShelter(world, u)) return;
   if (u.def.id === 'supply_truck') return thinkConvoyTruck(world, u);
   if (u.spearhead && thinkSpearhead(world, u)) return;
   if (u.opRole === 'garrison' && thinkGarrison(world, u)) return;
@@ -151,7 +153,8 @@ export function thinkUnit(world: World, u: Unit): void {
   if (u.opRole === 'rearguard' && thinkRearGuard(world, u)) return;
   // 2.1: a unit on a binding line order keeps its place on the line (no truck hunts / escorts away from it).
   const onLine = boundLine(s);
-  if (!onLine && (u.def.id === 'recon' || u.def.id === 'light_tank') && thinkRaid(world, u)) return;
+  // 2.2 (V22_SPEC §7): light tanks stay with their armour group; recon hunts the trucks.
+  if (!onLine && (u.def.id === 'recon' || (u.def.id === 'light_tank' && !ARMOUR_AB.on)) && thinkRaid(world, u)) return;
   if (!onLine && u.def.kind !== 'crew' && thinkEscort(world, u)) return;
   if (s.posture === 'withdraw') {
     u.behavior = 'rally';
@@ -649,6 +652,7 @@ function thinkSpearhead(world: World, u: Unit): boolean {
     u.spearhead = null;
     return false;
   }
+  if (orphanTank(world, u, pos)) return false;
   selectTarget(world, u, pos);
   const off = spread(u, 24);
   // 2.2: tanks lead the thrust but wait for the riflemen (armour.paceArmour).
@@ -664,6 +668,7 @@ function thinkManeuver(world: World, u: Unit): boolean {
     u.opRole = 'line';
     return false;
   }
+  if (orphanTank(world, u, u.opTarget)) return false;
   selectTarget(world, u, u.opTarget);
   const off = spread(u, 30);
   if (u.moraleState === 'pinned' || paceArmour(world, u, u.opTarget)) stop(u);

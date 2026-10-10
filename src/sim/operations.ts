@@ -122,12 +122,13 @@ export function crowding(world: World, u: Unit): number {
   return n;
 }
 
-const isRaider = (u: Unit): boolean => u.def.id === 'light_tank' || u.def.id === 'recon' || u.def.id === 'infantry' || u.def.id === 'motor_inf';
+// 2.2 (V22_SPEC §7): no lone light tanks on convoy raids or rear-guard posts (armour fights in groups).
+const isRaider = (u: Unit): boolean => u.def.id === 'recon' || u.def.id === 'infantry' || u.def.id === 'motor_inf';
 // Round 4: MGs no longer guard routes (they were 39 % of all MGs, idle at the rear; crewai.ts puts them at the front).
 /** Round 4: a rear-guard post on the unit's own nav grid (soak: guards 'unreachable' on steep / water route points). */
 const guardSpot = (world: World, u: Unit, p: V2): V2 => (stormOn() ? navPost(world, u, p) : p);
 
-const isGuard = (u: Unit): boolean => u.def.id === 'infantry' || u.def.id === 'motor_inf' || (u.def.id === 'mg' && !stormOn()) || u.def.id === 'light_tank';
+const isGuard = (u: Unit): boolean => u.def.id === 'infantry' || u.def.id === 'motor_inf' || (u.def.id === 'mg' && !stormOn());
 
 /**
  * Faction-level operations (every front think, cheap): keep a rear guard on our convoy routes

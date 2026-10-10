@@ -3,6 +3,7 @@ import { loadGameData } from '../src/data';
 import { createMatch } from '../src/sim/sim';
 import { ARMOUR, armourFront, blockGoal, paceArmour } from '../src/sim/armour';
 import { pickFront } from '../src/sim/production';
+import { ARTY, shellWorth } from '../src/sim/combat';
 import type { Unit } from '../src/sim/types';
 import { dist, type V2 } from '../src/sim/vec';
 
@@ -86,5 +87,15 @@ describe('2.2 armour tactics (V22_SPEC §7)', () => {
     expect(pickFront(w, f, 'infantry')).not.toBe(main.id);
     f.directive = { kind: 'contract', axis: null, line: null, issuedAt: 0, manual: true };
     expect(armourFront(w, f)).toBe(-1);
+  });
+});
+
+describe('2.2 artillery conserves shells (wave 2)', () => {
+  it('a lone squad inside a building or a lone vehicle is not worth a shell; an exposed group is', () => {
+    expect(shellWorth(0.8, true, 0)).toBeLessThan(ARTY.minWorth);
+    expect(shellWorth(0.25, false, 0)).toBeLessThan(ARTY.minWorth);
+    expect(shellWorth(0.8, false, 0)).toBeGreaterThan(ARTY.minWorth + ARTY.lowAmmoExtra);
+    expect(shellWorth(0.8, true, 1)).toBeGreaterThan(ARTY.minWorth);
+    expect(shellWorth(1, false, 1)).toBeGreaterThan(shellWorth(0.8, false, 0));
   });
 });

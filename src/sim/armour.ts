@@ -173,6 +173,20 @@ export function paceArmour(world: World, u: Unit, goal: V2): boolean {
   return dist(u.pos, goal) < lead - ARMOUR.paceM;
 }
 
+/**
+ * A spearhead / manoeuvre tank whose riflemen are all gone does not drive on alone: it returns to
+ * its front's armour block (true = the detachment was ended).
+ */
+export function orphanTank(world: World, u: Unit, goal: V2): boolean {
+  if (!ARMOUR_AB.on || !isTank(u)) return false;
+  const key = groupKey(u);
+  if (!key || Number.isFinite(footLead(world, key, goal))) return false;
+  u.spearhead = null;
+  if (u.opRole === 'maneuver') u.opRole = 'line';
+  u.opTarget = u.opRole === 'line' ? null : u.opTarget;
+  return true;
+}
+
 // ---------------------------------------------------------------- concentration at the main effort
 
 /** Main effort that takes the armour: offensive, or a defence / fortify with an axis (the threatened place), else under advance the main front while it holds < advanceMainShare of the tanks. */

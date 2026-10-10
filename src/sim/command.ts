@@ -178,7 +178,8 @@ function chooseFinishTarget(world: World, f: Faction, army: number, known: Map<n
 /** 2.2: directives under which bound fronts still garrison towns with economic buildings. */
 const ECON_GUARD_DIRECTIVES = new Set(['defend', 'fortify', 'contract']);
 
-const GARRISON_TYPES = new Set(['infantry', 'motor_inf', 'mg', 'at_gun', 'engineer', 'light_tank', 'medium_tank', 'heavy_tank']);
+// 2.2 (V22_SPEC §7): tanks are not parcelled out to town garrisons; they fight in groups.
+const GARRISON_TYPES = new Set(['infantry', 'motor_inf', 'mg', 'at_gun', 'engineer']);
 const OCCUPY_TYPES = new Set(['infantry', 'motor_inf', 'engineer', 'recon']);
 
 const valueOf = (u: Unit): number => (isCommander(u.def) ? 0 : (u.def.costP + u.def.costM) * (u.hp / u.def.maxHp));

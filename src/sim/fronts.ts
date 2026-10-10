@@ -15,7 +15,7 @@ import type { World } from './world';
 import { isCommander } from './formulas';
 import { activeSegment, inMass, LINE_ORDER, lineThrough, massSlot, orderAlong, terrainLine } from './frontslots';
 import { boundLine, boundOrder, frontById } from './frontref';
-import { armourSlots } from './armour';
+import { armourSlots, isTank } from './armour';
 import { econWorth, planEconRaids } from './econwar';
 
 export { frontById };
@@ -857,13 +857,16 @@ function eagerPush(world: World, f: Faction, s: Front, units: Unit[], anchor: V2
  * to drive through the front and seize an enemy settlement behind it — or the enemy capital.
  */
 const SPEAR_MOBILE = new Set(['light_tank', 'medium_tank', 'heavy_tank', 'motor_inf']);
-const spearReady = (u: Unit): boolean => !u.spearhead && !u.manual && !u.routing && u.behavior === 'advance' && u.hp > u.def.maxHp * 0.6;
+// 2.2 wave 2: a unit on a detachment (raid, garrison …) is not pulled into a thrust.
+const spearReady = (u: Unit): boolean => !u.spearhead && !u.manual && !u.routing && u.behavior === 'advance' && u.hp > u.def.maxHp * 0.6 && u.opRole === 'line';
 /** Fresh tanks and motorized squads free for a thrust. */
 function mobileFresh(units: Unit[]): number {
   let n = 0;
   for (const u of units) if (SPEAR_MOBILE.has(u.def.id) && spearReady(u)) n++;
   return n;
 }
+
+const spearRank = (u: Unit): number => (isTank(u) ? 0 : SPEAR_MOBILE.has(u.def.id) ? 1 : 2);
 
 function launchSpearhead(world: World, f: Faction, s: Front, units: Unit[], anchor: V2): void {
   let target: string | null = null;
@@ -901,7 +904,8 @@ function launchSpearhead(world: World, f: Faction, s: Front, units: Unit[], anch
     .filter((u) => spearReady(u)
       && (u.def.kind === 'vehicle' ? u.def.id !== 'supply_truck' : u.def.id === 'infantry' || u.def.id === 'engineer' || u.def.id === 'motor_inf'))
     // Armour and motorized rifles lead the thrust; then the nearest riflemen.
-    .sort((a, b) => (SPEAR_MOBILE.has(b.def.id) ? 1 : 0) - (SPEAR_MOBILE.has(a.def.id) ? 1 : 0) || dist(a.pos, anchor) - dist(b.pos, anchor));
+    // 2.2 (V22_SPEC §7): the tanks first, so the front's armour goes as one group, not one by one.
+    .sort((a, b) => spearRank(a) - spearRank(b) || dist(a.pos, anchor) - dist(b.pos, anchor));
   const size = Math.max(4, Math.round(units.length * EAGER.spearShare));
   // Riflemen to take the objective: at least 3 foot squads ride with an armoured thrust.
   const head = pool.slice(0, size);

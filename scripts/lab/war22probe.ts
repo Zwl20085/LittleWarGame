@@ -21,23 +21,24 @@ export interface WarProbe {
   // economy war
   econDestroyed: { by: number; victim: number; raid: boolean; kind: string }[];
   raidUnits: number; raidDeaths: number; raidValueLost: number; raidValueSent: number;
+  econRaidUnits: number; econRaidDeaths: number; econRaidValueLost: number;
   econIncomeSum: number[]; incomeSum: number[];
   // supply
   supply: { t: number; f: number; stockRatio: number; frontStockRatio: number; frontPlaces: number; lowMain: number; mainN: number; lowFight: number; fightN: number; rearm: number; logi: number; allocL: number }[];
   // war progress
   captures: number; capturesByMinute: number[];
   // per-tick memo (not reported)
-  memo: Map<number, TankMemo>; raidMemo: Map<number, number>; econRuined: Set<number>; open: Map<string, Episode>; owners: Map<string, number>;
+  memo: Map<number, TankMemo>; raidMemo: Map<number, number>; econMemo: Map<number, number>; econRuined: Set<number>; open: Map<string, Episode>; owners: Map<string, number>;
 }
 
 export function createWarProbe(w: World): WarProbe {
   return {
     clusterSum: 0, clusterN: 0, engagedClusterSum: 0, engagedClusterN: 0, attackTankSamples: 0, attackTankInGroup3: 0,
     tankDeaths: 0, tankDeathsAlone: 0, tankDeathsAloneNoFoot: 0, tankDeathsAttacking: 0, episodes: [],
-    econDestroyed: [], raidUnits: 0, raidDeaths: 0, raidValueLost: 0, raidValueSent: 0,
+    econDestroyed: [], raidUnits: 0, raidDeaths: 0, raidValueLost: 0, raidValueSent: 0, econRaidUnits: 0, econRaidDeaths: 0, econRaidValueLost: 0,
     econIncomeSum: w.factions.map(() => 0), incomeSum: w.factions.map(() => 0),
     supply: [], captures: 0, capturesByMinute: [],
-    memo: new Map(), raidMemo: new Map(), econRuined: new Set(w.econ.filter((b) => b.ruined).map((b) => b.id)), open: new Map(),
+    memo: new Map(), raidMemo: new Map(), econMemo: new Map(), econRuined: new Set(w.econ.filter((b) => b.ruined).map((b) => b.id)), open: new Map(),
     owners: new Map(w.objectives.map((o) => [o.id, o.owner])),
   };
 }
@@ -108,6 +109,15 @@ export function warSecond(w: World, p: WarProbe): void {
     if (u && u.hp > 0 && u.opRole === 'raid') continue;
     p.raidMemo.delete(id);
     if (!u || u.hp <= 0) { p.raidDeaths++; p.raidValueLost += v; }
+  }
+  for (const u of w.units.values()) {
+    if (u.hp > 0 && u.opRole === 'raid' && u.opObjective?.startsWith('econ:') && !p.econMemo.has(u.id)) { p.econMemo.set(u.id, value(u)); p.econRaidUnits++; }
+  }
+  for (const [id, v] of p.econMemo) {
+    const u = w.units.get(id);
+    if (u && u.hp > 0 && u.opRole === 'raid') continue;
+    p.econMemo.delete(id);
+    if (!u || u.hp <= 0) { p.econRaidDeaths++; p.econRaidValueLost += v; }
   }
   // Economic buildings destroyed: by whom (hostile units within 45 m), raiders or not.
   for (const b of w.econ) {
@@ -215,6 +225,7 @@ export function warSummary(w: World, p: WarProbe): Record<string, unknown> {
     attackTankSamples: p.attackTankSamples, attackTankInGroup3: p.attackTankInGroup3,
     tankDeaths: p.tankDeaths, tankDeathsAlone: p.tankDeathsAlone, tankDeathsAloneNoFoot: p.tankDeathsAloneNoFoot, tankDeathsAttacking: p.tankDeathsAttacking,
     episodes: p.episodes, econDestroyed: p.econDestroyed,
+    econRaidUnits: p.econRaidUnits, econRaidDeaths: p.econRaidDeaths, econRaidValueLost: p.econRaidValueLost,
     raidUnits: p.raidUnits, raidDeaths: p.raidDeaths, raidValueLost: p.raidValueLost, raidValueSent: p.raidValueSent,
     invested, spent, econIncomeSum: p.econIncomeSum, incomeSum: p.incomeSum,
     econBuilt: w.factions.map((f) => w.econ.filter((b) => b.owner === f.id && !b.ruined && b.progress >= 1).length),

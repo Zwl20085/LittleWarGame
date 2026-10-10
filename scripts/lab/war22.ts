@@ -79,7 +79,8 @@ function report(rs: Sum[], label: string): string {
   L.push(`| … by raid / infiltration parties | ${des.filter((d) => d.raid).length} |`);
   const per = [0, 1, 2, 3].map((fi) => `F${fi} ${des.filter((d) => d.raid && d.by === fi).length}/${des.filter((d) => d.victim === fi).length}`).join(' · ');
   L.push(`| raid kills by side / buildings lost by side | ${per} |`);
-  L.push(`| raid units sent / lost | ${sum(rs, 'raidUnits')} / ${sum(rs, 'raidDeaths')} (${pct(sum(rs, 'raidDeaths'), sum(rs, 'raidUnits'))}) |`);
+  L.push(`| economic-raid squads sent / lost (value lost) | ${sum(rs, 'econRaidUnits') || 0} / ${sum(rs, 'econRaidDeaths') || 0} (${Math.round(sum(rs, 'econRaidValueLost') || 0)}) |`);
+  L.push(`| all raid units (convoy + economic) sent / lost | ${sum(rs, 'raidUnits')} / ${sum(rs, 'raidDeaths')} (${pct(sum(rs, 'raidDeaths'), sum(rs, 'raidUnits'))}) |`);
   L.push(`| raid value lost / sent | ${Math.round(sum(rs, 'raidValueLost'))} / ${Math.round(sum(rs, 'raidValueSent'))} |`);
   L.push(`| investment share (econ P+M ÷ all P+M spent) | ${pct(inv, spent)} |`);
   L.push(`| econ income share of all income | ${pct(eInc, inc)} |`);
