@@ -1,10 +1,12 @@
 import { deadCapital, maneuvering } from './doctrine';
 import { isCommander } from './formulas';
+import { directiveContext, givenByDirective, respondToDirective, setResponse } from './frontresponse';
 import { counterStrikes } from './frontref';
 import { assignWings, createFront, dissolveFront, transferable } from './frontops';
 import { finishNow, frontGroups, issueFrontOrder, nextTarget } from './fronts';
 import { defendingHome, HOME, isRecalled, ROUND7_AB } from './homeguard';
 import { hostileMask } from './spatial';
+import { centroid, combatOf, enemyNear, segDist, sumValue, valueOf } from './theatreq';
 import { capitalDefence } from './storm';
 import { stormOn, STRATEGY_AI } from './strategyai';
 import { isStructure } from './structures';
@@ -143,29 +145,30 @@ function metaOf(world: World, s: Front): Meta {
   return m;
 }
 
-const valueOf = (u: Unit): number => (u.def.costP + u.def.costM) * (u.hp / u.def.maxHp);
-const combatOf = (units: Unit[]): Unit[] => units.filter((u) => !isCommander(u.def) && u.def.id !== 'supply_truck');
-const sumValue = (units: Unit[]): number => units.reduce((a, u) => a + valueOf(u), 0);
-
-function centroid(units: Unit[], fallback: V2): V2 {
-  if (units.length === 0) return fallback;
-  let x = 0;
-  let z = 0;
-  for (const u of units) { x += u.pos.x; z += u.pos.z; }
-  return { x: x / units.length, z: z / units.length };
-}
-
-function enemyNear(world: World, f: number, at: V2, r: number): number {
-  let v = 0;
-  for (const u of world.spatial.queryOwners(at.x, at.z, r, hostileMask(world, f))) {
-    if (u.hp > 0 && world.knows(f, u) && !isCommander(u.def)) v += (u.def.costP + u.def.costM) * (u.hp / (u.fixed ? 1400 : u.def.maxHp));
-  }
-  return v;
-}
-
-/** AI supreme-HQ pass (from command.thinkHighCommand, every HQ think). */
+/**
+ * Supreme-HQ pass (from command.thinkHighCommand, every HQ think) — 2.2: for every faction, the
+ * player's included: fronts are opened, merged and dissolved automatically, and every front
+ * commander answers the faction's directive (frontresponse.ts; `advance` = the 2.1 orders below).
+ */
 export function thinkTheatre(world: World, f: Faction): void {
-  if (f.isPlayer || !f.alive || f.fronts.length === 0 || !STRATEGY_AI.theatre) return;
+  if (!f.alive || f.fronts.length === 0 || !STRATEGY_AI.theatre) return;
+  const combat = combatByFront(world, f);
+  assignWings(world, f);
+  upkeepZoneGarrisons(world, f);
+  if (THEATRE_AB.structure && world.time >= (nextChange.get(f) ?? 0) && restructure(world, f, combat)) nextChange.set(f, world.time + THEATRE.changeEveryS);
+  // A counter-strike is the HQ's own initiative: not while the directive is to defend, fortify or contract.
+  const dk = f.directive.kind;
+  if (THEATRE_AB.counter && (dk === 'advance' || dk === 'offensive')) counterStrike(world, f, combat);
+  respondAll(world, f, combat);
+}
+
+/** 2.2: a new directive is answered at once (the command bus calls this; no wait for the next HQ think). */
+export function applyDirectiveNow(world: World, f: Faction): void {
+  if (!f.alive || f.fronts.length === 0 || !STRATEGY_AI.theatre) return;
+  respondAll(world, f, combatByFront(world, f));
+}
+
+function combatByFront(world: World, f: Faction): Map<number, Unit[]> {
   const groups = frontGroups(world, f);
   const combat = new Map<number, Unit[]>();
   for (const s of f.fronts) {
@@ -175,11 +178,38 @@ export function thinkTheatre(world: World, f: Faction): void {
     if (c.length > 0) m.emptySince = -1;
     else if (m.emptySince < 0) m.emptySince = world.time;
   }
-  assignWings(world, f);
-  upkeepZoneGarrisons(world, f);
-  if (THEATRE_AB.structure && world.time >= (nextChange.get(f) ?? 0) && restructure(world, f, combat)) nextChange.set(f, world.time + THEATRE.changeEveryS);
-  if (THEATRE_AB.counter) counterStrike(world, f, combat);
-  for (const s of [...f.fronts]) orderFront(world, f, s, combat.get(s.id) ?? []);
+  return combat;
+}
+
+/**
+ * Every front commander answers the directive. Zone garrisons keep their line, recalled fronts
+ * defend the capital, a counter-strike runs on; the rest respond (frontresponse.ts) or, under
+ * `advance`, take the 2.1 order (orderFront).
+ */
+function respondAll(world: World, f: Faction, combat: Map<number, Unit[]>): void {
+  const field = f.fronts.filter((s) => !zoneGarrisons.has(s));
+  const ctx = directiveContext(world, f, field, (s) => sumValue(combat.get(s.id) ?? []));
+  for (const s of [...f.fronts]) {
+    if (!f.fronts.includes(s)) continue;
+    const c = combat.get(s.id) ?? [];
+    if (zoneGarrisons.has(s)) setResponse(s, 'resp.zone', { point: s.name });
+    else if (isRecalled(f, s) || defendingHome(s)) setResponse(s, 'resp.home');
+    else if (counterStrikes.has(s)) setResponse(s, 'resp.counterStrike', s.targetCity !== null ? { city: s.targetCity } : {});
+    else if (!respondToDirective(world, f, s, c, ctx)) {
+      // Leaving a player directive: the front's binding order lapses and its commander decides again (2.1).
+      if (s.order.manual && givenByDirective(s.order)) issueFrontOrder(world, f, s, order(world, 'auto', s.targetPos));
+      orderFront(world, f, s, c);
+      advanceResponse(f, s);
+    }
+  }
+}
+
+/** Card text for a front under `advance` (or the AI's finisher offensive): its own order. */
+function advanceResponse(f: Faction, s: Front): void {
+  const fin = f.command.finisher && f.command.finishTarget >= 0 && s.targetCity === f.command.finishTarget;
+  if (fin) setResponse(s, 'resp.finish', { city: f.command.finishTarget });
+  else if (s.order.kind === 'attack' || s.order.kind === 'auto') setResponse(s, 'resp.adv.attack', s.targetCity !== null ? { city: s.targetCity } : { point: s.targetObjective ?? '' });
+  else setResponse(s, `resp.adv.${s.order.kind}`, { point: s.targetObjective ?? '' });
 }
 
 // ---------------------------------------------------------------- structure
@@ -240,7 +270,7 @@ export const garrisonsZone = (s: Front): boolean => zoneGarrisons.has(s);
 /** Not in the middle of something a merge would break. */
 function mergeable(world: World, f: Faction, s: Front): boolean {
   return !zoneGarrisons.has(s) && world.time - metaOf(world, s).createdAt >= THEATRE.minAgeS && !maneuvering(s) && s.opPhase !== 'assault'
-    && !(s.op === 'siege' && s.opPhase !== '') && !isRecalled(f, s) && !defendingHome(s) && !counterStrikes.has(s) && !s.manualTarget;
+    && !(s.op === 'siege' && s.opPhase !== '') && !isRecalled(f, s) && !defendingHome(s) && !counterStrikes.has(s);
 }
 
 /** At most one structural change; true if one was made. */
@@ -318,15 +348,6 @@ function extraObjective(world: World, f: Faction): Objective | null {
     bestB = b;
   }
   return best;
-}
-
-/** Distance from `p` to the segment a–b. */
-function segDist(p: V2, a: V2, b: V2): number {
-  const vx = b.x - a.x;
-  const vz = b.z - a.z;
-  const l2 = vx * vx + vz * vz;
-  const t = l2 > 0 ? Math.max(0, Math.min(1, ((p.x - a.x) * vx + (p.z - a.z) * vz) / l2)) : 0;
-  return Math.hypot(p.x - (a.x + vx * t), p.z - (a.z + vz * t));
 }
 
 const zoneCentre = (z: Zone): V2 => ({ x: (z.a.x + z.b.x) / 2, z: (z.a.z + z.b.z) / 2 });

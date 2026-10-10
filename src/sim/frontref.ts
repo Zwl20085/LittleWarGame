@@ -22,6 +22,12 @@ export const boundOrder = (s: Front): boolean => s.order.manual && s.order.kind 
 /** A binding line order (defend / fortify / fall back): every unit holds the ordered line. */
 export const boundLine = (s: Front): boolean => boundOrder(s) && s.order.kind !== 'attack';
 
+/**
+ * 2.2: may the HQ draw town garrisons from this front? Not from a binding order — except under the
+ * Contract directive, whose fronts give up exposed ground and garrison the towns they keep.
+ */
+export const lendsGarrisons = (f: Faction, s: Front): boolean => !boundOrder(s) || f.directive.kind === 'contract';
+
 /** Is unit `u` (front id `frontId`) on a front with a binding order? */
 export const onBoundFront = (f: Faction, frontId: number): boolean => {
   const s = frontById(f, frontId);

@@ -1,15 +1,16 @@
 import type { GameRenderer } from '../render/renderer';
 import type { Command, CommandBus } from '../sim/commands';
 import type { Match } from '../sim/sim';
-import type { OrderKind } from '../sim/types';
+import type { DirectiveKind } from '../sim/types';
 
 export type InputMode =
   | { kind: 'normal' }
   | { kind: 'attackMove' }
-  /** Supreme-HQ order being placed on the map (click = point; the UI may extend to drag = line). */
-  | { kind: 'frontOrder'; frontId: number | null; order: OrderKind }
-  /** 2.1: the supreme HQ opens a new front where the player clicks. */
-  | { kind: 'newFront' };
+  /**
+   * 2.2: a directive was just issued and its optional place is being picked on the map:
+   * click = axis (main effort / threatened place), drag (fortify) = a fortified line.
+   */
+  | { kind: 'directive'; directive: DirectiveKind };
 
 /** Shared state between the loop, input handling and HUD panels. */
 export interface GameContext {

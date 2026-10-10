@@ -6,6 +6,7 @@ import { defendingHome } from './homeguard';
 import { isCommander } from './formulas';
 import { garrisonsZone, THEATRE } from './theatre';
 import { boundOrder } from './frontref';
+import { directiveMain, RESPONSE } from './frontresponse';
 import type { World } from './world';
 import { thinkInvestment } from './econai';
 
@@ -36,16 +37,22 @@ function knownEnemyMix(world: World, f: number): { armor: number; total: number 
   return { armor, total };
 }
 
-/** City planner for AI factions: production mix, postures and reserves. Same interfaces as the player. */
+/**
+ * City planner: production mix (AI factions only — the player sets its own), and for every faction
+ * (2.2: the player's fronts are run by their commanders too) front postures, the main effort and
+ * reinforcement shares.
+ */
 export function thinkCity(world: World, f: Faction): void {
-  if (!f.alive || f.isPlayer) return;
-  const w = personalityWeights(world, f.personality);
-  const mix = knownEnemyMix(world, f.id);
-  if (mix.total > 0 && mix.armor / mix.total > 0.2) {
-    w.at_gun = (w.at_gun ?? 0) * 1.6;
-    w.medium_tank = (w.medium_tank ?? 0) * 1.2;
+  if (!f.alive) return;
+  if (!f.isPlayer) {
+    const w = personalityWeights(world, f.personality);
+    const mix = knownEnemyMix(world, f.id);
+    if (mix.total > 0 && mix.armor / mix.total > 0.2) {
+      w.at_gun = (w.at_gun ?? 0) * 1.6;
+      w.medium_tank = (w.medium_tank ?? 0) * 1.2;
+    }
+    f.weights = w;
   }
-  f.weights = w;
   // Postures: strongest front assaults, others push cautiously; hold freshly taken points.
   // Value per front id (ids are stable, not indices: theatre.ts creates and dissolves fronts).
   const strength = new Map<number, number>(f.fronts.map((s) => [s.id, 0]));
@@ -70,6 +77,8 @@ export function thinkCity(world: World, f: Faction): void {
     surplus = f.p > world.data.rules.economy.cap_p * 0.5 && pop.present + pop.reserved >= populationCap(world, f) * 0.9;
   }
   for (const s of f.fronts) {
+    // A binding attack order's posture is its commander's (fronts.orderedAssault).
+    if (boundOrder(s) && s.order.kind === 'attack') continue;
     const own = world.objectives.find((o) => o.id === s.targetObjective);
     let next = s.posture;
     const attacking = !own || own.owner !== f.id;
@@ -85,8 +94,10 @@ export function thinkCity(world: World, f: Faction): void {
       s.postureSince = world.time;
     }
   }
-  f.mainFront = best;
-  balanceReserves(world, f, strength);
+  // 2.2: the directive's main effort (the front nearest its axis) when it names one, else the strongest front.
+  const axisMain = directiveMain(f);
+  f.mainFront = f.fronts.some((s) => s.id === axisMain) ? axisMain : best;
+  balanceReserves(world, f, strength, axisMain === f.mainFront);
   // 2.2: wave-1 investment policy in economic buildings (econai.ts).
   thinkInvestment(world, f);
 }
@@ -103,7 +114,8 @@ function orderPosture(s: Front): Posture | null {
  * front that has yet to fill up — instead of the 1.x fixed 45 / 35 / 20 % per sector. Every minute
  * a quiet front also sends up to 10 % of its line troops to a clearly outmatched one.
  */
-function balanceReserves(world: World, f: Faction, strength: ReadonlyMap<number, number>): void {
+function balanceReserves(world: World, f: Faction, strength: ReadonlyMap<number, number>, axisMain: boolean): void {
+  const mainMul = axisMain ? RESPONSE.shareMainAxis : THEATRE.shareMain;
   if (f.fronts.length === 0) return;
   const pressure = new Map<number, number>();
   let total = 0;
@@ -123,7 +135,7 @@ function balanceReserves(world: World, f: Faction, strength: ReadonlyMap<number,
     const thin = mean > 0 ? Math.max(0, 1 - (strength.get(s.id) ?? 0) / mean) : 0;
     // 2.1: a zone garrison is topped up only when pressed (it holds a fixed line, not an axis).
     if (garrisonsZone(s)) return 0.2 * (0.6 + need);
-    return (0.6 + need + THEATRE.shareThin * thin) * (s.id === f.mainFront ? THEATRE.shareMain : 1);
+    return (0.6 + need + THEATRE.shareThin * thin) * (s.id === f.mainFront ? mainMul : 1);
   });
   const sum = raw.reduce((a, b) => a + b, 0) || 1;
   f.fronts.forEach((s, i) => (s.share = raw[i] / sum));

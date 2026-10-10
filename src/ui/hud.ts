@@ -4,7 +4,7 @@ import { h } from './dom';
 import { onLangChange, t } from './i18n';
 import { MinimapPanel } from './minimap';
 import { ProductionBar } from './production';
-import { FrontsPanel } from './fronts';
+import { DIRECTIVE_TONE, FrontsPanel } from './fronts';
 import { frontLabel } from './labels';
 import { SelectionPanel } from './selection';
 import { TopBar } from './topbar';
@@ -106,11 +106,12 @@ export class Hud {
     const hint = m.kind === 'attackMove' ? t('cmd.pickAttack') : this.fronts.modeHint();
     if (this.modeHint.textContent !== hint) this.modeHint.textContent = hint;
     this.modeHint.style.display = hint ? '' : 'none';
-    this.modeHint.className = `mode-hint ${m.kind === 'frontOrder' ? `order k-${m.order}` : m.kind === 'newFront' ? 'order k-defend' : ''}`;
+    this.modeHint.className = `mode-hint ${m.kind === 'directive' ? `order k-${DIRECTIVE_TONE[m.directive]}` : ''}`;
   }
 
   dispose(): void {
     this.offLang();
+    this.fronts.dispose();
     this.ctx.renderer.orderLines.label = null;
     this.ctx.renderer.orderLines.zoneLabel = null;
     this.root.remove();

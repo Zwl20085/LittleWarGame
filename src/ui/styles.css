@@ -585,6 +585,15 @@ svg.brass-gauge .needle { transform-origin: 30px 31px; transition: transform 400
   .front-card, .right, .bottom { transform: none; }
 }
 
+/* 2.2 directive palette: the directive in force is inked (a bar under it); the front's response leads its card. */
+.obtn.active { background: linear-gradient(180deg, #fffaf0, #f1e6c6); border-color: var(--oc); box-shadow: inset 0 -3px 0 var(--oc); }
+.obtn.active .on { font-weight: 800; }
+.obtn.active.armed { background: var(--oc); color: #f4ecd9; }
+.hq-row.dir-now { margin-top: 3px; border-top: 1px dashed var(--border); padding-top: 4px; }
+.hq-row.dir-now .hq-kind { background: var(--oc); }
+.fc-resp { font-size: var(--fs-s); font-weight: 700; color: var(--ink); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.front-cards.compact .front-card:not(.open) .fc-resp { margin-top: 0; }
+
 .sim-slow-badge { position: absolute; top: calc(118px * var(--ui)); left: 50%; transform: translateX(-50%); background: rgba(166, 63, 54, 0.9); color: #f4ecd9; padding: 3px 12px; font-size: 0.8em; border-radius: 2px; pointer-events: none; z-index: 5; }
 
 /* 2.2 town panel: supply stock, local production queue, economic buildings */

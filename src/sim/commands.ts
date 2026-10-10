@@ -3,19 +3,17 @@ import { startBuilding, ECON_KINDS } from './econ';
 import { placeById, placeOwner } from './settlements';
 import type { EconKind } from '../data/types';
 import type { Match } from './sim';
-import { issueFrontOrder } from './fronts';
-import { createFrontAt, disbandFront, frontForOrder } from './frontops';
-import { issueFrontOrder as applyOrder } from './fronts';
-import type { OrderKind, Unit } from './types';
-import type { V2 } from './vec';
-
-const ORDERS: OrderKind[] = ['auto', 'attack', 'defend', 'fortify', 'fallBack'];
+import { DIRECTIVE_KINDS, DIRECTIVE_LINE_MIN_M, setDirective } from './directive';
+import { applyDirectiveNow } from './theatre';
+import type { DirectiveKind, Unit } from './types';
+import { dist, type V2 } from './vec';
 
 /**
- * Player commands = the supreme HQ's job (2.0): the war effort (production, economy) and one
- * high-level order per front (attack / defend / fortify / fall back, on a place or a line).
- * Postures, battle plans, reinforcement shares and group targets are the front commanders'
- * business and are no longer commands. Unit micro (move / attack-move / focus …) stays optional.
+ * Player commands = the supreme HQ's job (2.2, docs/V22_SPEC.md §1): the war effort (production,
+ * economy) and ONE universal directive (offensive / advance / defend / fortify / contract, with an
+ * optional axis point and, for fortify, an optional line that becomes a fortified zone). Fronts are
+ * opened, merged and dissolved by the theatre; each front commander answers the directive with its
+ * own order. Unit micro (move / attack-move / focus …) stays optional.
  */
 export type Command =
   | { type: 'setWeight'; unitId: string; weight: number }
@@ -31,16 +29,10 @@ export type Command =
   | { type: 'setLock'; index: number; locked: boolean }
   | { type: 'resetAlloc' }
   /**
-   * Supreme-HQ order for a front. `frontId` null = the front whose line is nearest to `a`.
-   * `b` makes it a line order (defend / fortify / fallBack hold the line a–b; attack assaults along it).
+   * 2.2 universal directive. `axis` = main effort (offensive) / threatened place (defend, fortify);
+   * `line` (fortify only) becomes a permanent fortified zone held by the front nearest it.
    */
-  | { type: 'frontOrder'; frontId: number | null; kind: OrderKind; a: V2; b?: V2 }
-  /** The main effort: reinforcement and supply priority. */
-  | { type: 'setMainFront'; frontId: number }
-  /** 2.1: open a front at a point (its commander is appointed; free troops nearby join it). */
-  | { type: 'newFront'; a: V2 }
-  /** 2.1: disband a front; troops and zones go to the nearest other front. */
-  | { type: 'disbandFront'; frontId: number }
+  | { type: 'setDirective'; kind: DirectiveKind; axis?: V2; line?: { a: V2; b: V2 } }
   /** 2.1: stop a fortified-zone project (works already standing remain). */
   | { type: 'cancelZone'; zoneId: number }
   | { type: 'unitOrder'; unitIds: number[]; order: 'move' | 'moveHold' | 'attackMove' | 'retreat' | 'hold' | 'resume'; pos?: V2; queue?: boolean }
@@ -48,7 +40,8 @@ export type Command =
 
 export type CommandFail =
   | 'FACTION_DEAD' | 'NOT_OWNER' | 'STALE_TARGET' | 'UNREACHABLE' | 'BAD_VALUE' | 'ROUTING'
-  | 'LOCKED' | 'INSUFFICIENT_M' | 'INSUFFICIENT_P' | 'OUT_OF_BOUNDS' | 'NO_ORDER' | 'NO_FRONT' | 'NO_SLOT' | 'CONTESTED';
+  | 'LOCKED' | 'INSUFFICIENT_M' | 'INSUFFICIENT_P' | 'OUT_OF_BOUNDS' | 'NO_ORDER' | 'NO_FRONT' | 'NO_SLOT' | 'CONTESTED'
+  | 'LINE_SHORT' | 'LINE_ONLY_FORTIFY';
 
 export interface CommandEnvelope {
   readonly commandId: number;
@@ -156,38 +149,22 @@ function apply(match: Match, env: CommandEnvelope): CommandOutcome {
     case 'resetAlloc':
       f.alloc = [...w.data.rules.economy.allocation_default] as [number, number, number];
       return OK;
-    case 'frontOrder': {
-      if (!ORDERS.includes(c.kind) || !finiteV2(c.a) || (c.b !== undefined && !finiteV2(c.b))) return fail('BAD_VALUE');
-      if (!w.terrain.inBounds(c.a.x, c.a.z) || (c.b && !w.terrain.inBounds(c.b.x, c.b.z))) return fail('OUT_OF_BOUNDS');
-      if (c.frontId !== null && !f.fronts.some((x) => x.id === c.frontId)) return fail('NO_FRONT');
+    case 'setDirective': {
+      if (!DIRECTIVE_KINDS.includes(c.kind)) return fail('BAD_VALUE');
+      if ((c.axis !== undefined && !finiteV2(c.axis)) || (c.line !== undefined && (!finiteV2(c.line?.a) || !finiteV2(c.line?.b)))) return fail('BAD_VALUE');
+      if (c.line && c.kind !== 'fortify') return fail('LINE_ONLY_FORTIFY');
+      const pts = [c.axis, c.line?.a, c.line?.b].filter((p): p is V2 => !!p);
+      if (pts.some((p) => !w.terrain.inBounds(p.x, p.z))) return fail('OUT_OF_BOUNDS');
       // Infantry must be able to stand there (a point in a lake or on a cliff is no objective).
-      const a = w.nav(false, 35).nearestPassable(c.a, 30);
-      const b = c.b ? w.nav(false, 35).nearestPassable(c.b, 30) : null;
-      if (!a || (c.b && !b)) return fail('UNREACHABLE');
-      // No front given: the nearest one, or a new front for an order far from every front (frontops.ts).
-      const front = c.frontId === null ? frontForOrder(w, f, a) : f.fronts.find((x) => x.id === c.frontId);
-      if (!front) return fail('NO_FRONT');
-      issueFrontOrder(w, f, front, { kind: c.kind, a: { ...a }, b: b ? { ...b } : null, issuedAt: w.time, manual: true });
+      const nav = w.nav(false, 35);
+      const axis = c.axis ? nav.nearestPassable(c.axis, 80) : null;
+      const la = c.line ? nav.nearestPassable(c.line.a, 30) : null;
+      const lb = c.line ? nav.nearestPassable(c.line.b, 30) : null;
+      if ((c.axis && !axis) || (c.line && (!la || !lb))) return fail('UNREACHABLE');
+      if (la && lb && dist(la, lb) < DIRECTIVE_LINE_MIN_M) return fail('LINE_SHORT');
+      setDirective(w, f, c.kind, axis ? { ...axis } : null, la && lb ? { a: { ...la }, b: { ...lb } } : null, true);
+      applyDirectiveNow(w, f);
       return OK;
-    }
-    case 'setMainFront':
-      if (!f.fronts.some((x) => x.id === c.frontId)) return fail('NO_FRONT');
-      f.mainFront = c.frontId;
-      return OK;
-    case 'newFront': {
-      if (!finiteV2(c.a) || !w.terrain.inBounds(c.a.x, c.a.z)) return fail('BAD_VALUE');
-      if (f.fronts.length >= w.data.rules.command.fronts_max) return fail('NO_FRONT');
-      const p = w.nav(false, 35).nearestPassable(c.a, 30);
-      if (!p) return fail('UNREACHABLE');
-      const s = createFrontAt(w, f, { ...p });
-      if (!s) return fail('INSUFFICIENT_P');
-      applyOrder(w, f, s, { kind: 'defend', a: { ...p }, b: null, issuedAt: w.time, manual: true });
-      return OK;
-    }
-    case 'disbandFront': {
-      const s = f.fronts.find((x) => x.id === c.frontId);
-      if (!s) return fail('NO_FRONT');
-      return disbandFront(w, f, s) ? OK : fail('BAD_VALUE');
     }
     case 'cancelZone': {
       const z = f.zones.find((x) => x.id === c.zoneId && !x.cancelled);
