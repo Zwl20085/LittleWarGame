@@ -32,6 +32,8 @@ export interface StructureRecord {
   readonly hp: number;
   readonly maxHp: number;
   readonly owner: number;
+  /** A destroyed structure whose ruin stays until the record goes (economic buildings). */
+  readonly ruined?: boolean;
 }
 
 interface Known {
@@ -45,6 +47,8 @@ interface KindBatches {
   readonly body: InstanceBatch;
   readonly roof: InstanceBatch | null;
   readonly skirt: InstanceBatch | null;
+  readonly scaffold: InstanceBatch | null;
+  readonly ruin: InstanceBatch | null;
 }
 
 const _m = new THREE.Matrix4();
@@ -76,7 +80,7 @@ export class StructureViews {
     let k = this.kinds.get(kind);
     if (!k) {
       const mk = (g: THREE.BufferGeometry | undefined): InstanceBatch | null => (g ? new InstanceBatch(this.group, g, this.mat, 8) : null);
-      k = { body: mk(def.body)!, roof: mk(def.roof), skirt: mk(def.skirt) };
+      k = { body: mk(def.body)!, roof: mk(def.roof), skirt: mk(def.skirt), scaffold: mk(def.scaffold), ruin: mk(def.ruin) };
       this.kinds.set(kind, k);
     }
     return k;
@@ -84,7 +88,7 @@ export class StructureViews {
 
   private batches(): InstanceBatch[] {
     const out = [this.footing, this.rubble, this.flags];
-    for (const k of this.kinds.values()) for (const b of [k.body, k.roof, k.skirt]) if (b) out.push(b);
+    for (const k of this.kinds.values()) for (const b of [k.body, k.roof, k.skirt, k.scaffold, k.ruin]) if (b) out.push(b);
     return out;
   }
 
@@ -106,12 +110,13 @@ export class StructureViews {
       k.rec = rec;
       k.def = def;
       k.seen = f;
-      if (rec.hp > 0) k.ruinUntil = NaN;
-      else if (Number.isNaN(k.ruinUntil)) k.ruinUntil = time + RUIN_SECONDS;
-      h = mix(mix(mix(mix(h, rec.id), stepOf(rec.progress)), damageStep(rec)), rec.owner);
+      if (rec.ruined) k.ruinUntil = Infinity;
+      else if (rec.hp > 0) k.ruinUntil = NaN;
+      else if (Number.isNaN(k.ruinUntil) || k.ruinUntil === Infinity) k.ruinUntil = time + RUIN_SECONDS;
+      h = mix(mix(mix(mix(mix(h, rec.id), stepOf(rec.progress)), damageStep(rec)), rec.owner), rec.ruined ? 1 : 0);
     }
     for (const [id, k] of this.known) {
-      if (k.seen !== f && Number.isNaN(k.ruinUntil)) k.ruinUntil = k.rec.progress > 0.3 ? time + RUIN_SECONDS : time;
+      if (k.seen !== f && (Number.isNaN(k.ruinUntil) || k.ruinUntil === Infinity)) k.ruinUntil = k.rec.progress > 0.3 ? time + RUIN_SECONDS : time;
       if (!Number.isNaN(k.ruinUntil) && time > k.ruinUntil) {
         this.known.delete(id);
         continue;
@@ -141,13 +146,17 @@ export class StructureViews {
     const facing = rec.facing ?? 0;
     const yaw = -facing;
     const fp = def.footprint;
+    const kb = this.batchesOf(rec.kind, def);
     if (ruined) {
       _c.setScalar(0.8);
+      if (kb.ruin) {
+        kb.ruin.push(trs(x, y - 0.05, z, 0, yaw, 0, 1, 1, 1, _m), WHITE);
+        return;
+      }
       const s = Math.max(fp.x, fp.z) / 3.2;
       this.rubble.push(trs(x, y, z, 0, yaw + rec.id, 0, s, 1, s, _m), _c);
       return;
     }
-    const kb = this.batchesOf(rec.kind, def);
     const p = stepOf(rec.progress) / STEPS;
     _c.setScalar(SHADE[damageStep(rec)]);
     if (p < 1) {
@@ -159,6 +168,7 @@ export class StructureViews {
       const wall = Math.min(1, (p - STAGE.walls) / (STAGE.roof - STAGE.walls));
       const hgt = def.height * Math.max(0.08, wall);
       kb.body.push(trs(x, y - 0.05, z, 0, yaw, 0, 1, hgt, 1, _m), _c);
+      if (p < 1 && kb.scaffold) kb.scaffold.push(trs(x, y - 0.05, z, 0, yaw, 0, 1, 1, 1, _m), WHITE);
       if (p >= STAGE.roof && kb.roof) kb.roof.push(trs(x, y + hgt, z, 0, yaw, 0, 1, 1, 1, _m), _c);
     }
     if (p >= 1) {

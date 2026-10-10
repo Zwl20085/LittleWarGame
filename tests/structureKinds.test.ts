@@ -44,4 +44,18 @@ describe('structure kind registry', () => {
     v.sync([], 200);
     expect(instances(v)).toBe(0);
   });
+
+  it('keeps an economic ruin as long as its record says ruined, with the kind ruin part', async () => {
+    const { registerEconModels } = await import('../src/render/econModels');
+    registerEconModels();
+    for (const k of ['factory', 'recruit', 'depot']) expect(structureKind(k)?.ruin).toBeDefined();
+    const v = new StructureViews(flatTerrain, () => '#3366aa');
+    const ruin = { ...rec(5, 'depot', 1, 0), ruined: true };
+    v.sync([ruin], 0);
+    v.sync([ruin], 500);
+    expect(instances(v)).toBe(1);
+    // Rebuilt: a site again (footing + scaffold + rising body).
+    v.sync([rec(5, 'depot', 0.5, 50)], 501);
+    expect(instances(v)).toBe(3);
+  });
 });

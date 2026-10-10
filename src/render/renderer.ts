@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import { CONTESTED, NEUTRAL, type FrontlineField } from '../sim/frontline';
 import type { MapFeature } from '../sim/mapdef';
+import { placeOwner, stockCap } from '../sim/settlements';
+import type { Place } from '../sim/types';
 import type { Match } from '../sim/sim';
 import type { Ground } from '../sim/terrain';
 import type { V2 } from '../sim/vec';
@@ -16,7 +18,7 @@ import { OrderLines } from './orderLines';
 import { clothFlag, FLAG_TIME } from './flags';
 import { FieldWorks, isLineWork } from './fieldWorks';
 import { StructureViews, type StructureRecord } from './structures';
-import { EconBuildingViews } from './econBuildings';
+import { registerEconModels } from './econModels';
 import { FrontLines } from './frontLines';
 import { fortModel } from './models';
 import { PontoonView } from './pontoon';
@@ -71,8 +73,6 @@ export class GameRenderer {
   private readonly fieldWorks: FieldWorks;
   /** Pillboxes / bunkers (instanced; works agent). */
   private readonly structureViews: StructureViews;
-  /** 2.2 economic buildings (placeholder views, logistics agent). */
-  private readonly econViews: EconBuildingViews;
   /**
    * 2.2 hook for the economy wave: further structures (economic buildings, town supply depots)
    * drawn through the structure-kind registry (render/structureKinds.ts). Whoever wires them
@@ -157,9 +157,10 @@ export class GameRenderer {
     this.scene.add(this.fieldWorks.group);
     this.structureViews = new StructureViews(w.terrain, (owner) => w.factions[owner]?.color ?? '#888888');
     this.scene.add(this.structureViews.group);
-    this.econViews = new EconBuildingViews(w.terrain, (owner) => w.factions[owner]?.color ?? '#888888');
-    this.scene.add(this.econViews.group);
     this.extraViews = new StructureViews(w.terrain, (owner) => w.factions[owner]?.color ?? '#888888');
+    // 2.2 economic buildings (factory, recruitment office, depot) through the kind registry.
+    registerEconModels();
+    this.extraStructures = () => w.econ;
     this.scene.add(this.extraViews.group);
     this.opArrows = new OpArrows((x, z) => w.terrain.heightAt(x, z));
     this.scene.add(this.opArrows.mesh);
@@ -304,7 +305,6 @@ export class GameRenderer {
     this.fieldWorks.sync(w.forts, w.time);
     for (let i = 0; i < this.fieldWorks.siteCount; i++) this.effects.workSite(this.fieldWorks.sites[i], dt);
     this.structureViews.sync(w.forts, w.time);
-    this.econViews.sync(w.econ);
     for (let i = 0; i < this.structureViews.siteCount; i++) this.effects.workSite(this.structureViews.sites[i], dt);
     if (this.extraStructures) {
       this.extraViews.sync(this.extraStructures(), w.time);
@@ -558,10 +558,36 @@ export class GameRenderer {
     this.terrainView.water.update(realDt, this.rig.camera, this.sunDir, mapMode);
     this.renderer.render(this.scene, this.rig.camera);
     this.overlay.begin(this.rig.camera);
-    this.labels.draw(this.overlay, ppm, this.rig.zoom, lang(), null);
+    this.labels.draw(this.overlay, ppm, this.rig.zoom, lang(), null, this.stockOf);
     this.counters.draw(this.overlay, ppm, this.playerId, this.fog);
     this.orderLines.drawLabels(this.overlay, w, this.playerId, this.spectator, this.layers.fronts);
   }
+
+  private readonly placeOfFeature = new Map<MapFeature, Place | null>();
+
+  /**
+   * Supply-stock fill of the place a map label names (2.2 gauge): own places (all, when
+   * spectating; none of the enemy's in fog), null for villages and features without a place.
+   */
+  private readonly stockOf = (f: MapFeature): number | null => {
+    const w = this.match.world;
+    if (w.places.length === 0) return null;
+    let p = this.placeOfFeature.get(f);
+    if (p === undefined) {
+      p = null;
+      let best = Math.max(60, f.radius);
+      for (const q of w.places) {
+        const d = Math.hypot(q.pos.x - f.pos.x, q.pos.z - f.pos.z);
+        if (d < best) { best = d; p = q; }
+      }
+      this.placeOfFeature.set(f, p);
+    }
+    if (!p) return null;
+    const owner = placeOwner(w, p);
+    if (owner < 0 || (!this.spectator && owner !== this.playerId)) return null;
+    const cap = stockCap(w, p);
+    return cap > 0 ? p.stock / cap : null;
+  };
 
   /** Faint smoke from the factory chimneys near the view (a wisp every ~1.5 s each). */
   private chimneySmoke(dt: number, at: THREE.Vector3, ext: number): void {
@@ -615,7 +641,6 @@ export class GameRenderer {
 
   dispose(): void {
     this.structureViews.dispose();
-    this.econViews.dispose();
     this.extraViews.dispose();
     this.objectiveMarkers.dispose();
     this.overlay.dispose();

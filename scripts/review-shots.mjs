@@ -77,6 +77,29 @@ await shot('10-armour-z6', cam(spots.tank, 6));
 await shot('11-river-z3', cam(spots.water, 3));
 await shot('12-river-z6', cam(spots.water, 6, 40));
 await shot('13-works-z5', cam(spots.fort, 5));
+// 2.2 economy: one of each economic building (working / site / ruin) and a roadside farmstead.
+const econ = await page.evaluate(() => {
+  const w = window.__game.match.world;
+  const list = w.econ ?? [];
+  const pick = (f) => { const b = list.find(f); return b ? { x: b.pos.x, z: b.pos.z } : null; };
+  const t = w.terrain;
+  const farm = t.buildings.find((b) => !t.def.towns.some((tw) => Math.hypot(b.x - tw.x, b.z - tw.z) < tw.r + 12) && b.kind === 'house');
+  return {
+    factory: pick((b) => b.kind === 'factory' && !b.ruined && b.progress >= 1),
+    recruit: pick((b) => b.kind === 'recruit' && !b.ruined && b.progress >= 1),
+    depot: pick((b) => b.kind === 'depot' && !b.ruined && b.progress >= 1),
+    site: pick((b) => !b.ruined && b.progress < 1),
+    ruin: pick((b) => b.ruined),
+    farm: farm ? { x: farm.x, z: farm.z } : null,
+    n: list.length,
+  };
+});
+console.log('econ', JSON.stringify(econ));
+for (const [name, spot] of Object.entries(econ)) {
+  if (!spot || typeof spot !== 'object') continue;
+  await shot(`20-${name}-z5`, cam(spot, 5));
+  await shot(`21-${name}-z6-low`, cam(spot, 6, 35));
+}
 // Shellfire: follow an artillery / mortar round to its target and shoot the impact and smoke.
 for (let tries = 0; tries < 40; tries++) {
   const at = await page.evaluate(() => {

@@ -21,6 +21,10 @@ export interface StructureKindDef {
   readonly roof?: THREE.BufferGeometry;
   /** Skirt / berm / yard dressing shown when complete (optional). */
   readonly skirt?: THREE.BufferGeometry;
+  /** Scaffolding at full height (absolute metres), shown while the walls rise (optional). */
+  readonly scaffold?: THREE.BufferGeometry;
+  /** Burnt-out shell left by this kind when destroyed (absolute metres; default: shared rubble). */
+  readonly ruin?: THREE.BufferGeometry;
   /** Wall height (m) when complete. */
   readonly height: number;
   /** Footprint (m): along the facing (x) and across it (z). Sizes the footing and the rubble. */

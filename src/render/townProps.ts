@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { Ground, type Building, type Terrain } from '../sim/terrain';
 import { GeoBuilder, trs } from './instancing';
+import { isRoadside } from '../sim/roadside';
 import type { TownGrid } from './townPlan';
 
 /**
@@ -503,6 +504,80 @@ function village(tiles: Tiles, t: Terrain, town: { x: number; z: number; r: numb
   }
 }
 
+/**
+ * 2.2 roadside farmsteads, barns, inns and chapels (sim roadside.ts): a fenced yard on the side
+ * away from the road, and by kind a hay rick, a well, a vegetable plot, a woodpile or a cart.
+ */
+function roadsideProps(tiles: Tiles, t: Terrain, ground: Ground3): void {
+  const all = t.buildings.filter((b) => isRoadside(t.def, b));
+  for (const bld of all) {
+    const b = tiles.at(bld.x, bld.z);
+    const f = buildingFrame(b, bld);
+    const yAt = (lx: number, lz: number): number => {
+      const p = f.point(lx, 0, lz);
+      return ground(p.x, p.z);
+    };
+    const others = all.filter((o) => o !== bld && Math.hypot(o.x - bld.x, o.z - bld.z) < 40);
+    const free = (lx: number, lz: number): boolean => {
+      const p = f.point(lx, 0, lz);
+      const g = t.groundAt(p.x, p.z);
+      return !inBuilding(others, p.x, p.z, 0.8) && g !== Ground.Road && g !== Ground.Water && g !== Ground.Ford;
+    };
+    // Yard on the side (±local z) whose far edge stays clear of the road.
+    const reach = bld.d / 2 + 9;
+    const sgn = free(0, reach) && free(0, reach * 0.6) ? 1 : free(0, -reach) && free(0, -reach * 0.6) ? -1 : 0;
+    if (sgn === 0) continue;
+    const h0 = hash(bld.x, bld.z, 41);
+    const hw = bld.w / 2 + 1.5 + h0 * 2;
+    const z0 = sgn * (bld.d / 2 + 0.3);
+    const z1 = sgn * (bld.d / 2 + 7 + h0 * 3);
+    const stone = hash(bld.x, bld.z, 42) < 0.35;
+    for (const [ax, az, bx, bz] of [[-hw, z0, -hw, z1], [-hw, z1, hw, z1], [hw, z1, hw, z0]] as const) {
+      if (!free((ax + bx) / 2, (az + bz) / 2) || !free(bx, bz)) continue;
+      fenceRun(f, ax, az, bx, bz, yAt, stone);
+    }
+    const zm = (z0 + z1) / 2;
+    const pick = hash(bld.x, bld.z, 43);
+    if (bld.kind === 'barn' || pick < 0.3) {
+      // Hay rick in the yard.
+      const lx = -hw * 0.5;
+      if (free(lx, zm)) {
+        const y = yAt(lx, zm);
+        f.cyl(1.3, 1.5, 2.0, 8, lx, y + 1.0, zm, C.hay);
+        f.cone(1.55, 1.3, 8, lx, y + 2.65, zm, C.hay);
+      }
+    }
+    if (bld.kind !== 'barn' && pick > 0.45) {
+      // Well with a little roof.
+      const lx = hw * 0.45;
+      if (free(lx, zm)) {
+        const y = yAt(lx, zm);
+        f.cyl(0.8, 0.85, 0.85, 10, lx, y + 0.42, zm, C.stone);
+        f.cyl(0.6, 0.6, 0.08, 10, lx, y + 0.82, zm, C.water);
+        for (const dz of [-0.75, 0.75]) f.box(0.12, 2.0, 0.12, lx, y + 1.0, zm + dz, C.wood);
+        f.pyramid(1.9, 0.6, 2.1, lx, y + 2.0, zm, C.roof);
+      }
+    } else if (bld.kind !== 'barn') {
+      // Vegetable rows.
+      for (let i = -1; i <= 1; i++) {
+        const lz = zm + i * 1.0;
+        if (!free(hw * 0.4, lz)) continue;
+        f.box(3.6, 0.12, 0.5, hw * 0.4, yAt(hw * 0.4, lz) + 0.04, lz, C.soil);
+        f.box(3.2, 0.3, 0.22, hw * 0.4, yAt(hw * 0.4, lz) + 0.2, lz, C.leafB);
+      }
+    }
+    // Woodpile against the wall, and a fruit tree by the yard.
+    if (free(-bld.w / 2 - 1, 0)) f.box(0.9, 1.0, Math.min(3, bld.d * 0.6), -bld.w / 2 - 0.6, yAt(-bld.w / 2 - 0.6, 0) + 0.5, 0, C.woodLight);
+    const tz = z1 + sgn * 2.5;
+    if (hash(bld.x, bld.z, 44) < 0.6 && free(hw, tz)) {
+      const y = yAt(hw, tz);
+      const r = 1.8 + hash(bld.x, bld.z, 45);
+      f.cyl(0.16, 0.22, 2.2, 5, hw, y + 1.1, tz, C.woodDark);
+      f.blob(r, hw, y + 1.8 + r * 0.8, tz, C.leafA, 0.85);
+    }
+  }
+}
+
 /** Telegraph poles along the country roads (not in towns, water or on bridges). */
 function telegraph(tiles: Tiles, t: Terrain, ground: Ground3): void {
   const towns = t.def.towns;
@@ -551,6 +626,7 @@ export function buildTownProps(t: Terrain, grids: readonly TownGrid[], ground: G
     const bs = t.buildings.filter((b) => Math.hypot(b.x - town.x, b.z - town.z) < town.r + 12);
     village(tiles, t, town, bs, ground);
   }
+  roadsideProps(tiles, t, ground);
   telegraph(tiles, t, ground);
   return tiles.map;
 }
