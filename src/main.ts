@@ -60,6 +60,8 @@ function start(cfg: MatchConfig): void {
 }
 
 // `?quick` skips the title (screenshots / iteration): `&map=1v1|4|gen`, `&size=large`, `&fog`, `&seed=`, `&spectate`.
+// It stays all-seeing unless `&fog` is given (the media/perf scripts rely on that); the menu's
+// Quick Battle itself is fought under fog of war.
 const params = new URLSearchParams(location.search);
 if (params.has('quick')) {
   const m = params.get('map');

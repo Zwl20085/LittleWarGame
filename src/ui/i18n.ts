@@ -126,7 +126,7 @@ const zh: Dict = {
   'ai.balanced': '均衡', 'ai.armor': '装甲', 'ai.infantry': '步兵', 'ai.artillery': '炮兵',  // title screen (titles stay English by design; descriptions follow the language)
   'title.kicker': 'OPERATIONS ROOM · EUROPE 1944', 'title.name': 'LITTLE WAR', 'title.sub': 'A WWII BATTLE DIORAMA',
   'title.quick': 'QUICK BATTLE', 'title.custom': 'CUSTOM BATTLE', 'title.spectate': 'SPECTATE', 'title.settings': 'SETTINGS',
-  'title.quickDesc': '四方混战 · 随机生成地图 · 普通难度', 'title.customDesc': '地图、对手、难度、敌情模式与种子',
+  'title.quickDesc': '四方混战 · 随机生成地图 · 普通难度 · 战争迷雾', 'title.customDesc': '地图、对手、难度、敌情模式与种子',
   'title.spectateDesc': '全 AI 对战，自由观看', 'title.settingsDesc': '语言、界面缩放、烟雾、镜头震动、声音与更新检查',
   'title.live': '实况 · AI 交战', 'title.deploying': '部队展开中 {p}%', 'title.keys': '↑↓ 选择 · Enter 确认 · Esc 返回', 'title.back': '返回',
   'set.lang': '语言',
@@ -264,7 +264,7 @@ const en: Dict = {
   'you': ' (you)',
   'ai.balanced': 'Balanced', 'ai.armor': 'Armour', 'ai.infantry': 'Infantry', 'ai.artillery': 'Artillery',  'title.kicker': 'OPERATIONS ROOM · EUROPE 1944', 'title.name': 'LITTLE WAR', 'title.sub': 'A WWII BATTLE DIORAMA',
   'title.quick': 'QUICK BATTLE', 'title.custom': 'CUSTOM BATTLE', 'title.spectate': 'SPECTATE', 'title.settings': 'SETTINGS',
-  'title.quickDesc': '4-way free-for-all · generated map · normal', 'title.customDesc': 'Map, opponents, difficulty, intel and seed',
+  'title.quickDesc': '4-way free-for-all · generated map · normal · fog of war', 'title.customDesc': 'Map, opponents, difficulty, intel and seed',
   'title.spectateDesc': 'All-AI battle, free camera', 'title.settingsDesc': 'Language, UI scale, smoke, camera shake, sound, updates',
   'title.live': 'LIVE · AI BATTLE', 'title.deploying': 'DEPLOYING FORCES {p}%', 'title.keys': '↑↓ Select · Enter Confirm · Esc Back', 'title.back': 'Back',
   'set.lang': 'Language',

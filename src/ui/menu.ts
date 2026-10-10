@@ -192,7 +192,8 @@ export function showTitle(root: HTMLElement, data: GameData, onStart: (cfg: Matc
   };
 
   const items: MenuItem[] = [
-    { id: 'quick', action: () => start(toConfig({ ...state, mapId: 'generated', mapSize: 'medium', factions: 4, difficulty: 'normal', infoMode: 'open', spectate: false, seed: randomSeed() })) },
+    // Quick battle is fought under fog of war (V22_SPEC §6); Custom keeps its own toggle, Spectate sees all.
+    { id: 'quick', action: () => start(toConfig({ ...state, mapId: 'generated', mapSize: 'medium', factions: 4, difficulty: 'normal', infoMode: 'fog', spectate: false, seed: randomSeed() })) },
     { id: 'custom', action: () => openPanel('custom') },
     { id: 'spectate', action: () => start(toConfig({ ...state, mapId: 'generated', factions: 4, spectate: true, infoMode: 'open', seed: randomSeed() })) },
     { id: 'settings', action: () => openPanel('settings') },
