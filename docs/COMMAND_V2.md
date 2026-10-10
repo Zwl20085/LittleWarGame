@@ -4,6 +4,10 @@ User decision (2026-10-04) for the 2.0 version. This is the team spec: what the 
 what each layer decides, which files own what, and how to verify. It replaces the fixed
 left / centre / right "sector" design of 1.x.
 
+> **2.2:** the player no longer orders fronts. The supreme HQ gives one universal *directive* and
+> every front commander answers it (§7 below, docs/V22_SPEC.md §1). Per-front orders, the binding
+> rules and fortified zones of §3 remain the front commanders' tools.
+
 ## 1. The three layers
 
 | layer | who | decides | does **not** decide |
@@ -111,3 +115,42 @@ stays deterministic (no `Math.random`, no Date, no wall-clock); perf budget per
 - `npx tsx scripts/perf.ts generated 600 7` — mean / p99 tick.
 - New: `scripts/challenge.ts` (challenge agent): scripted supreme-HQ strategies through the
   real `frontOrder` API against the AI.
+
+## 7. 2.2 — the universal directive (as built)
+
+User (2026-10-10): the supreme HQ gives ONE command; every front decides its own response.
+
+- `Faction.directive` (`types.ts`): `{ kind: offensive | advance | defend | fortify | contract, axis, line, issuedAt, manual }`.
+  Player command `{ type: 'setDirective'; kind; axis?; line? }` (`commands.ts`): validated (kind, finite,
+  in bounds, passable; a line only for fortify, ≥ 60 m — `LINE_SHORT` / `LINE_ONLY_FORTIFY`), applied at
+  once (`theatre.applyDirectiveNow`). A drawn line becomes a permanent zone immediately (`fronts.addZoneLine`).
+  Removed from the command API: `frontOrder`, `setMainFront`, `newFront`, `disbandFront` (the internal
+  `issueFrontOrder`, `createFrontAt`, `disbandFront`, `frontForOrder` stay). `cancelZone` stays.
+- The AI supreme HQ chooses its directive with the same function (`directive.chooseDirective`):
+  the finisher → `offensive` on the finish capital; army < 0.35 × the strongest known hostile army →
+  `defend` (back above 0.55); else `advance`. A directive stands ≥ 60 s.
+- `theatre.thinkTheatre` now runs for every faction: fronts are opened, merged and dissolved
+  automatically for the player too; zone garrisons and the counter-strike (only under advance /
+  offensive) as in 2.1. `cityai.thinkCity` sets postures, the main effort and reserve shares for every
+  faction (the production mix stays the player's).
+- Front responses (`frontresponse.ts`, every HQ think; `Front.response` + params on the card):
+
+| directive | front commander's response |
+|---|---|
+| offensive | main effort = the front nearest the axis objective (an enemy capital at the axis, else the place nearest it, else the point); fronts within 1 400 m of it support it; the others attack their own objective; a non-main front facing ≥ 1.8 × its value at its objective pins (attacks the nearest place within 1 200 m held by ≤ 0.8 × it) or, with none, holds. No axis: the strongest front is the main effort. Main effort reserve share × 2. |
+| advance | the 2.1 orders (`theatre.orderFront`): own objective, stances, AI zones, finisher. |
+| defend | hold a line in front of the nearest own settlement near the front (fixed while the directive stands); the front nearest the axis holds at the axis and gets the reserves; a local counter-attack only on an enemy place within 600 m with known enemy ≤ 0.4 × the front (empty neutral ground is not taken). |
+| fortify | as defend, with fortify orders (engineers build, permanent zones); the drawn line goes to the front nearest it; a front near a standing zone (≤ 350 m) fortifies that zone; at 8 live zones a front without one just holds. |
+| contract | fall back (spearheads / operations dropped) to the nearest own town / city ≥ 300 m nearer home (else 600 m back; a front within 900 m of home holds where it is), then defend there; town garrisons stay (`frontref.lendsGarrisons`). |
+
+- Binding: orders given under a **player** directive other than advance are binding (`manual: true`,
+  the §3 rules); the AI's own directive gives non-binding orders. Orders are re-issued only when they
+  change (no operation churn). Going back to advance releases the binding orders the directive gave
+  (`frontresponse.givenByDirective`). Home recall at the gates compares the alarm with the directive's time.
+- UI: the HQ card is a five-button directive palette (Z X C V B); offensive / defend / fortify then take
+  an optional click (axis) or, for fortify, a drag (line). Front cards are read-only dossiers.
+  **Click bug (2.1):** the HUD re-rendered the left column at 5 Hz whenever its signature changed; a
+  rebuild between pointerdown and pointerup replaced the pressed element and the browser dropped the
+  click (Playwright: 13 / 25 palette and 17 / 25 card clicks lost in 2.1). `dom.PressGuard` holds the
+  panel's re-render while a pointer is down on it; `scripts/clickcheck.mjs` (and `--noguard` for the A/B)
+  checks 25+ button, map and card clicks. A press off the terrain and every refused command show a toast.
