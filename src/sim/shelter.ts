@@ -181,6 +181,18 @@ function spotsOf(b: Building, from: V2): Array<{ p: V2; pen: number }> {
   ];
 }
 
+/** No nook: open, passable ground 3 m out from the spot (straight out and at ±50°). */
+function openAround(world: World, u: Unit, b: Building, p: V2): boolean {
+  const t = world.terrain;
+  const nav = world.navFor(u);
+  const a = Math.atan2(p.z - b.z, p.x - b.x);
+  for (const da of [0, 0.87, -0.87]) {
+    const q = { x: p.x + Math.cos(a + da) * 3, z: p.z + Math.sin(a + da) * 3 };
+    if (t.buildingH(q.x, q.z) > 0 || !nav.passable(q)) return false;
+  }
+  return true;
+}
+
 /** Nearest building with room (and a reachable spot at its walls) for squad `u`. */
 export function shelterSpot(world: World, u: Unit, from: V2): { p: V2; k: number } | null {
   const t = world.terrain;
@@ -197,6 +209,7 @@ export function shelterSpot(world: World, u: Unit, from: V2): { p: V2; k: number
       const d = dist(c.p, u.pos) + c.pen;
       if (d >= bd || !t.inBounds(c.p.x, c.p.z) || t.buildingH(c.p.x, c.p.z) > 0 || !nav.passable(c.p)) continue;
       if (d > SHELTER.searchR && !t.wallFree(u.pos, c.p)) continue;
+      if (!openAround(world, u, b, c.p)) continue;
       if (!ok && !hasRoom(world, st, k, u.id)) break;
       ok = true;
       bd = d;
