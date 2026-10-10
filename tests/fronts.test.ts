@@ -307,7 +307,8 @@ describe('fronts 2.1: binding orders, more fronts, zone garrisons', () => {
     }
     expect(loose).toBe(0);
     expect(s.reason.startsWith('reason.order.') || s.reason === 'reason.homeDefence').toBe(true);
-    const troops = lineTroops(world, 0, s.id).filter((u) => !u.routing && !u.manual && u.behavior === 'advance' && u.fortId === null);
+    // 2.2: fresh units rearm at their production place before they march; those still on the way (or rearming) are not judged.
+    const troops = lineTroops(world, 0, s.id).filter((u) => !u.routing && !u.manual && u.behavior === 'advance' && u.fortId === null && !u.rearming && !u.moving);
     expect(troops.length).toBeGreaterThan(3);
     const off = troops.map((u) => lineOffset(u.pos, line.a, line.b, hq));
     expect(off.filter((o) => o.d <= 80).length / off.length).toBeGreaterThan(0.9);

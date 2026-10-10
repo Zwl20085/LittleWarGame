@@ -20,6 +20,9 @@ import { mannedShare } from '../src/sim/structures';
 import { STRATEGY_AI } from '../src/sim/strategyai';
 import { STORM_AB } from '../src/sim/storm';
 import { THEATRE_AB } from '../src/sim/theatre';
+import { stockSummary } from '../src/sim/settlements';
+import { econCounts } from '../src/sim/econ';
+import type { World } from '../src/sim/world';
 
 // A/B: HOME_DEFENCE=0 turns the round-3 home defence off (docs/STRATEGY_LAB.md "Round 3").
 if (process.env.HOME_DEFENCE === '0') STRATEGY_AI.homeDefence = false;
@@ -35,6 +38,18 @@ for (const k of (process.env.THEATRE_OFF ?? '').split(',')) if (k === 'stances' 
 const data = buildGameData(readFileSync('docs/data/units.csv', 'utf8'), readFileSync('docs/data/weapons.csv', 'utf8'), readFileSync('docs/data/rules.json', 'utf8'));
 const minutes = Number(process.argv[2] ?? 60);
 const seeds = (process.argv[3] ?? '7,11,13').split(',').map(Number);
+
+/** Extra health columns (2.2 logistics: settlement supply stocks, economic buildings). */
+function soakExtra(w: World): string {
+  if (w.places.length === 0) return '';
+  const stock = w.factions.map((f) => { const s = stockSummary(w, f); return `${Math.round(s.stock)}/${Math.round(s.cap)}`; }).join(' ');
+  const econ = w.factions.map((f) => { const c = econCounts(w, f.id); return `${c.factory}f${c.recruit}r${c.depot}d${c.sites ? `+${c.sites}` : ''}${c.ruins ? `x${c.ruins}` : ''}`; }).join(' ');
+  const einc = w.factions.map((f) => `${Math.round(f.econP)}|${Math.round(f.econM)}`).join(' ');
+  const inv = w.factions.map((f) => `${Math.round((100 * f.econInvested) / Math.max(1, f.spentTotalP + f.spentTotalM))}%`).join('/');
+  const live = w.aliveUnits.filter((u) => u.hp > 0 && !u.fixed);
+  const rearm = Math.round((100 * live.filter((u) => u.rearming).length) / Math.max(1, live.length));
+  return ` | rearming ${rearm}% | stockpile ${stock} | econ ${econ} (${einc}) inv ${inv}`;
+}
 
 interface Track { x: number; z: number; since: number; flaggedStuck: boolean; unreachableSince: number; fired: boolean }
 
@@ -130,6 +145,6 @@ for (const seed of seeds) {
     const held = w.factions.map((f) => w.objectives.filter((o) => o.owner === f.id).length).join('/');
     const pop = w.factions.map((f) => f.popPresent).join('/');
     const lost = w.factions.map((f) => f.lostUnits).join('/');
-    console.log(`t=${(w.time / 60).toFixed(0).padStart(3)} min | units ${alive.length} firing ${(100 * firing / Math.max(1, alive.length)).toFixed(0)}% | held ${held} | pop ${pop} | lost ${lost} | stock ${w.factions.map((f) => `${Math.round(f.p)}|${Math.round(f.m)}`).join(' ')} | tick ${mean.toFixed(2)} ms p99 ${p99.toFixed(1)}`);
+    console.log(`t=${(w.time / 60).toFixed(0).padStart(3)} min | units ${alive.length} firing ${(100 * firing / Math.max(1, alive.length)).toFixed(0)}% | held ${held} | pop ${pop} | lost ${lost} | stock ${w.factions.map((f) => `${Math.round(f.p)}|${Math.round(f.m)}`).join(' ')} | inc ${w.factions.map((f) => `${Math.round(f.incomeP)}|${Math.round(f.incomeM)}`).join(' ')} | ammo ${w.factions.map((f) => { const mine = alive.filter((u) => u.owner === f.id && u.primary); return mine.length ? (mine.reduce((a, u) => a + u.ammo, 0) / mine.length).toFixed(2) : '-'; }).join('/')}${soakExtra(w)} | tick ${mean.toFixed(2)} ms p99 ${p99.toFixed(1)}`);
   }
 }
