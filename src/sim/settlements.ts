@@ -218,8 +218,11 @@ export function drawSecond(world: World): void {
     const r = drawRadius(world, p);
     const near = world.spatial.query(p.pos.x, p.pos.z, r, SC_DRAW);
     SC_NEEDY.length = 0;
+    const core = coreRadius(world, p);
     for (const u of near) {
       if (u.owner !== owner || !drawsAmmo(u) || dist(u.pos, p.pos) > r) continue;
+      // In contact: only the defenders inside the settlement draw (no rearming while fighting at its edge).
+      if (inContact(world, u) && dist(u.pos, p.pos) > core) continue;
       if (p.stock > 0.5) u.lastSuppliedAt = world.time;
       if (u.ammo < 0.999) SC_NEEDY.push(u);
     }
@@ -235,6 +238,19 @@ export function drawSecond(world: World): void {
       p.stock -= give;
     }
   }
+}
+
+/** Fired within logistics.draw_contact_seconds (false when the rule is off). */
+export function inContact(world: World, u: Unit): boolean {
+  const s = logisticsRules(world).draw_contact_seconds;
+  return s !== undefined && world.time - u.lastFiredAt < s;
+}
+
+/** Core of a place: its settlement radius × draw_core_ratio (capital: half the draw radius). */
+function coreRadius(world: World, p: Place): number {
+  const ratio = logisticsRules(world).draw_core_ratio ?? 1;
+  const o = p.objIdx >= 0 ? world.objectives[p.objIdx] : undefined;
+  return o ? o.radius * ratio : drawRadius(world, p) * 0.5;
 }
 
 /** Nearest own place with stock (≥ need) within `maxD` of `from`, else null. */
@@ -299,7 +315,7 @@ export function rearmDuty(world: World, u: Unit, moveTo: (w: World, u: Unit, d: 
     return false;
   }
   const at = truck ? truck.pos : place!.pos;
-  const arrive = truck ? 90 : Math.min(drawRadius(world, place!) * 0.6, 120);
+  const arrive = truck ? Math.min(90, (l.truck_handover_radius_m ?? 190) * 0.7) : Math.min(drawRadius(world, place!) * 0.6, 120);
   if (dist(u.pos, at) > arrive) moveTo(world, u, at);
   else stop(u);
   u.status = 'status.rearming';

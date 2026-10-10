@@ -24,7 +24,8 @@ export interface WarProbe {
   econRaidUnits: number; econRaidDeaths: number; econRaidValueLost: number;
   econIncomeSum: number[]; incomeSum: number[];
   // supply
-  supply: { t: number; f: number; stockRatio: number; frontStockRatio: number; frontPlaces: number; lowMain: number; mainN: number; lowFight: number; fightN: number; rearm: number; logi: number; allocL: number }[];
+  supply: { t: number; f: number; stockRatio: number; frontStockRatio: number; frontPlaces: number; lowMain: number; mainN: number; lowFight: number; fightN: number; rearm: number; logi: number; allocL: number; lowPush: number; pushN: number; truckLoss60: number }[];
+  trucks: Map<number, number>; truckDeaths: number[]; truckDeathAt: number[][];
   // war progress
   captures: number; capturesByMinute: number[];
   // per-tick memo (not reported)
@@ -37,7 +38,7 @@ export function createWarProbe(w: World): WarProbe {
     tankDeaths: 0, tankDeathsAlone: 0, tankDeathsAloneNoFoot: 0, tankDeathsAttacking: 0, episodes: [],
     econDestroyed: [], raidUnits: 0, raidDeaths: 0, raidValueLost: 0, raidValueSent: 0, econRaidUnits: 0, econRaidDeaths: 0, econRaidValueLost: 0,
     econIncomeSum: w.factions.map(() => 0), incomeSum: w.factions.map(() => 0),
-    supply: [], captures: 0, capturesByMinute: [],
+    supply: [], captures: 0, capturesByMinute: [], trucks: new Map(), truckDeaths: w.factions.map(() => 0), truckDeathAt: w.factions.map(() => []),
     memo: new Map(), raidMemo: new Map(), econMemo: new Map(), econRuined: new Set(w.econ.filter((b) => b.ruined).map((b) => b.id)), open: new Map(),
     owners: new Map(w.objectives.map((o) => [o.id, o.owner])),
   };
@@ -138,6 +139,15 @@ export function warSecond(w: World, p: WarProbe): void {
     p.econIncomeSum[f.id] += (f.econP + f.econM) / 60;
     p.incomeSum[f.id] += (f.incomeP + f.incomeM) / 60;
   }
+  // Supply trucks lost.
+  for (const u of w.units.values()) if (u.hp > 0 && u.def.id === 'supply_truck') p.trucks.set(u.id, u.owner);
+  for (const [id, owner] of p.trucks) {
+    const u = w.units.get(id);
+    if (u && u.hp > 0) continue;
+    p.trucks.delete(id);
+    p.truckDeaths[owner]++;
+    p.truckDeathAt[owner].push(w.time);
+  }
   // Captures (territory swings).
   for (const o of w.objectives) {
     const prev = p.owners.get(o.id);
@@ -202,15 +212,17 @@ function supplySample(w: World, p: WarProbe): void {
       for (const u of w.spatial.query(pl.pos.x, pl.pos.z, 700)) if (u.hp > 0 && u.primary && w.isHostile(f.id, u.owner) && u.def.id !== 'supply_truck') { front = true; break; }
       if (front && pl.capitalOf < 0) { fs += pl.stock; fc += c; fpn++; }
     }
-    let lowMain = 0, mainN = 0, lowFight = 0, fightN = 0, rearm = 0, n = 0;
+    let lowMain = 0, mainN = 0, lowFight = 0, fightN = 0, rearm = 0, n = 0, lowPush = 0, pushN = 0;
+    const pushing = new Set(f.fronts.filter((s) => s.mode === 'push' || s.mode === 'breakthrough').map((s) => s.id));
     for (const u of w.units.values()) {
       if (u.owner !== f.id || u.hp <= 0 || u.fixed || !u.primary || u.def.id === 'supply_truck' || u.def.id === 'commander') continue;
       n++;
       if (u.rearming) rearm++;
       if (u.frontId === f.mainFront) { mainN++; if (u.ammo < 0.3) lowMain++; }
+      if (u.frontId === f.mainFront && pushing.has(u.frontId)) { pushN++; if (u.ammo < 0.3) lowPush++; }
       if (w.time - u.lastFiredAt < 15) { fightN++; if (u.ammo < 0.3) lowFight++; }
     }
-    p.supply.push({ t: w.time, f: f.id, stockRatio: cap > 0 ? stock / cap : 0, frontStockRatio: fc > 0 ? fs / fc : -1, frontPlaces: fpn, lowMain, mainN, lowFight, fightN, rearm: n ? rearm / n : 0, logi: f.logistics, allocL: f.alloc[2] });
+    p.supply.push({ t: w.time, f: f.id, stockRatio: cap > 0 ? stock / cap : 0, frontStockRatio: fc > 0 ? fs / fc : -1, frontPlaces: fpn, lowMain, mainN, lowFight, fightN, rearm: n ? rearm / n : 0, logi: f.logistics, allocL: f.alloc[2], lowPush, pushN, truckLoss60: p.truckDeathAt[f.id].filter((t) => w.time - t < 90).length });
   }
 }
 
@@ -229,7 +241,7 @@ export function warSummary(w: World, p: WarProbe): Record<string, unknown> {
     raidUnits: p.raidUnits, raidDeaths: p.raidDeaths, raidValueLost: p.raidValueLost, raidValueSent: p.raidValueSent,
     invested, spent, econIncomeSum: p.econIncomeSum, incomeSum: p.incomeSum,
     econBuilt: w.factions.map((f) => w.econ.filter((b) => b.owner === f.id && !b.ruined && b.progress >= 1).length),
-    supply: p.supply, captures: p.captures, capturesByMinute: p.capturesByMinute,
+    truckDeaths: p.truckDeaths, supply: p.supply, captures: p.captures, capturesByMinute: p.capturesByMinute,
     held: w.factions.map((f) => w.objectives.filter((o) => o.owner === f.id && o.kind !== 'point').length),
   };
 }

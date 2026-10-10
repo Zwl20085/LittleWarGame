@@ -87,7 +87,7 @@ function report(rs: Sum[], label: string): string {
   L.push(`| payback (econ output earned ÷ invested) | ${f2(eInc / Math.max(1, inv))} |`);
   L.push(`| working buildings at end (sum) | ${rs.reduce((a, r) => a + (r.econBuilt as number[]).reduce((x, y) => x + y, 0), 0)} |`);
   // Supply
-  type S = { t: number; stockRatio: number; frontStockRatio: number; frontPlaces: number; lowMain: number; mainN: number; lowFight: number; fightN: number; rearm: number; logi: number; allocL: number };
+  type S = { t: number; stockRatio: number; frontStockRatio: number; frontPlaces: number; lowMain: number; mainN: number; lowFight: number; fightN: number; rearm: number; logi: number; allocL: number; lowPush?: number; pushN?: number; truckLoss60?: number };
   const ss = rs.flatMap((r) => r.supply as S[]).filter((s) => s.t >= 300);
   const mean = (xs: number[]): number => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : NaN);
   const fr = ss.filter((s) => s.frontStockRatio >= 0);
@@ -96,6 +96,11 @@ function report(rs: Sum[], label: string): string {
   L.push(`| stock ÷ cap, front places (hostile ≤ 700 m) | ${f2(mean(fr.map((s) => s.frontStockRatio)))} |`);
   L.push(`| samples with front stocks < 50 % | ${pct(fr.filter((s) => s.frontStockRatio < 0.5).length, fr.length)} |`);
   L.push(`| main-effort units below 0.3 ammo | ${pct(ss.reduce((a, s) => a + s.lowMain, 0), ss.reduce((a, s) => a + s.mainN, 0))} |`);
+  L.push(`| main effort in a push (front mode push/breakthrough) below 0.3 ammo | ${pct(ss.reduce((a, s) => a + (s.lowPush ?? 0), 0), ss.reduce((a, s) => a + (s.pushN ?? 0), 0))} |`);
+  const lost = ss.filter((s) => (s.truckLoss60 ?? 0) > 0);
+  const kept = ss.filter((s) => (s.truckLoss60 ?? 0) === 0);
+  L.push(`| … main effort below 0.3 after a truck loss (≤ 90 s) / otherwise | ${pct(lost.reduce((a, s) => a + s.lowMain, 0), lost.reduce((a, s) => a + s.mainN, 0))} / ${pct(kept.reduce((a, s) => a + s.lowMain, 0), kept.reduce((a, s) => a + s.mainN, 0))} |`);
+  L.push(`| supply trucks lost | ${rs.reduce((a, r) => a + ((r.truckDeaths as number[] | undefined) ?? []).reduce((x, y) => x + y, 0), 0)} |`);
   L.push(`| firing units below 0.3 ammo | ${pct(ss.reduce((a, s) => a + s.lowFight, 0), ss.reduce((a, s) => a + s.fightN, 0))} |`);
   L.push(`| units walking to rearm | ${pct(mean(ss.map((s) => s.rearm)), 1)} |`);
   L.push(`| logistics L per min (mean) / L share | ${Math.round(mean(ss.map((s) => s.logi)))} / ${f2(mean(ss.map((s) => s.allocL)))} |`);

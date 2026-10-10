@@ -2,7 +2,7 @@ import { moveTo, stop } from './movement';
 import { frontById } from './frontref';
 import { safeRear } from './frontai';
 import type { Faction, Front, Place, Unit } from './types';
-import { crowdEfficiency, drawsAmmo, logisticsRules, armyScale, placeById, placeContested, placeOwner } from './settlements';
+import { crowdEfficiency, drawsAmmo, inContact, logisticsRules, armyScale, placeById, placeContested, placeOwner } from './settlements';
 import { dist, type V2 } from './vec';
 import type { World } from './world';
 
@@ -23,6 +23,11 @@ export const CONVOY = {
   suppliedMemorySeconds: 90,
 } as const;
 
+/** 2.2 supply round: truck cargo and hand-over rate from rules.json logistics (defaults: CONVOY). */
+const truckCap = (world: World): number => logisticsRules(world).truck_capacity ?? 40;
+const truckUnload = (world: World): number => logisticsRules(world).truck_unload_per_second ?? 8;
+const truckReach = (world: World): number => logisticsRules(world).truck_handover_radius_m ?? CONVOY.handoverRadius;
+
 /** Cargo needed to top a unit up to full ammunition. */
 export const ammoNeed = (u: Unit): number => (1 - u.ammo) * u.def.supplyDemand;
 
@@ -35,7 +40,7 @@ function bestStock(world: World, f: number, target: V2): Place {
   let bs = Infinity;
   for (const p of world.places) {
     if (placeOwner(world, p) !== f || placeContested(world, p)) continue;
-    const score = dist(p.pos, target) + (p.stock < CONVOY.capacity ? 900 : 0) + (p.stock < 2 ? 3000 : 0);
+    const score = dist(p.pos, target) + (p.stock < truckCap(world) ? 900 : 0) + (p.stock < 2 ? 3000 : 0);
     if (score < bs) {
       bs = score;
       best = p;
@@ -114,7 +119,7 @@ export function thinkConvoyTruck(world: World, u: Unit): void {
       }
       stop(u);
       u.status = 'status.loading';
-      if (u.cargo >= CONVOY.capacity * 0.95 || (u.cargo > CONVOY.capacity * 0.4 && stockAt.stock < 1)) {
+      if (u.cargo >= truckCap(world) * 0.95 || (u.cargo > truckCap(world) * 0.4 && stockAt.stock < 1)) {
         const dest = pickDestination(world, f, trucks);
         if (dest) {
           u.truckState = 'out';
@@ -193,7 +198,7 @@ export function convoySecond(world: World, f: Faction): void {
     if (t.truckState === 'load') {
       const at = nearestOwnPlace(world, f.id, t.pos, CONVOY.depotRadius);
       if (!at) continue;
-      const take = Math.min(CONVOY.loadPerSecond, CONVOY.capacity - t.cargo, at.stock);
+      const take = Math.min(CONVOY.loadPerSecond, truckCap(world) - t.cargo, at.stock);
       if (take > 0) {
         t.cargo += take;
         at.stock -= take;
@@ -201,14 +206,16 @@ export function convoySecond(world: World, f: Faction): void {
     } else if (t.truckState === 'unload' && t.cargo > 0) {
       const key = cellKey(t.pos, l.convoy_area_cell_m);
       const used = areaUsed.get(key) ?? 0;
-      const near = world.spatial.query(t.pos.x, t.pos.z, CONVOY.handoverRadius, SC_HAND)
-        .filter((u) => u.owner === f.id && drawsAmmo(u) && dist(u.pos, t.pos) <= CONVOY.handoverRadius)
+      const near = world.spatial.query(t.pos.x, t.pos.z, truckReach(world), SC_HAND)
+        .filter((u) => u.owner === f.id && drawsAmmo(u) && dist(u.pos, t.pos) <= truckReach(world))
         .sort((a, b) => a.ammo - b.ammo || a.id - b.id);
-      const needy = near.filter((u) => u.ammo < 0.999).length;
+      const needy = near.filter((u) => u.ammo < 0.999 && !inContact(world, u)).length;
       const eff = crowdEfficiency(l, needy);
-      let budget = Math.min(CONVOY.unloadPerSecond, t.cargo, Math.max(0, areaCap - used));
+      let budget = Math.min(truckUnload(world), t.cargo, Math.max(0, areaCap - used));
       let gave = false;
       for (const u of near) {
+        // 2.2 supply round: a unit in a firefight takes nothing from the truck (it must pull back to rearm).
+        if (inContact(world, u)) continue;
         u.lastSuppliedAt = world.time;
         const need = ammoNeed(u);
         if (need <= 0 || budget <= 1e-9) continue;

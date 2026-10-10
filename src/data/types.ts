@@ -122,6 +122,18 @@ export interface LogisticsRules {
   readonly place_fill_burst?: number;
   /** 2.2 wave 2: the steward asks for logistics while the stocks are below this share of their caps (absent = 2.1 demand rule). */
   readonly steward_stock_target?: number;
+  /**
+   * 2.2 supply round: a unit that fired within this many seconds draws from a place only inside its
+   * core (the settlement radius × draw_core_ratio: the town's defenders), and takes nothing from a
+   * truck — rearming is a pause in the fight, not a trickle while shooting. Absent = no rule.
+   */
+  readonly draw_contact_seconds?: number;
+  readonly draw_core_ratio?: number;
+  /** Convoy truck: cargo carried and cargo handed over per second (absent = convoy.ts defaults 40 / 8). */
+  readonly truck_capacity?: number;
+  readonly truck_unload_per_second?: number;
+  /** Convoy truck hand-over radius (m; absent = convoy.ts default 190): units come to the truck. */
+  readonly truck_handover_radius_m?: number;
 }
 
 export interface EconBuildingRules {
