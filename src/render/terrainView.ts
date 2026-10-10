@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { Ground, type Terrain } from '../sim/terrain';
 import { smoothBankHeights } from './bankSmoothing';
 import { buildBridges } from './bridges';
-import { roadDistanceField } from './roadField';
+import { roadDistanceField, roadDistanceTexture } from './roadField';
 import { buildScatter } from './scatter';
 import { buildSettlements, type Settlements } from './settlements';
 import { computeTerrainAttribs } from './terrainColor';
@@ -80,7 +80,7 @@ export class TerrainView {
     this.overlayTex.minFilter = THREE.LinearFilter;
     this.overlayTex.generateMipmaps = false;
     this.overlayTex.colorSpace = THREE.SRGBColorSpace;
-    const { material, uniforms } = terrainMaterial(this.overlayTex, terrain.width, terrain.depth);
+    const { material, uniforms } = terrainMaterial(this.overlayTex, terrain.width, terrain.depth, roadDistanceTexture(terrain));
     this.uniforms = uniforms;
     this.group.add(this.buildTiles(material));
     this.water = new WaterView(terrain, this.heights);
