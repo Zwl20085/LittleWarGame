@@ -246,11 +246,11 @@ export function inContact(world: World, u: Unit): boolean {
   return s !== undefined && world.time - u.lastFiredAt < s;
 }
 
-/** Core of a place: its settlement radius × draw_core_ratio (capital: half the draw radius). */
+/** Core of a place: its settlement radius × draw_core_ratio; the capital's defenders draw in its whole radius. */
 function coreRadius(world: World, p: Place): number {
   const ratio = logisticsRules(world).draw_core_ratio ?? 1;
   const o = p.objIdx >= 0 ? world.objectives[p.objIdx] : undefined;
-  return o ? o.radius * ratio : drawRadius(world, p) * 0.5;
+  return o ? o.radius * ratio : drawRadius(world, p);
 }
 
 /** Nearest own place with stock (≥ need) within `maxD` of `from`, else null. */
