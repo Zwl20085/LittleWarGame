@@ -1,4 +1,7 @@
-import { cancelOrder } from './production';
+import { cancelOrder, placeSlots } from './production';
+import { startBuilding, ECON_KINDS } from './econ';
+import { placeById, placeOwner } from './settlements';
+import type { EconKind } from '../data/types';
 import type { Match } from './sim';
 import { issueFrontOrder } from './fronts';
 import { createFrontAt, disbandFront, frontForOrder } from './frontops';
@@ -18,8 +21,10 @@ export type Command =
   | { type: 'setWeight'; unitId: string; weight: number }
   | { type: 'setCap'; unitId: string; cap: number }
   | { type: 'togglePause'; unitId: string }
-  /** One-off production; frontId -1 = the supreme HQ picks the front on roll-out. */
-  | { type: 'queueUnit'; unitId: string; frontId: number }
+  /** One-off production; frontId -1 = the supreme HQ picks the front on roll-out; placeId = queue at that place (2.2). */
+  | { type: 'queueUnit'; unitId: string; frontId: number; placeId?: string }
+  /** 2.2: build (or rebuild on a ruin) an economic building at an owned town / city. */
+  | { type: 'buildEcon'; placeId: string; kind: EconKind }
   | { type: 'cancelOrder'; orderId: number }
   | { type: 'setAlloc'; alloc: [number, number, number] }
   | { type: 'setAuto'; on: boolean }
@@ -43,7 +48,7 @@ export type Command =
 
 export type CommandFail =
   | 'FACTION_DEAD' | 'NOT_OWNER' | 'STALE_TARGET' | 'UNREACHABLE' | 'BAD_VALUE' | 'ROUTING'
-  | 'LOCKED' | 'INSUFFICIENT_M' | 'INSUFFICIENT_P' | 'OUT_OF_BOUNDS' | 'NO_ORDER' | 'NO_FRONT';
+  | 'LOCKED' | 'INSUFFICIENT_M' | 'INSUFFICIENT_P' | 'OUT_OF_BOUNDS' | 'NO_ORDER' | 'NO_FRONT' | 'NO_SLOT' | 'CONTESTED';
 
 export interface CommandEnvelope {
   readonly commandId: number;
@@ -113,8 +118,23 @@ function apply(match: Match, env: CommandEnvelope): CommandOutcome {
       // Front commanders are appointed by the supreme HQ, never bought.
       if (!w.data.units.has(c.unitId) || c.unitId === w.data.rules.command.commander_unit) return fail('BAD_VALUE');
       if (c.frontId !== -1 && !f.fronts.some((x) => x.id === c.frontId)) return fail('NO_FRONT');
+      if (c.placeId !== undefined) {
+        // 2.2: queue at a chosen place, which must be ours and have a slot of the unit's facility.
+        const p = placeById(w, c.placeId);
+        if (!p) return fail('BAD_VALUE');
+        if (placeOwner(w, p) !== env.actor) return fail('NOT_OWNER');
+        if (placeSlots(w, p, w.data.units.get(c.unitId)!.facility) <= 0) return fail('NO_SLOT');
+        f.manualQueue = [...f.manualQueue, { unitId: c.unitId, frontId: c.frontId, placeId: c.placeId }];
+        return OK;
+      }
       f.manualQueue = [...f.manualQueue, { unitId: c.unitId, frontId: c.frontId }];
       return OK;
+    case 'buildEcon': {
+      if (!ECON_KINDS.includes(c.kind)) return fail('BAD_VALUE');
+      const r = startBuilding(w, f, c.placeId, c.kind);
+      if (typeof r !== 'string') return OK;
+      return fail(r === 'INSUFFICIENT_P' || r === 'INSUFFICIENT_M' || r === 'NOT_OWNER' || r === 'NO_SLOT' ? r : r === 'CONTESTED' ? 'CONTESTED' : 'BAD_VALUE');
+    }
     case 'cancelOrder':
       return cancelOrder(w, f, c.orderId) ? OK : fail('NO_ORDER');
     case 'setAlloc': {

@@ -1,7 +1,7 @@
 import type { SupplyNode } from './supply';
 import type { Match } from './sim';
 import type {
-  Behavior, Faction, Fort, FxEvent, LogEntry, ManualTask, MatchResult, MoraleState, Objective, Projectile, SetupState, Unit,
+  Behavior, EconBuilding, Faction, Fort, FxEvent, LogEntry, ManualTask, MatchResult, MoraleState, Objective, Projectile, SetupState, Unit,
 } from './types';
 import type { V2 } from './vec';
 
@@ -39,6 +39,10 @@ export interface Snapshot {
   readonly objectives: { owner: Int8Array; contested: Uint8Array; activeAt: Float32Array; leader: Int8Array; progress: Float32Array };
   readonly projectiles: Projectile[];
   readonly forts: Fort[];
+  /** 2.2 supply stock per place (world.places order) and economic buildings (render + town panel). */
+  readonly placeStock: Float32Array;
+  readonly placeContestedSince: Float32Array;
+  readonly econ: EconBuilding[];
   readonly fx: FxEvent[];
   readonly log: LogEntry[];
   /** Observer's visible enemy ids and memory (fog mode only; null in open mode). */
@@ -142,6 +146,9 @@ export function makeSnapshot(match: Match, cur: SnapshotCursor, observer: number
     objectives: packObjectives(w.objectives),
     projectiles: w.projectiles,
     forts: w.forts,
+    placeStock: Float32Array.from(w.places, (p) => p.stock),
+    placeContestedSince: Float32Array.from(w.places, (p) => p.contestedSince),
+    econ: w.econ,
     fx,
     log,
     // Only the observer's visibility matters on the main thread, and only in fog mode.
@@ -215,6 +222,11 @@ export function applySnapshot(match: Match, snap: Snapshot, observer: number): v
   }
   replace(w.projectiles, snap.projectiles);
   replace(w.forts, snap.forts);
+  for (let i = 0; i < w.places.length && i < snap.placeStock.length; i++) {
+    w.places[i].stock = snap.placeStock[i];
+    w.places[i].contestedSince = snap.placeContestedSince[i];
+  }
+  replace(w.econ, snap.econ);
   for (const e of snap.fx) w.fx.push(e);
   if (w.fx.length > 4000) w.fx.splice(0, w.fx.length - 4000);
   for (const l of snap.log) w.log.push(l);

@@ -7,6 +7,7 @@ import { isCommander } from './formulas';
 import { garrisonsZone, THEATRE } from './theatre';
 import { boundOrder } from './frontref';
 import type { World } from './world';
+import { thinkInvestment } from './econai';
 
 const PERSONALITY_MUL: Record<Personality, Record<string, number>> = {
   balanced: {},
@@ -86,6 +87,8 @@ export function thinkCity(world: World, f: Faction): void {
   }
   f.mainFront = best;
   balanceReserves(world, f, strength);
+  // 2.2: wave-1 investment policy in economic buildings (econai.ts).
+  thinkInvestment(world, f);
 }
 
 /** Posture a line order dictates (the supreme HQ's defend / fortify / fall back), else null. */

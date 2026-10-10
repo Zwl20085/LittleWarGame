@@ -18,6 +18,8 @@ import { enemyConvoyTargets } from './operations';
 import { EAGER, eagerOn, stormOn } from './strategyai';
 import { crewPost, gunPost, holdAfterFire } from './crewai';
 import { coverSpot, threatCentre } from './terrainai';
+import { rearmDuty } from './settlements';
+import { isCommander } from './formulas';
 import type { Front, Unit } from './types';
 import { dist, headingTo, type V2 } from './vec';
 import type { World } from './world';
@@ -65,7 +67,6 @@ function nearRepairPoint(world: World, u: Unit): boolean {
 function needsRetreat(world: World, u: Unit): boolean {
   if (u.def.id === 'supply_truck') return u.hp <= u.def.maxHp * 0.3;
   if (u.hp <= u.def.maxHp * world.data.rules.morale.auto_retreat_hp_ratio) return true;
-  if (!u.supplied && u.ammo < 0.05 && world.time - u.noTargetSince > 20) return true;
   return false;
 }
 
@@ -127,6 +128,11 @@ export function thinkUnit(world: World, u: Unit): void {
   }
   // 2.0 defensive buildings (structures.ts, works agent): man a pillbox / bunker, work an assigned site, or go to a free building.
   // Round 7: HQ-point holders and breach responders before structure duty (a pillbox off the point must not hold them).
+  // 2.2 (V22_SPEC §3.4): out of ammunition (fresh from production, or run dry) → nearest truck / stock first.
+  if (rearmDuty(world, u, moveTo, stop, isCommander(u.def))) {
+    selectTarget(world, u, null);
+    return;
+  }
   if (u.opRole === 'garrison' && hqDuty(world, u)) return;
   if (u.def.id !== 'supply_truck' && structureDuty(world, u, s)) return;
   if (u.def.id === 'supply_truck') return thinkConvoyTruck(world, u);
