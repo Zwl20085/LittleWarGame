@@ -6,6 +6,7 @@ import { fmtTime, h, setText } from './dom';
 import { lang, onLangChange, setLang, t } from './i18n';
 import { settingsFields } from './pause';
 import { prefersReducedMotion } from './settings';
+import { updateWidgets } from './update';
 
 const STORE_KEY = 'lwg.setup';
 const WARMUP_SECONDS = 160;
@@ -156,6 +157,7 @@ export function showTitle(root: HTMLElement, data: GameData, onStart: (cfg: Matc
   const side = h('aside', { class: 'ts-panel dossier panel', 'aria-live': 'polite' });
   const keys = h('div', { class: 'ts-keys' });
   const langBtn = h('button', { class: 'ts-lang', onclick: () => setLang(lang() === 'zh' ? 'en' : 'zh') });
+  const upd = updateWidgets();
   const el = h('div', { class: `title-screen intro ${prefersReducedMotion() ? 'still' : ''}` },
     stage,
     h('div', { class: 'ts-grade' }), h('div', { class: 'ts-vignette' }), h('div', { class: 'ts-grain' }),
@@ -163,7 +165,8 @@ export function showTitle(root: HTMLElement, data: GameData, onStart: (cfg: Matc
     dip,
     h('main', { class: 'ts-content' }, kicker, title, sub, nav),
     side,
-    h('footer', { class: 'ts-foot' }, live, keys, langBtn));
+    upd.notice,
+    h('footer', { class: 'ts-foot' }, live, keys, upd.version, langBtn));
   root.append(el);
 
   let warm = 0;
@@ -288,6 +291,7 @@ export function showTitle(root: HTMLElement, data: GameData, onStart: (cfg: Matc
     setText(langBtn, t('lang.toggle'));
     langBtn.setAttribute('aria-label', t('set.lang'));
     setText(live.querySelector('.live-k') as HTMLElement, liveLabel());
+    upd.relabel();
     renderNav();
     renderPanel();
   }
