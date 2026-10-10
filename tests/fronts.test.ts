@@ -275,8 +275,8 @@ describe('fronts 2.1: binding orders, more fronts, zone garrisons', () => {
     let detached = 0;
     for (let t = 0; t < 180; t++) {
       run(match, 1);
-      // Until the objective is ours the front keeps it as its target (then the offensive moves on along the axis).
-      if (obj.owner !== 0) expect(dist(s.targetPos, obj.pos)).toBeLessThan(1);
+      // The front keeps the axis objective as its target throughout.
+      expect(dist(s.targetPos, obj.pos)).toBeLessThan(1);
       detached += frontUnits(world, 0, s.id).filter((u) => isDetached(u, 0)).length;
       if (t === 19) {
         // Within 20 s the front's destinations lead toward the objective.
@@ -289,6 +289,8 @@ describe('fronts 2.1: binding orders, more fronts, zone garrisons', () => {
     }
     expect(detached).toBe(0);
     expect(s.order.kind).toBe('attack');
+    // A captured axis place stays the main effort's objective (it consolidates there).
+    expect(dist(s.targetPos, obj.pos)).toBeLessThan(1);
   }, 120_000);
 
   it('binds a defend order: every line unit holds the ordered line, nobody pushes past it', () => {
