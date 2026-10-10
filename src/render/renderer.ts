@@ -10,7 +10,7 @@ import { CameraRig } from './camera';
 import { Effects } from './effects';
 import { MapLabels } from './mapLabels';
 import { ObjectiveMarkers } from './objectiveMarkers';
-import { QualityGovernor, type QualityLevel, type QualityMode } from './quality';
+import { deviceHint, initialLevel, QualityGovernor, type QualityLevel, type QualityMode } from './quality';
 import { OpArrows } from './opArrows';
 import { OrderLines } from './orderLines';
 import { clothFlag, FLAG_TIME } from './flags';
@@ -108,6 +108,7 @@ export class GameRenderer {
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.05;
+    this.quality.setAutoStart(initialLevel(deviceHint(this.renderer.getContext())));
     this.scene.background = roomBackground();
 
     this.rig = new CameraRig({ w: w.terrain.width, d: w.terrain.depth });
@@ -344,36 +345,39 @@ export class GameRenderer {
     this.frontVersion = field.version;
     const cv = this.terrainView.overlayCanvas;
     const g = cv.getContext('2d')!;
-    g.clearRect(0, 0, cv.width, cv.height);
     if (!this.layers.front) {
+      g.clearRect(0, 0, cv.width, cv.height);
       this.terrainView.overlayTex.needsUpdate = true;
       this.frontLines.clear();
       return;
     }
     const nx = field.nx;
     const nz = field.nz;
-    if (this.fieldCanvas.width !== nx) { this.fieldCanvas.width = nx; this.fieldCanvas.height = nz; }
-    const fill = this.fieldCanvas.getContext('2d')!.createImageData(nx, nz);
     const w = this.match.world;
     const cols = w.factions.map((f) => new THREE.Color(f.color));
-    for (let j = 0; j < nz; j++) {
-      for (let i = 0; i < nx; i++) {
-        const o = field.owner[j * nx + i];
-        const k = (j * nx + i) * 4;
-        if (o === NEUTRAL) continue;
-        if (o === CONTESTED) {
-          fill.data[k] = 235; fill.data[k + 1] = 195; fill.data[k + 2] = 95; fill.data[k + 3] = 48;
-          continue;
-        }
-        const c = cols[o];
-        fill.data[k] = c.r * 255; fill.data[k + 1] = c.g * 255; fill.data[k + 2] = c.b * 255; fill.data[k + 3] = 40;
+    // One pixel per field cell straight into the overlay texture (the terrain shader softens it).
+    const direct = cv.width === nx && cv.height === nz;
+    if (!direct && this.fieldCanvas.width !== nx) { this.fieldCanvas.width = nx; this.fieldCanvas.height = nz; }
+    const target = direct ? g : this.fieldCanvas.getContext('2d')!;
+    const fill = target.createImageData(nx, nz);
+    const d = fill.data;
+    for (let k = 0; k < nx * nz; k++) {
+      const o = field.owner[k];
+      if (o === NEUTRAL) continue;
+      const p = k * 4;
+      if (o === CONTESTED) {
+        d[p] = 235; d[p + 1] = 195; d[p + 2] = 95; d[p + 3] = 48;
+        continue;
       }
+      const c = cols[o];
+      if (!c) continue;
+      d[p] = c.r * 255; d[p + 1] = c.g * 255; d[p + 2] = c.b * 255; d[p + 3] = 40;
     }
-    this.fieldCanvas.getContext('2d')!.putImageData(fill, 0, 0);
-    g.imageSmoothingEnabled = true;
-    g.filter = 'blur(6px)';
-    g.drawImage(this.fieldCanvas, 0, 0, cv.width, cv.height);
-    g.filter = 'none';
+    target.putImageData(fill, 0, 0);
+    if (!direct) {
+      g.clearRect(0, 0, cv.width, cv.height);
+      g.drawImage(this.fieldCanvas, 0, 0, cv.width, cv.height);
+    }
     this.terrainView.overlayTex.needsUpdate = true;
     this.frontLines.rebuild(field, cols, (x, z) => w.terrain.heightAt(x, z));
   }
@@ -512,7 +516,9 @@ export class GameRenderer {
     this.opArrows.update(ppm);
     this.orderLines.sync(w, this.playerId, this.spectator, this.layers.fronts, ppm);
     FLAG_TIME.value += realDt;
-    this.terrainView.uniforms.uOverlayK.value = ppm > 4 ? 0.5 : ppm > 1.5 ? 0.8 : 1;
+    // Territory wash: full at the overview, fading down among the troops (the blurred 10 m
+    // field smeared the close-up ground; the inked contact line stays).
+    this.terrainView.uniforms.uOverlayK.value = Math.min(1, Math.max(0.22, 1.2 - 0.12 * ppm));
     this.units.showSoldiers = ppm > 0.7;
     this.units.showBlobs = ppm > 1.2;
     this.units.setSoldierShadows(ppm > 3.5 && q.soldierShadows);

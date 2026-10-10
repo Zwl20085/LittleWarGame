@@ -6,6 +6,8 @@ import { PAL } from './palette';
 export interface TerrainUniforms {
   readonly uOverlay: { value: THREE.Texture };
   readonly uSize: { value: THREE.Vector2 };
+  /** Overlay texture size in texels (for the blur taps). */
+  readonly uOverlayRes: { value: THREE.Vector2 };
   readonly uTerrainLayer: { value: number };
   /** Territory tint strength (softer when zoomed in). */
   readonly uOverlayK: { value: number };
@@ -51,6 +53,7 @@ vSquare = aSquare;
 const FRAG_PARS = /* glsl */ `
 uniform sampler2D uOverlay;
 uniform vec2 uSize;
+uniform vec2 uOverlayRes;
 uniform float uTerrainLayer;
 uniform float uOverlayK;
 uniform vec3 uFieldCols[6];
@@ -205,8 +208,13 @@ if (vTown.z > 0.5) {
   diffuseColor.rgb = mix(diffuseColor.rgb, sqc, sq);
   diffuseColor.rgb = mix(diffuseColor.rgb, uKerb * 0.92, ring);
 }
-vec4 ov = texture2D(uOverlay, vec2(vWPos.x / uSize.x, 1.0 - vWPos.z / uSize.y));
-diffuseColor.rgb = mix(diffuseColor.rgb, ov.rgb, ov.a * uOverlayK);
+// Territory wash: one texel per control cell, softened with five bilinear taps (premultiplied).
+vec2 ouv = vec2(vWPos.x / uSize.x, 1.0 - vWPos.z / uSize.y);
+vec2 ot = 0.9 / uOverlayRes;
+vec4 ov = texture2D(uOverlay, ouv) * 0.32
+  + (texture2D(uOverlay, ouv + vec2(ot.x, ot.y)) + texture2D(uOverlay, ouv + vec2(-ot.x, ot.y))
+   + texture2D(uOverlay, ouv + vec2(ot.x, -ot.y)) + texture2D(uOverlay, ouv + vec2(-ot.x, -ot.y))) * 0.17;
+diffuseColor.rgb = diffuseColor.rgb * (1.0 - ov.a * uOverlayK) + ov.rgb * uOverlayK;
 if (uTerrainLayer > 0.5) {
   // Paper-map reading of the ground: wash, contours every 10 m (index every 50 m), steep hatch.
   diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.78, 0.74, 0.62), 0.35);
@@ -221,11 +229,12 @@ if (uTerrainLayer > 0.5) {
 `;
 
 /** Matte vertex-coloured ground with shader-side fields, the overlay map and the terrain layer. */
-export function terrainMaterial(overlay: THREE.Texture, width: number, depth: number, road: RoadTexture | null = null): { material: THREE.MeshStandardMaterial; uniforms: TerrainUniforms } {
+export function terrainMaterial(overlay: THREE.Texture, width: number, depth: number, road: RoadTexture | null = null, overlayRes = new THREE.Vector2(width / 2.5, depth / 2.5)): { material: THREE.MeshStandardMaterial; uniforms: TerrainUniforms } {
   const rg = road?.texture.userData as { texel: number; w: number; h: number } | undefined;
   const uniforms: TerrainUniforms = {
     uOverlay: { value: overlay },
     uSize: { value: new THREE.Vector2(width, depth) },
+    uOverlayRes: { value: overlayRes },
     uTerrainLayer: { value: 0 },
     uOverlayK: { value: 1 },
     uFieldCols: { value: PAL.fields.slice(0, 6) },
@@ -249,6 +258,6 @@ export function terrainMaterial(overlay: THREE.Texture, width: number, depth: nu
       .replace('#include <common>', `#include <common>\n${FRAG_PARS}`)
       .replace('#include <color_fragment>', `#include <color_fragment>\n${FRAG_MAIN}`);
   };
-  material.customProgramCacheKey = () => 'terrain-v6';
+  material.customProgramCacheKey = () => 'terrain-v7';
   return { material, uniforms };
 }
