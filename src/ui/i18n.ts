@@ -282,7 +282,7 @@ const en: Dict = {
   'you': ' (you)',
   'ai.balanced': 'Balanced', 'ai.armor': 'Armour', 'ai.infantry': 'Infantry', 'ai.artillery': 'Artillery',  'title.kicker': 'OPERATIONS ROOM · EUROPE 1944', 'title.name': 'LITTLE WAR', 'title.sub': 'A WWII BATTLE DIORAMA',
   'title.quick': 'QUICK BATTLE', 'title.custom': 'CUSTOM BATTLE', 'title.spectate': 'SPECTATE', 'title.settings': 'SETTINGS',
-  'title.quickDesc': '4-way free-for-all · generated map · normal · fog of war', 'title.customDesc': 'Map, opponents, difficulty, intel and seed',
+  'title.quickDesc': '4-way FFA · generated map · normal · fog of war', 'title.customDesc': 'Map, opponents, difficulty, intel and seed',
   'title.spectateDesc': 'All-AI battle, free camera', 'title.settingsDesc': 'Language, UI scale, smoke, camera shake, sound, updates',
   'title.live': 'LIVE · AI BATTLE', 'title.deploying': 'DEPLOYING FORCES {p}%', 'title.keys': '↑↓ Select · Enter Confirm · Esc Back', 'title.back': 'Back',
   'set.lang': 'Language',
