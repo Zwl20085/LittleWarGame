@@ -1,3 +1,4 @@
+import { econLots } from './econLots';
 import type { LogisticsRules } from '../data/types';
 import { allocateSupply } from './supply';
 import type { Faction, Place, Unit } from './types';
@@ -49,15 +50,25 @@ export function initPlaces(world: World): void {
   world.objectives.forEach((o, i) => {
     if (o.kind !== 'town' && o.kind !== 'city') return;
     const n = slots[o.kind] ?? 0;
-    const slotPos: V2[] = [];
-    // Deterministic slot ring just inside the settlement edge, nudged onto passable ground.
+    // Deterministic lots on free ground at the settlement edge (econLots.ts); the old ring point
+    // (nudged onto passable ground) is the fallback when no clear lot is found.
     const a0 = ((i * 2654435761) >>> 0) % 628 / 100;
-    for (let k = 0; k < n; k++) {
+    const ring = (k: number): V2 => {
       const a = a0 + (k * 2 * Math.PI) / Math.max(1, n);
       const r = Math.max(24, o.radius * 0.8);
       const p = { x: o.pos.x + Math.cos(a) * r, z: o.pos.z + Math.sin(a) * r };
-      slotPos.push(nav.nearestPassable(p, 30) ?? p);
-    }
+      return nav.nearestPassable(p, 30) ?? p;
+    };
+    const town = world.terrain.def.towns.reduce<{ r: number; d: number }>((best, tw) => {
+      const d = Math.hypot(tw.x - o.pos.x, tw.z - o.pos.z);
+      return d < best.d ? { r: tw.r, d } : best;
+    }, { r: o.radius, d: Infinity });
+    const townR = town.d < 60 ? town.r : o.radius;
+    const passable = (p: V2): boolean => {
+      const q = nav.nearestPassable(p, 4);
+      return q !== null && Math.hypot(q.x - p.x, q.z - p.z) < 4.5;
+    };
+    const slotPos = econLots(world.terrain, o.pos, townR, n, a0, passable, ring);
     world.places.push({ id: o.id, kind: o.kind, pos: { ...o.pos }, objIdx: i, capitalOf: -1, slotPos, stock: 0, lastOwner: o.owner, contestedSince: -1 });
   });
 }
