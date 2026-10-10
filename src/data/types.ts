@@ -96,6 +96,47 @@ export interface DefensiveRules {
   };
 }
 
+export type PlaceKind = 'capital' | 'city' | 'town';
+export type EconKind = 'factory' | 'recruit' | 'depot';
+
+export interface LogisticsRules {
+  readonly ammo_cost_multiplier: number;
+  readonly stock_cap_k: Record<PlaceKind, number>;
+  readonly initial_stock_ratio: number;
+  readonly draw_radius_m: Record<PlaceKind, number>;
+  readonly rearm_per_second: number;
+  readonly crowd_free: number;
+  readonly crowd_penalty: number;
+  readonly place_handover_per_second_k: number;
+  readonly convoy_area_cell_m: number;
+  readonly convoy_area_cap_per_second_k: number;
+  readonly rearm_below: number;
+  readonly rearm_until: number;
+  readonly truck_seek_radius_m: number;
+  readonly stock_seek_radius_m: number;
+  readonly contested_refund_seconds: number;
+}
+
+export interface EconBuildingRules {
+  readonly cost_p: number;
+  readonly cost_m: number;
+  readonly build_seconds: number;
+  readonly max_hp: number;
+  readonly m_per_min_k: number;
+  readonly p_per_min_k: number;
+  readonly stock_cap_k?: number;
+  readonly fill_per_min_k?: number;
+}
+
+export interface EconRules {
+  readonly slots: Record<string, number>;
+  readonly captured_hp_ratio: number;
+  readonly rebuild_cost_ratio: number;
+  readonly demolish_hp_per_second: Record<'engineer' | 'infantry' | 'vehicle', number>;
+  readonly demolish_radius_m: number;
+  readonly buildings: Record<EconKind, EconBuildingRules>;
+}
+
 export interface Rules {
   readonly proposed_defaults: {
     readonly army_scale?: number;
@@ -197,6 +238,10 @@ export interface Rules {
     readonly return_morale: number;
     readonly return_ammo_ratio: number;
   };
+  /** 2.2 settlement supply stocks, gradual rearming, crowding (V22_SPEC §3; optional for old rule sets). */
+  readonly logistics?: LogisticsRules;
+  /** 2.2 economic buildings (V22_SPEC §5). */
+  readonly econ?: EconRules;
   readonly morale: {
     readonly suppression_enter: number;
     readonly suppression_exit: number;

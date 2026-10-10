@@ -1,6 +1,7 @@
 import type { UnitDef } from '../data/types';
 import { economyRates, refund, trySpend } from './economy';
-import type { Faction, ProductionOrder, Unit } from './types';
+import type { Faction, Place, ProductionOrder, Unit } from './types';
+import { placeById, placeContested, placeOwner, placeUsable } from './settlements';
 import type { World } from './world';
 import { dist, type V2 } from './vec';
 import { recordBuilt } from './stats';
@@ -16,43 +17,62 @@ export type OrderBlock =
   | 'PROTECTED'
   | 'NO_SLOT';
 
-/** Production slots: capital base + every held, uncontested town/city (territory rules). */
-export function slotsFor(world: World, f: Faction, facility: string): number {
+/** 2.2: slots of one facility at one place (capital: all facilities; city: all; town: barracks). */
+export function placeSlots(world: World, p: Place, facility: string): number {
   const terr = world.data.rules.territory;
-  if (!terr) return world.data.rules.economy.facilities[facility] ?? 0;
+  if (!terr) return p.capitalOf >= 0 ? (world.data.rules.economy.facilities[facility] ?? 0) : 0;
   const k = world.data.rules.proposed_defaults.army_scale ?? 1;
-  let n = (terr.capital_slots[facility] ?? 0) * k;
-  for (const o of world.objectives) {
-    if (o.owner !== f.id || o.contested) continue;
-    n += (terr.place_slots[o.kind]?.[facility] ?? 0) * k;
-  }
-  return Math.max(1, Math.round(n));
+  const v = p.capitalOf >= 0 ? terr.capital_slots[facility] ?? 0 : terr.place_slots[p.kind]?.[facility] ?? 0;
+  if (v <= 0) return 0;
+  return Math.max(1, Math.round(v * k));
+}
+
+/** Production slots of a faction for a facility: the sum over its usable places (UI / lab). */
+export function slotsFor(world: World, f: Faction, facility: string): number {
+  let n = 0;
+  for (const p of world.places) if (placeUsable(world, p, f.id)) n += placeSlots(world, p, facility);
+  return Math.max(1, n);
 }
 
 /** Production places of a faction that can build `facility` (capital always; towns barracks; cities all). */
 export function productionSites(world: World, f: Faction, facility: string): V2[] {
-  const sites: V2[] = [world.cityOf(f.id).exit];
-  const terr = world.data.rules.territory;
-  if (!terr) return sites;
-  for (const o of world.objectives) {
-    if (o.owner !== f.id || o.contested) continue;
-    if ((terr.place_slots[o.kind]?.[facility] ?? 0) > 0) sites.push(o.pos);
-  }
-  return sites;
+  return productionPlaces(world, f, facility).map((p) => p.pos);
 }
 
-/** Safe site closest to the destination group's front (reinforcements come from the territory). */
-function pickSpawn(world: World, f: Faction, facility: string, frontId: number): V2 {
+export function productionPlaces(world: World, f: Faction, facility: string): Place[] {
+  return world.places.filter((p) => placeUsable(world, p, f.id) && placeSlots(world, p, facility) > 0);
+}
+
+/** First free slot index of `facility` at place `p` (-1 = none). */
+export function freePlaceSlot(world: World, f: Faction, p: Place, facility: string): number {
+  const n = placeSlots(world, p, facility);
+  for (let s = 0; s < n; s++) if (!f.orders.some((o) => o.placeId === p.id && o.facility === facility && o.slot === s)) return s;
+  return -1;
+}
+
+const SC_THREAT: Unit[] = [];
+function threatened(world: World, f: number, p: V2): boolean {
+  for (const u of world.spatial.query(p.x, p.z, 250, SC_THREAT)) if (u.hp > 0 && world.isHostile(f, u.owner) && world.knows(f, u)) return true;
+  return false;
+}
+
+/**
+ * Auto scheduler's place for an order: a usable, unthreatened place with a free slot, nearest the
+ * front that needs the unit (a place with an empty stock is a little less attractive: the new unit
+ * has to rearm elsewhere). Null = no free slot anywhere.
+ */
+export function pickPlace(world: World, f: Faction, facility: string, frontId: number): { place: Place; slot: number } | null {
   const front = frontById(f, frontId)?.front ?? world.cityOf(f.id).exit;
-  let best = world.cityOf(f.id).exit;
+  let best: { place: Place; slot: number } | null = null;
   let bd = Infinity;
-  for (const p of productionSites(world, f, facility)) {
-    const threatened = world.spatial.query(p.x, p.z, 250).some((u) => u.hp > 0 && world.isHostile(f.id, u.owner) && world.knows(f.id, u));
-    if (threatened) continue;
-    const d = dist(p, front);
+  for (const p of world.places) {
+    if (!placeUsable(world, p, f.id) || placeSlots(world, p, facility) <= 0) continue;
+    const slot = freePlaceSlot(world, f, p, facility);
+    if (slot < 0 || threatened(world, f.id, p.pos)) continue;
+    const d = dist(p.pos, front) + (p.stock < 5 ? 250 : 0);
     if (d < bd) {
       bd = d;
-      best = p;
+      best = { place: p, slot };
     }
   }
   return best;
@@ -132,21 +152,15 @@ export function populationCap(world: World, f: Faction): number {
   return Math.min(Math.round(cap * (terr.pop_cap_max_multiplier ?? 1)), Math.round(n));
 }
 
-function freeSlot(world: World, f: Faction, facility: string): number {
-  const n = slotsFor(world, f, facility);
-  for (let s = 0; s < n; s++) if (!f.orders.some((o) => o.facility === facility && o.slot === s)) return s;
-  return -1;
-}
-
-function startOrder(world: World, f: Faction, def: UnitDef, slot: number, manual: boolean, frontId: number): ProductionOrder | null {
+function startOrder(world: World, f: Faction, def: UnitDef, at: { place: Place; slot: number }, manual: boolean, frontId: number): ProductionOrder | null {
   const res = trySpend(f, def.costP, def.costM);
   if (!res.ok) return null;
   const mul = economyRates(f.alloc, world.data.rules).buildTimeMul;
   const total = def.buildSeconds * mul;
   const order: ProductionOrder = {
-    id: world.newId(), unitId: def.id, facility: def.facility, slot, manual, frontId,
+    id: world.newId(), unitId: def.id, facility: def.facility, slot: at.slot, manual, frontId,
     remaining: total, total, costP: def.costP, costM: def.costM, blocked: false,
-    spawn: pickSpawn(world, f, def.facility, frontId),
+    spawn: { ...at.place.pos }, placeId: at.place.id,
   };
   f.orders.push(order);
   f.spent.push({ tick: world.tick, unitId: def.id, value: def.costP + def.costM });
@@ -182,9 +196,22 @@ export function scheduleProduction(world: World, f: Faction): void {
   for (let i = 0; i < f.manualQueue.length; i++) {
     const q = f.manualQueue[i];
     const def = world.data.units.get(q.unitId)!;
-    const slot = freeSlot(world, f, def.facility);
-    if (slot < 0 || canStart(world, f, def, true) !== null) continue;
-    if (startOrder(world, f, def, slot, true, q.frontId >= 0 && f.fronts.some((x) => x.id === q.frontId) ? q.frontId : pickFront(world, f))) {
+    const frontId = q.frontId >= 0 && f.fronts.some((x) => x.id === q.frontId) ? q.frontId : pickFront(world, f);
+    let at: { place: Place; slot: number } | null = null;
+    if (q.placeId) {
+      // Queued at a chosen place (town panel): waits for that place's slot; dropped if the place is lost.
+      const p = placeById(world, q.placeId);
+      if (!p || placeOwner(world, p) !== f.id) {
+        world.note(f.id, 'log.queueDropped', { unit: q.unitId, point: q.placeId }, 'warn');
+        f.manualQueue.splice(i, 1);
+        i--;
+        continue;
+      }
+      const slot = placeContested(world, p) ? -1 : freePlaceSlot(world, f, p, def.facility);
+      if (slot >= 0) at = { place: p, slot };
+    } else at = pickPlace(world, f, def.facility, frontId);
+    if (!at || canStart(world, f, def, true) !== null) continue;
+    if (startOrder(world, f, def, at, true, frontId)) {
       f.manualQueue.splice(i, 1);
       i--;
     }
@@ -205,13 +232,14 @@ export function scheduleProduction(world: World, f: Faction): void {
   for (const cand of ranked) {
     const def = world.data.units.get(cand.id)!;
     if (facilitiesDone.has(def.facility)) continue;
-    const slot = freeSlot(world, f, def.facility);
-    if (slot < 0) continue;
+    const front = pickFront(world, f);
+    const at = pickPlace(world, f, def.facility, front);
+    if (!at) continue;
     const prot = f.protectedOrder;
     const reserve = prot && prot.unitId !== def.id ? reserveFor(world, prot.unitId) : { p: 0, m: 0 };
     const block = canStart(world, f, def, false, reserve);
     if (block === null) {
-      startOrder(world, f, def, slot, false, pickFront(world, f));
+      startOrder(world, f, def, at, false, front);
       if (prot?.unitId === def.id) f.protectedOrder = null;
       facilitiesDone.add(def.facility);
       continue;
@@ -243,8 +271,23 @@ function capitalBesieged(world: World, f: number, r: number): boolean {
 
 /** Advance orders; completed units spawn at the city exit (or wait if blocked). */
 export function advanceProduction(world: World, f: Faction, seconds: number): void {
+  const refundAfter = world.data.rules.logistics?.contested_refund_seconds ?? 20;
   for (let i = 0; i < f.orders.length; i++) {
     const o = f.orders[i];
+    // 2.2: a lost place drops its queue (refunded at the cancel ratio); a contested one pauses,
+    // and is refunded too once contested for long.
+    const place = placeById(world, o.placeId);
+    if (place && place.capitalOf < 0) {
+      const lost = placeOwner(world, place) !== f.id;
+      const contested = placeContested(world, place);
+      if (lost || (contested && place.contestedSince >= 0 && world.time - place.contestedSince >= refundAfter)) {
+        world.note(f.id, 'log.queueLost', { unit: o.unitId, point: place.id }, 'warn');
+        cancelOrder(world, f, o.id);
+        i--;
+        continue;
+      }
+      if (contested) continue;
+    }
     if (o.remaining > 0) {
       o.remaining -= seconds;
       continue;
@@ -276,6 +319,8 @@ export function advanceProduction(world: World, f: Faction, seconds: number): vo
     // The order's front may have been dissolved while it was in production (theatre.ts).
     const u = world.spawnUnit(f.id, o.unitId, jitter, frontById(f, o.frontId) ? o.frontId : pickFront(world, f));
     u.behavior = 'rally';
+    // 2.2: new units roll out with no ammunition and rearm at the stock / a truck first (par. 3.4).
+    if (world.data.rules.logistics) u.ammo = 0;
     recordBuilt(world.stats, u);
     f.producedUnits++;
     f.orders.splice(i, 1);

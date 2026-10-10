@@ -1,7 +1,8 @@
 import { moveTo, stop } from './movement';
 import { frontById } from './frontref';
 import { safeRear } from './frontai';
-import type { Faction, Front, Unit } from './types';
+import type { Faction, Front, Place, Unit } from './types';
+import { crowdEfficiency, drawsAmmo, logisticsRules, armyScale, placeById, placeContested, placeOwner } from './settlements';
 import { dist, type V2 } from './vec';
 import type { World } from './world';
 
@@ -25,55 +26,22 @@ export const CONVOY = {
 /** Cargo needed to top a unit up to full ammunition. */
 export const ammoNeed = (u: Unit): number => (1 - u.ammo) * u.def.supplyDemand;
 
-function depotOf(world: World, f: number): V2 {
-  return world.cityOf(f).exit;
-}
-
-export interface Depot {
-  readonly pos: V2;
-  /** Fraction of drawn ammunition that actually arrives (falls with distance from the capital). */
-  readonly eff: number;
-}
-
-const depotCache = new WeakMap<World, { tick: number; byFaction: Depot[][] }>();
 /**
- * Supply depots (user request): the capital plus every held, uncontested town or city. Each
- * draws on the faction's logistics pool; efficiency decreases with distance from the capital.
- * Recomputed at most once per second.
+ * 2.2: trucks load from the settlement stocks (settlements.ts). The best stock for a truck is a
+ * short drive from its group, with enough in it to fill the truck; the capital is the fallback.
  */
-export function depotsOf(world: World, f: number): Depot[] {
-  let c = depotCache.get(world);
-  if (!c || world.tick - c.tick >= world.tickHz) {
-    const terr = world.data.rules.territory;
-    const falloff = terr?.depot_efficiency_falloff_m ?? 2600;
-    const minEff = terr?.depot_min_efficiency ?? 0.35;
-    const byFaction: Depot[][] = world.factions.map((fac) => {
-      const hq = world.hqPos(fac.id);
-      const list: Depot[] = [{ pos: world.cityOf(fac.id).exit, eff: 1 }];
-      for (const o of world.objectives) {
-        if (o.owner !== fac.id || o.contested || (o.kind !== 'town' && o.kind !== 'city')) continue;
-        list.push({ pos: o.pos, eff: Math.max(minEff, 1 - dist(o.pos, hq) / falloff) });
-      }
-      return list;
-    });
-    c = { tick: world.tick, byFaction };
-    depotCache.set(world, c);
-  }
-  return c.byFaction[f];
-}
-
-/** Depot best placed to serve `target`: short drive, discounted by low efficiency. */
-function bestDepot(world: World, f: number, target: V2): Depot {
-  let best: Depot | null = null;
+function bestStock(world: World, f: number, target: V2): Place {
+  let best: Place | null = null;
   let bs = Infinity;
-  for (const d of depotsOf(world, f)) {
-    const score = dist(d.pos, target) + (1 - d.eff) * 900;
+  for (const p of world.places) {
+    if (placeOwner(world, p) !== f || placeContested(world, p)) continue;
+    const score = dist(p.pos, target) + (p.stock < CONVOY.capacity ? 900 : 0) + (p.stock < 2 ? 3000 : 0);
     if (score < bs) {
       bs = score;
-      best = d;
+      best = p;
     }
   }
-  return best ?? { pos: depotOf(world, f), eff: 1 };
+  return best ?? placeById(world, `cap:${f}`)!;
 }
 
 /** Group most in need of ammunition, discounted by trucks already heading there. */
@@ -127,9 +95,10 @@ function knownThreatNear(world: World, u: Unit, r: number): boolean {
 /** Truck behaviour (called from the unit executor). */
 export function thinkConvoyTruck(world: World, u: Unit): void {
   const f = world.factions[u.owner];
-  // Reload at the depot best placed for this truck's group (capital or a held town/city).
+  // Reload at the stock best placed for this truck's group (capital or a held town/city).
   const group = frontById(f, u.frontId);
-  const depot = bestDepot(world, u.owner, group ? group.front : world.hqPos(u.owner)).pos;
+  const stockAt = bestStock(world, u.owner, group ? group.front : world.hqPos(u.owner));
+  const depot = stockAt.pos;
   const trucks = trucksOf(world, u.owner);
   // Threatened away from home: abort and run back (the enemy is hunting the supply line).
   if ((u.truckState === 'out' || u.truckState === 'unload') && knownThreatNear(world, u, CONVOY.fleeRadius)) {
@@ -145,7 +114,7 @@ export function thinkConvoyTruck(world: World, u: Unit): void {
       }
       stop(u);
       u.status = 'status.loading';
-      if (u.cargo >= CONVOY.capacity * 0.95 || (u.cargo > CONVOY.capacity * 0.4 && f.depot < 1)) {
+      if (u.cargo >= CONVOY.capacity * 0.95 || (u.cargo > CONVOY.capacity * 0.4 && stockAt.stock < 1)) {
         const dest = pickDestination(world, f, trucks);
         if (dest) {
           u.truckState = 'out';
@@ -206,45 +175,73 @@ function trucksOf(world: World, f: number): Unit[] {
   return c.byFaction[f];
 }
 
-/** Once per second: depot production, loading and hand-over of ammunition. */
+/** Area-cap cell key for a position (per-second convoy hand-over budget per cell). */
+const cellKey = (p: V2, cell: number): number => Math.floor(p.x / cell) * 4096 + Math.floor(p.z / cell);
+const SC_HAND: Unit[] = [];
+
+/**
+ * Once per second: loading at settlement stocks and gradual hand-over of ammunition. Hand-over is
+ * the same rate as at a stock (rearm_per_second × crowding) and all trucks in one area share a
+ * per-second cap, so a crowd of trucks in one spot does not stack (V22_SPEC §3.2, §3.5).
+ */
 export function convoySecond(world: World, f: Faction): void {
-  const cap = f.logistics * 2;
-  f.depot = Math.min(cap, f.depot + f.logistics / 60);
-  const depots = depotsOf(world, f.id);
+  const l = logisticsRules(world);
+  const areaCap = l.convoy_area_cap_per_second_k * armyScale(world);
+  const areaUsed = new Map<number, number>();
   for (const t of trucksOf(world, f.id)) {
-    const at = t.truckState === 'load' ? depots.find((d) => dist(t.pos, d.pos) <= CONVOY.depotRadius) : undefined;
-    if (at) {
-      // Distant depots lose part of what they draw from the pool (longer lines of communication).
-      const take = Math.min(CONVOY.loadPerSecond, CONVOY.capacity - t.cargo, f.depot * at.eff);
-      t.cargo += take;
-      f.depot -= take / at.eff;
+    if (t.hp <= 0) continue;
+    if (t.truckState === 'load') {
+      const at = nearestOwnPlace(world, f.id, t.pos, CONVOY.depotRadius);
+      if (!at) continue;
+      const take = Math.min(CONVOY.loadPerSecond, CONVOY.capacity - t.cargo, at.stock);
+      if (take > 0) {
+        t.cargo += take;
+        at.stock -= take;
+      }
     } else if (t.truckState === 'unload' && t.cargo > 0) {
-      // Hand over to the neediest units around the truck.
-      const near = world.spatial.query(t.pos.x, t.pos.z, CONVOY.handoverRadius)
-        .filter((u) => u.owner === f.id && u.hp > 0 && !u.fixed && u.id !== t.id && u.def.id !== 'supply_truck')
-        .sort((a, b) => a.ammo - b.ammo);
-      let budget = Math.min(CONVOY.unloadPerSecond, t.cargo);
+      const key = cellKey(t.pos, l.convoy_area_cell_m);
+      const used = areaUsed.get(key) ?? 0;
+      const near = world.spatial.query(t.pos.x, t.pos.z, CONVOY.handoverRadius, SC_HAND)
+        .filter((u) => u.owner === f.id && drawsAmmo(u) && dist(u.pos, t.pos) <= CONVOY.handoverRadius)
+        .sort((a, b) => a.ammo - b.ammo || a.id - b.id);
+      const needy = near.filter((u) => u.ammo < 0.999).length;
+      const eff = crowdEfficiency(l, needy);
+      let budget = Math.min(CONVOY.unloadPerSecond, t.cargo, Math.max(0, areaCap - used));
       let gave = false;
       for (const u of near) {
         u.lastSuppliedAt = world.time;
         const need = ammoNeed(u);
-        if (need <= 0 || budget <= 0) continue;
-        const give = Math.min(need, budget);
+        if (need <= 0 || budget <= 1e-9) continue;
+        const give = Math.min(need, l.rearm_per_second * eff * u.def.supplyDemand, budget);
         u.ammo = Math.min(1, u.ammo + give / u.def.supplyDemand);
         budget -= give;
         t.cargo -= give;
+        areaUsed.set(key, (areaUsed.get(key) ?? 0) + give);
         gave = true;
       }
       if (gave) t.truckIdleSince = world.time;
     }
   }
-  // Supply status for every unit: inside the city zone or recently reached by a convoy.
-  const hq = world.hqPos(f.id);
+  // Supply status: reached by a stock (settlements.drawSecond) or a convoy recently.
   for (const u of world.units.values()) {
     if (u.owner !== f.id || u.hp <= 0) continue;
-    const home = dist(u.pos, hq) <= world.data.rules.supply.city_local_radius_m;
-    u.supplied = u.fixed || home || u.def.id === 'supply_truck' || world.time - u.lastSuppliedAt < CONVOY.suppliedMemorySeconds;
+    u.supplied = u.fixed || u.def.id === 'supply_truck' || world.time - u.lastSuppliedAt < CONVOY.suppliedMemorySeconds;
     u.supplyRatio = u.supplied ? 1 : 0;
   }
   f.supplyDemand = [...world.units.values()].reduce((a, u) => a + (u.owner === f.id && u.hp > 0 && !u.fixed ? u.def.supplyDemand : 0), 0);
+}
+
+/** Own, uncontested place within r of p (truck loading), else null. */
+function nearestOwnPlace(world: World, f: number, p: V2, r: number): Place | null {
+  let best: Place | null = null;
+  let bd = r;
+  for (const q of world.places) {
+    if (placeOwner(world, q) !== f || placeContested(world, q)) continue;
+    const d = dist(q.pos, p);
+    if (d <= bd) {
+      bd = d;
+      best = q;
+    }
+  }
+  return best;
 }

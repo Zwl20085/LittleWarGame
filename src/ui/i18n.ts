@@ -148,6 +148,22 @@ const zh: Dict = {
   'reason.crossAt': '在{feature}渡河（{kind}）', 'reason.holdRiver': '依托{feature}河线固守', 'reason.holdHigh': '占据{feature}高地', 'reason.holdLine': '在{feature}一线固守', 'reason.holdFront': '在{feature}前线固守', 'reason.pushFront': '向{point}推进战线', 'reason.bridging': '工兵架设浮桥中', 'feat.here': '前沿',
   'prod.unlockShort': '{s}秒解锁',
   'hud.sides': '各方意志', 'hud.territory': '各方据点', 'res.held': '持有据点', 'hud.speedTip': '模拟速度', 'hud.pauseTip': '暂停 / 继续（Space）', 'hud.logiTip': '后勤满足度：供给能力 / 需求', 'hud.resolveTip': '战役意志：归零即淘汰',
+  // 2.2 logistics: town panel, supply stocks, per-place queues, economic buildings
+  'town.kind.capital': '首都', 'town.kind.city': '城市', 'town.kind.town': '城镇', 'town.neutral': '无主', 'town.contested': '争夺中',
+  'town.stock': '补给储备', 'town.stockTip': '{r} 米内的部队从此逐步补充弹药；运输车由此装载',
+  'town.queue': '本地生产', 'town.fac.barracks': '兵营', 'town.fac.vehicle': '车辆', 'town.fac.support': '支援',
+  'town.noSlots': '此地没有生产位', 'town.queueEmpty': '队列为空', 'town.queueHere': '在此生产：',
+  'town.buildings': '经济建筑', 'town.capitalNoBuild': '首都不设经济建筑位', 'town.noBuildSlots': '此地没有建筑位',
+  'town.ruin': '废墟（可重建）', 'town.building': '施工 {p}%', 'town.hp': '完好 {p}%', 'town.depotOut': '提高储备上限与补充速度',
+  'town.fail.NO_RULES': '不可用', 'town.fail.NO_PLACE': '此地不能建造', 'town.fail.NOT_OWNER': '不属我方', 'town.fail.CONTESTED': '争夺中，无法施工',
+  'town.fail.NO_SLOT': '建筑位已满', 'town.fail.INSUFFICIENT_P': '兵员不足', 'town.fail.INSUFFICIENT_M': '军需不足',
+  'econ.factory': '工厂', 'econ.recruit': '征兵站', 'econ.depot': '仓库',
+  'econ.factoryTip': '工厂：持续增加军需（M）收入', 'econ.recruitTip': '征兵站：持续增加兵员（P）收入', 'econ.depotTip': '仓库：提高本地补给储备上限与补充速度',
+  'log.econStarted': '{point} 开始建造{bld}', 'log.econBuilt': '{point} 的{bld}已建成', 'log.econLost': '{point} 的{bld}被摧毁！', 'log.econCaptured': '缴获 {point} 的{bld}',
+  'log.queueLost': '{point} 失守或被围，{unit} 生产取消（返还一半）', 'log.queueDropped': '{point} 已失守，排队的 {unit} 取消',
+  'status.rearming': '前往补给点补充弹药', 'fail.NO_SLOT': '此地没有对应的生产位 / 建筑位', 'fail.CONTESTED': '争夺中，无法施工',
+  'eco.buildings': '经济建筑：工厂 {f} · 征兵站 {r} · 仓库 {d}（+{p} P / +{m} M 每分）', 'eco.stock': '各地补给储备 {s} / {c}',
+  'prod.at': '于 {place}', 'hud.stockTip': '各城镇补给储备合计',
 };
 
 const en: Dict = {
@@ -284,6 +300,22 @@ const en: Dict = {
   'reason.crossAt': 'Crossing at {feature} ({kind})', 'reason.holdRiver': 'Holding the river line at {feature}', 'reason.holdHigh': 'Holding high ground at {feature}', 'reason.holdLine': 'Holding the line near {feature}', 'reason.holdFront': 'Holding the front near {feature}', 'reason.pushFront': 'Pushing the front toward {point}', 'reason.bridging': 'Engineers bridging the river', 'feat.here': 'the front',
   'prod.unlockShort': 'Unlock {s}s',
   'hud.sides': 'All sides', 'hud.territory': 'Territory', 'res.held': 'Settlements', 'hud.speedTip': 'Simulation speed', 'hud.pauseTip': 'Pause / resume (Space)', 'hud.logiTip': 'Logistics: supply capacity / demand', 'hud.resolveTip': 'Resolve: a side at zero is eliminated',
+  // 2.2 logistics: town panel, supply stocks, per-place queues, economic buildings
+  'town.kind.capital': 'Capital', 'town.kind.city': 'City', 'town.kind.town': 'Town', 'town.neutral': 'Unheld', 'town.contested': 'contested',
+  'town.stock': 'Supply stock', 'town.stockTip': 'Units within {r} m rearm here gradually; trucks load here',
+  'town.queue': 'Local production', 'town.fac.barracks': 'Barracks', 'town.fac.vehicle': 'Vehicles', 'town.fac.support': 'Support',
+  'town.noSlots': 'No production slots here', 'town.queueEmpty': 'Queue empty', 'town.queueHere': 'Build here:',
+  'town.buildings': 'Economic buildings', 'town.capitalNoBuild': 'The capital has no economic building slots', 'town.noBuildSlots': 'No building slots here',
+  'town.ruin': 'Ruin (rebuildable)', 'town.building': 'Building {p}%', 'town.hp': 'Intact {p}%', 'town.depotOut': 'Raises stock cap and refill',
+  'town.fail.NO_RULES': 'Unavailable', 'town.fail.NO_PLACE': 'Cannot build here', 'town.fail.NOT_OWNER': 'Not ours', 'town.fail.CONTESTED': 'Contested: no construction',
+  'town.fail.NO_SLOT': 'All slots used', 'town.fail.INSUFFICIENT_P': 'Not enough manpower', 'town.fail.INSUFFICIENT_M': 'Not enough munitions',
+  'econ.factory': 'Factory', 'econ.recruit': 'Recruiting office', 'econ.depot': 'Depot',
+  'econ.factoryTip': 'Factory: adds munitions (M) income', 'econ.recruitTip': 'Recruiting office: adds manpower (P) income', 'econ.depotTip': 'Depot: raises the local supply stock cap and refill rate',
+  'log.econStarted': '{bld} under construction at {point}', 'log.econBuilt': '{bld} at {point} completed', 'log.econLost': '{bld} at {point} destroyed!', 'log.econCaptured': 'Captured the {bld} at {point}',
+  'log.queueLost': '{point} lost or besieged: {unit} production cancelled (half refunded)', 'log.queueDropped': '{point} lost: queued {unit} dropped',
+  'status.rearming': 'Going to a supply point to rearm', 'fail.NO_SLOT': 'No matching slot at that place', 'fail.CONTESTED': 'Contested: no construction',
+  'eco.buildings': 'Economic buildings: factories {f} · recruiting {r} · depots {d} (+{p} P / +{m} M per min)', 'eco.stock': 'Supply stocks {s} / {c}',
+  'prod.at': 'at {place}', 'hud.stockTip': 'Total supply stock in our towns',
 };
 
 /** Historical-flavour equipment names (fictional factions; user-approved naming). */

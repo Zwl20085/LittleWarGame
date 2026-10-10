@@ -219,6 +219,8 @@ export class InputController {
       return;
     }
     const u = this.ctx.renderer.units.pick(this.ndc(e), cam, 20, this.viewport(), () => true);
+    // 2.2 (logistics): a click on empty ground opens the town panel of the place under it (or closes it).
+    this.hud.town.pickAt(u ? null : this.ctx.renderer.groundAt(this.ndc(e)));
     if (!u) return;
     if (this.mine(u)) {
       if (additive && sel.has(u.id)) sel.delete(u.id);

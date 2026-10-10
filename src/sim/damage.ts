@@ -12,6 +12,7 @@ import { exposureSuppressionMul } from './terrainrules';
 import type { Fort, ProjectileKind, Unit, V3 } from './types';
 import { angleDiff, DEG, headingTo, type V2 } from './vec';
 import type { World } from './world';
+import { damageEconAt } from './econ';
 
 /** Query scratch arrays: the blast loop calls applyDamage, which queries with its own. */
 const SC_WIPE: Unit[] = [];
@@ -173,6 +174,8 @@ export function resolveBlast(
     applyDamage(world, u, dmg, attackerOwner, weaponId, src);
   }
   for (const f of world.forts) damageFort(world, f, at, radius, kind === 'ap' ? Math.min(damage, COMBAT.apStructureCap) : damage, attackerOwner);
+  // 2.2 economic buildings (econ.ts): shellfire wrecks factories, offices and depots.
+  damageEconAt(world, at, radius, (kind === 'ap' ? Math.min(damage, COMBAT.apStructureCap) : damage) * COMBAT.heTargetMul.fort);
 }
 
 function damageFort(world: World, f: Fort, at: V3, radius: number, damage: number, attackerOwner: number): void {

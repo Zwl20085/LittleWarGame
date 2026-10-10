@@ -1,5 +1,5 @@
 import type { HighCommand } from './command';
-import type { UnitDef, WeaponDef } from '../data/types';
+import type { EconKind, PlaceKind, UnitDef, WeaponDef } from '../data/types';
 import type { ObjectiveType } from './mapdef';
 import type { V2 } from './vec';
 
@@ -122,6 +122,10 @@ export interface Unit {
   progressIdx: number;
   progressD: number;
   progressAt: number;
+  /** 2.2: walking to a stock / truck to rearm (hysteresis between logistics.rearm_below and rearm_until). */
+  rearming: boolean;
+  /** 2.2: earliest time to search for a rearm point again after none was found. */
+  rearmAt: number;
 }
 
 /** 正面推进 / 侧面迂回 / 钳形攻势 / 武装渗透 / 筑垒围攻. */
@@ -240,8 +244,48 @@ export interface ProductionOrder {
   readonly costP: number;
   readonly costM: number;
   blocked: boolean;
-  /** Where the finished unit rolls out (an owned production place near its group's front). */
+  /** Where the finished unit rolls out (its production place). */
   readonly spawn: V2;
+  /** 2.2: production place (Place.id) whose queue and slot this order occupies. */
+  readonly placeId: string;
+}
+
+/**
+ * 2.2 production / supply place (V22_SPEC §3–4): every capital, city and town. Owner is read live
+ * from the objective (or the capital's faction); `stock` is its supply stock in cargo units.
+ */
+export interface Place {
+  readonly id: string;
+  readonly kind: PlaceKind;
+  readonly pos: V2;
+  /** Index in world.objectives (−1 for a capital). */
+  readonly objIdx: number;
+  /** Faction whose capital this is (−1 for a settlement). */
+  readonly capitalOf: number;
+  /** Economic-building slot positions (empty for the capital / villages). */
+  readonly slotPos: readonly V2[];
+  stock: number;
+  /** Owner seen at the last logistics second (a change = stock lost, queue refunded). */
+  lastOwner: number;
+  /** Time the place became contested (−1 = not contested). */
+  contestedSince: number;
+}
+
+/** 2.2 economic building (工厂 / 征兵站 / 仓库) on a place's slot; hp 0 = ruin (rebuildable). */
+export interface EconBuilding {
+  readonly id: number;
+  kind: EconKind;
+  readonly placeId: string;
+  readonly slot: number;
+  readonly pos: V2;
+  readonly facing: number;
+  owner: number;
+  hp: number;
+  maxHp: number;
+  /** Construction progress 0..1 (1 = working). */
+  progress: number;
+  /** Destroyed: rubble on the slot until rebuilt. */
+  ruined: boolean;
 }
 /* `frontId` on an order: the front the unit joins (-1 = the supreme HQ picks on roll-out). */
 
@@ -285,11 +329,19 @@ export interface Faction {
   nextRaidAt: number;
   /** Theatre commander state (directives, attack bias). */
   command: HighCommand;
-  /** Ammunition waiting at the city depot for convoys (grows at logistics L per minute). */
+  /** 2.2: total supply stock over the faction's places (display; the stocks live on world.places). */
   depot: number;
+  /** 2.2: income from economic buildings (per minute, included in incomeP / incomeM). */
+  econP: number;
+  econM: number;
+  /** 2.2 AI: P/M set aside for the next economic building (econai.ts); `active` = a safe slot exists. */
+  econFund: { p: number; m: number; active: boolean };
+  /** P + M spent on economic buildings so far (investment share metric). */
+  econInvested: number;
   lastWorksAt: number;
   orders: ProductionOrder[];
-  manualQueue: { unitId: string; frontId: number }[];
+  /** Player / HQ one-off orders waiting for a slot; `placeId` = queued at a chosen place (2.2). */
+  manualQueue: { unitId: string; frontId: number; placeId?: string }[];
   fronts: Front[];
   mainFront: number;
   /** Next front id (fronts are created and dissolved during the match). */
