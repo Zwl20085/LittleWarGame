@@ -50,7 +50,24 @@ export class Hud {
       return s ? `${frontLabel(ctx.match.world, fid, id)} · ${t(`order.${s.order.kind}`)}` : '';
     };
     ctx.renderer.orderLines.zoneLabel = (_fid, z) => t('zone.mapLabel', { n: z.id + 1 });
+    // Panel heights are followed by a ResizeObserver instead of reading offsetHeight in every
+    // 5 Hz refresh (each read forced a full layout right after the panels' DOM writes).
+    if (typeof ResizeObserver !== 'undefined') {
+      this.sizeObserver = new ResizeObserver(() => this.syncStackHeights());
+      this.sizeObserver.observe(this.minimap.el);
+      this.sizeObserver.observe(this.production.el);
+    }
     this.refresh();
+  }
+
+  private readonly sizeObserver: ResizeObserver | null = null;
+
+  /** Keep the selection dossier clear of the minimap stack and the orders column clear of the production bar. */
+  private syncStackHeights(): void {
+    const miniH = `${Math.ceil(this.minimap.el.offsetHeight)}px`;
+    if (this.root.style.getPropertyValue('--mini-h') !== miniH) this.root.style.setProperty('--mini-h', miniH);
+    const botH = `${Math.ceil(this.production.el.offsetHeight)}px`;
+    if (this.root.style.getPropertyValue('--bottom-h') !== botH) this.root.style.setProperty('--bottom-h', botH);
   }
 
   private toggleHelp(): void {
@@ -90,12 +107,8 @@ export class Hud {
     this.selection.refresh();
     this.minimap.refresh();
     this.economy.refresh();
-    // Keep the selection dossier clear of the minimap stack.
-    const miniH = `${Math.ceil(this.minimap.el.offsetHeight)}px`;
-    if (this.root.style.getPropertyValue('--mini-h') !== miniH) this.root.style.setProperty('--mini-h', miniH);
-    // Keep the orders column clear of the production bar.
-    const botH = `${Math.ceil(this.production.el.offsetHeight)}px`;
-    if (this.root.style.getPropertyValue('--bottom-h') !== botH) this.root.style.setProperty('--bottom-h', botH);
+    // Without ResizeObserver, measure here (forces a synchronous layout after the DOM writes).
+    if (!this.sizeObserver) this.syncStackHeights();
     const m = this.ctx.mode;
     const hint = m.kind === 'attackMove' ? t('cmd.pickAttack') : this.fronts.modeHint();
     if (this.modeHint.textContent !== hint) this.modeHint.textContent = hint;
@@ -104,6 +117,7 @@ export class Hud {
   }
 
   dispose(): void {
+    this.sizeObserver?.disconnect();
     this.offLang();
     this.ctx.renderer.orderLines.label = null;
     this.ctx.renderer.orderLines.zoneLabel = null;

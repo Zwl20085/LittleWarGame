@@ -35,6 +35,8 @@ export class ArtilleryFx {
   // Shockwave rings as struct-of-arrays (x, y, z, radius, age).
   private readonly sh = new Float32Array(MAX_SHOCKS * 5);
   private shN = 0;
+  /** Shock rings drawn last frame (skip the upload while there are none). */
+  private shocksLast = 0;
   /** Smoke density multiplier from the settings (0 = off). */
   smokeScale = 1;
 
@@ -190,7 +192,18 @@ export class ArtilleryFx {
     }
     this.shN = write;
     this.shocks.count = write;
-    this.shocks.instanceMatrix.needsUpdate = true;
-    if (this.shocks.instanceColor) this.shocks.instanceColor.needsUpdate = true;
+    this.shocks.visible = write > 0;
+    if (write === 0 && this.shocksLast === 0) return;
+    this.shocksLast = write;
+    const im = this.shocks.instanceMatrix;
+    im.clearUpdateRanges();
+    im.addUpdateRange(0, write * 16);
+    im.needsUpdate = true;
+    const ic = this.shocks.instanceColor;
+    if (ic) {
+      ic.clearUpdateRanges();
+      ic.addUpdateRange(0, write * 3);
+      ic.needsUpdate = true;
+    }
   }
 }

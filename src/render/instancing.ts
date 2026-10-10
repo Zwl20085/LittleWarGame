@@ -139,6 +139,8 @@ export class InstanceBatch {
   private n = 0;
   private cap: number;
   private strideArr: Float32Array | null = null;
+  /** Instances uploaded by the last end() (skip re-uploading an empty batch). */
+  private uploaded = 0;
   /** The instance matrix array (valid until the next push/next: growing replaces it). */
   matrices: Float32Array;
 
@@ -174,6 +176,8 @@ export class InstanceBatch {
     im.receiveShadow = true;
     im.frustumCulled = false;
     im.count = 0;
+    // Batches sit at their parent's origin (instances carry the transforms).
+    im.matrixAutoUpdate = false;
     return im;
   }
 
@@ -232,6 +236,12 @@ export class InstanceBatch {
 
   end(): void {
     this.mesh.count = this.n;
+    // An empty InstancedMesh still costs a program switch, uniform upload and attribute setup
+    // in both the colour and the shadow pass: most batches (unit kinds not on the map, wreck
+    // and garrison variants) are empty most of the time.
+    this.mesh.visible = this.n > 0;
+    if (this.n === 0 && this.uploaded === 0) return;
+    this.uploaded = this.n;
     this.mesh.instanceMatrix.clearUpdateRanges();
     this.mesh.instanceMatrix.addUpdateRange(0, this.n * 16);
     this.mesh.instanceMatrix.needsUpdate = true;

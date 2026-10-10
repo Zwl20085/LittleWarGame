@@ -166,6 +166,13 @@ export class GameRenderer {
         o.matrixAutoUpdate = false;
       });
     }
+    // The scene root and the container groups never move. With matrixAutoUpdate on, the root
+    // recomposed its matrix every frame and flagged itself dirty, which forced a world-matrix
+    // multiply for every object in the scene; now only objects that move pay for it.
+    for (const o of [this.scene, this.units.group, this.effects.group, this.overlayGroup, this.fieldWorks.group, this.structureViews.group, this.orderLines.group]) {
+      o.updateMatrix();
+      o.matrixAutoUpdate = false;
+    }
     this.scene.updateMatrixWorld(true);
   }
 
@@ -357,6 +364,18 @@ export class GameRenderer {
     this.frontLines.rebuild(field, cols, (x, z) => w.terrain.heightAt(x, z));
   }
 
+  private readonly overlayMaterials = new Map<string, THREE.Material>();
+
+  /** Overlay materials are shared and kept for the match (a handful of colour / style keys). */
+  private overlayMaterial(key: string, make: () => THREE.Material): THREE.Material {
+    let m = this.overlayMaterials.get(key);
+    if (!m) {
+      m = make();
+      this.overlayMaterials.set(key, m);
+    }
+    return m;
+  }
+
   /** Rebuild route/supply/range lines a few times a second (not every frame), disposing the old ones. */
   private drawOverlays(realDt: number): void {
     const key = `${this.layers.fronts}|${this.layers.supply}|${this.layers.ranges}|${[...this.units.selected].join(',')}`;
@@ -364,20 +383,19 @@ export class GameRenderer {
     if (this.overlayTimer > 0 && key === this.overlayKey) return;
     this.overlayTimer = 0.25;
     this.overlayKey = key;
-    for (const o of this.overlayGroup.children) {
-      const m = o as THREE.Mesh;
-      m.geometry?.dispose();
-      (m.material as THREE.Material | undefined)?.dispose();
-    }
+    // Geometry is rebuilt; materials come from a cache and stay alive. (Disposing them released
+    // their shader programs, and the next rebuild recompiled them — a synchronous link stall
+    // four times a second.)
+    for (const o of this.overlayGroup.children) (o as THREE.Mesh).geometry?.dispose();
     this.overlayGroup.clear();
     const w = this.match.world;
     const f = w.factions[this.playerId];
     if (!f) return;
     const mk = (pts: THREE.Vector3[], color: string, dashed: boolean, opacity = 0.9): THREE.Line => {
       const geo = new THREE.BufferGeometry().setFromPoints(pts);
-      const mat = dashed
+      const mat = this.overlayMaterial(`${dashed ? 'dash' : 'line'}|${color}|${opacity}`, () => dashed
         ? new THREE.LineDashedMaterial({ color, dashSize: 6, gapSize: 4, transparent: true, opacity, depthTest: false })
-        : new THREE.LineBasicMaterial({ color, transparent: true, opacity, depthTest: false });
+        : new THREE.LineBasicMaterial({ color, transparent: true, opacity, depthTest: false }));
       const l = new THREE.Line(geo, mat);
       if (dashed) l.computeLineDistances();
       l.renderOrder = 5;
@@ -394,7 +412,7 @@ export class GameRenderer {
         const main = s.id === f.mainFront;
         this.overlayGroup.add(mk(along(exit, s.rally, 3).concat(along(s.rally, s.targetPos, 3)), main ? '#f4ecd9' : '#d8cfb8', true, main ? 0.95 : 0.6));
         const tip = lift(s.targetPos, 3);
-        const head = new THREE.Mesh(new THREE.ConeGeometry(4, 9, 3), new THREE.MeshBasicMaterial({ color: '#f4ecd9', depthTest: false, transparent: true, opacity: 0.9 }));
+        const head = new THREE.Mesh(new THREE.ConeGeometry(4, 9, 3), this.overlayMaterial('head', () => new THREE.MeshBasicMaterial({ color: '#f4ecd9', depthTest: false, transparent: true, opacity: 0.9 })));
         head.position.copy(tip).setY(tip.y + 8);
         head.rotation.x = Math.PI;
         head.renderOrder = 6;
@@ -406,7 +424,7 @@ export class GameRenderer {
       for (const n of nodes) {
         if (n.parent) this.overlayGroup.add(mk(along(n.parent, n.pos, 2.5), n.cut ? '#a63f36' : '#e0c070', n.cut, 0.9));
         if (n.radius > 0) {
-          const ring = new THREE.Mesh(new THREE.RingGeometry(n.radius - 1.5, n.radius, 64).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: '#e0c070', transparent: true, opacity: 0.35, depthTest: false }));
+          const ring = new THREE.Mesh(new THREE.RingGeometry(n.radius - 1.5, n.radius, 64).rotateX(-Math.PI / 2), this.overlayMaterial('supplyRing', () => new THREE.MeshBasicMaterial({ color: '#e0c070', transparent: true, opacity: 0.35, depthTest: false })));
           ring.position.set(n.pos.x, w.terrain.heightAt(n.pos.x, n.pos.z) + 2, n.pos.z);
           this.overlayGroup.add(ring);
         }

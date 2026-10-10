@@ -1,5 +1,5 @@
 import { frontOrderShape, ORDER_COLOR, ZONE_COLOR } from '../render/orderLines';
-import { CONTESTED, NEUTRAL } from '../sim/frontline';
+import { CONTESTED, NEUTRAL, type FrontlineField } from '../sim/frontline';
 import { Ground } from '../sim/terrain';
 import type { GameContext } from './context';
 import { h, setText } from './dom';
@@ -168,21 +168,49 @@ export class MinimapPanel {
     g.restore();
   }
 
+  private readonly frontLayer = document.createElement('canvas');
+  private frontVersion = -1;
+
+  /** Control field as one pixel per cell (faction colour at 1/3 alpha, contested amber). */
+  private paintFrontLayer(field: FrontlineField): void {
+    this.frontVersion = field.version;
+    const { nx, nz } = field;
+    if (this.frontLayer.width !== nx || this.frontLayer.height !== nz) {
+      this.frontLayer.width = nx;
+      this.frontLayer.height = nz;
+    }
+    const fg = this.frontLayer.getContext('2d')!;
+    const img = fg.createImageData(nx, nz);
+    const cols = this.ctx.match.world.factions.map((f) => hexRgb(f.color));
+    const d = img.data;
+    for (let c = 0; c < nx * nz; c++) {
+      const o = field.owner[c];
+      if (o === NEUTRAL) continue;
+      const k = c * 4;
+      if (o === CONTESTED) {
+        d[k] = 230; d[k + 1] = 190; d[k + 2] = 90; d[k + 3] = 89;
+        continue;
+      }
+      const rgb = cols[o];
+      if (!rgb) continue;
+      d[k] = rgb[0]; d[k + 1] = rgb[1]; d[k + 2] = rgb[2]; d[k + 3] = 0x55;
+    }
+    fg.putImageData(img, 0, 0);
+  }
+
   refresh(): void {
     const w = this.ctx.match.world;
     const g = this.canvas.getContext('2d')!;
     g.drawImage(this.base, 0, 0);
     const field = this.ctx.match.frontView ?? this.ctx.match.front;
     if (this.ctx.renderer.layers.front) {
+      // One image per field version, drawn scaled (a fillRect per cell cost ~10 ms per refresh
+      // on a large map).
+      if (field.version !== this.frontVersion || field.nx !== this.frontLayer.width) this.paintFrontLayer(field);
       const cs = field.cell * this.scale;
-      for (let j = 0; j < field.nz; j++) {
-        for (let i = 0; i < field.nx; i++) {
-          const o = field.owner[j * field.nx + i];
-          if (o === NEUTRAL) continue;
-          g.fillStyle = o === CONTESTED ? 'rgba(230,190,90,0.35)' : w.factions[o].color + '55';
-          g.fillRect(i * cs, j * cs, cs + 0.5, cs + 0.5);
-        }
-      }
+      g.imageSmoothingEnabled = false;
+      g.drawImage(this.frontLayer, 0, 0, field.nx * cs, field.nz * cs);
+      g.imageSmoothingEnabled = true;
     }
     for (const o of w.objectives) {
       g.fillStyle = o.owner >= 0 ? w.factions[o.owner].color : '#f4ecd9';
@@ -222,4 +250,12 @@ export class MinimapPanel {
       l.el.setAttribute('aria-pressed', String(on));
     }
   }
+}
+
+/** '#rrggbb' (or '#rgb') → [r, g, b]; anything else → mid grey. */
+function hexRgb(hex: string): [number, number, number] {
+  const m = /^#?([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(hex.trim());
+  if (!m) return [128, 128, 128];
+  const v = m[1].length === 3 ? m[1].split('').map((ch) => ch + ch).join('') : m[1];
+  return [parseInt(v.slice(0, 2), 16), parseInt(v.slice(2, 4), 16), parseInt(v.slice(4, 6), 16)];
 }

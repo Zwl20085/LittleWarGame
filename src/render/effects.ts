@@ -58,6 +58,8 @@ export class Effects {
   private trN = 0;
   private readonly shells: THREE.InstancedMesh;
   private readonly craters: THREE.InstancedMesh;
+  /** Shell instances drawn last frame (skip the upload while there are none). */
+  private shellsLast = 0;
   private decalN = 0;
   private decalHead = 0;
   private smokeK = 1;
@@ -86,6 +88,7 @@ export class Effects {
     this.craters = new THREE.InstancedMesh(crater, new THREE.MeshBasicMaterial({ map: craterTexture(), color: '#ffffff', transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 }), MAX_DECALS);
     for (const im of [this.shells, this.craters]) {
       im.count = 0;
+      im.visible = false;
       im.frustumCulled = false;
       im.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     }
@@ -428,7 +431,10 @@ export class Effects {
     if (slot === this.decalHead && this.decalN >= MAX_DECALS) this.decalHead = (this.decalHead + 1) % MAX_DECALS;
     this.craters.setMatrixAt(slot, _m);
     this.craters.count = this.decalN;
-    this.craters.instanceMatrix.clearUpdateRanges();
+    this.craters.visible = true;
+    // Upload only the slot that changed (three.js merges the ranges and clears them after the
+    // upload); the full 1 200-decal buffer is 77 kB.
+    this.craters.instanceMatrix.addUpdateRange(slot * 16, 16);
     this.craters.instanceMatrix.needsUpdate = true;
   }
 
@@ -461,7 +467,14 @@ export class Effects {
     }
     this.arty.trails.end(dt, this.viewDir, this.pxPerM);
     this.shells.count = ns;
-    this.shells.instanceMatrix.needsUpdate = true;
+    this.shells.visible = ns > 0;
+    // Only the live shells (the buffer holds 2 000 = 128 kB, uploaded every frame otherwise).
+    if (ns > 0 || this.shellsLast > 0) {
+      this.shells.instanceMatrix.clearUpdateRanges();
+      this.shells.instanceMatrix.addUpdateRange(0, ns * 16);
+      this.shells.instanceMatrix.needsUpdate = true;
+    }
+    this.shellsLast = ns;
   }
 
   update(dt: number): void {
