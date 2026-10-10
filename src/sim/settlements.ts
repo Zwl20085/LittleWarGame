@@ -148,7 +148,12 @@ export function stockSecond(world: World, connected: (f: number, p: V2) => boole
     const eff = mine.map((p) => placeEfficiency(world, p, f.id));
     // Capital weighted ×2: the faction's own depot is fed first-hand.
     const pri = mine.map((p, i) => eff[i] * (p.capitalOf >= 0 ? 2 : 1));
-    const alloc = allocateSupply(room.map((r, i) => r / eff[i]), pri, f.logistics / 60);
+    // Wave 2: each place refills at most burst × its share of the flow (a pipeline, not a tap that
+    // pours everything into the one drained town); what it cannot take is not delivered elsewhere.
+    const burst = logisticsRules(world).place_fill_burst;
+    const capSum = caps.reduce((a, c) => a + c, 0) || 1;
+    const need = room.map((r, i) => (burst ? Math.min(r, (burst * f.logistics * caps[i]) / (60 * capSum)) : r) / eff[i]);
+    const alloc = allocateSupply(need, pri, f.logistics / 60);
     mine.forEach((p, i) => {
       p.stock = Math.min(caps[i], p.stock + alloc[i] * eff[i]);
       if (depot?.fill_per_min_k) {
@@ -159,6 +164,25 @@ export function stockSecond(world: World, connected: (f: number, p: V2) => boole
     });
     f.depot = totalStock(world, f.id);
   }
+}
+
+/**
+ * Logistics demand for the economy steward (economy.stewardStep compares it with L). Wave 2: when
+ * `steward_stock_target` is set, the demand follows the stocks — L plus twice the share of the
+ * target fill that is missing (0 shortfall = no call for more L); else the 2.1 rule (`fallback`).
+ */
+export function logisticsDemand(world: World, f: Faction, logistics: number, fallback: number): number {
+  const target = logisticsRules(world).steward_stock_target;
+  if (target === undefined) return fallback;
+  let want = 0;
+  let short = 0;
+  for (const p of world.places) {
+    if (placeOwner(world, p) !== f.id) continue;
+    const t = stockCap(world, p) * target;
+    want += t;
+    short += Math.max(0, t - p.stock);
+  }
+  return logistics * (1 + (2 * short) / Math.max(1, want));
 }
 
 /** Can this unit take ammunition from stocks / trucks (armed, mobile, not a truck)? */

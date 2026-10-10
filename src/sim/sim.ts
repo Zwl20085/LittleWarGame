@@ -12,7 +12,7 @@ import { advanceProduction, normalizedWeights, populationCap, populationOf, sche
 import { initFronts, thinkFronts } from './fronts';
 import { supplyTick, type SupplyNode } from './supply';
 import { convoySecond } from './convoy';
-import { drawSecond, initPlaces, seedStocks, stockSecond } from './settlements';
+import { drawSecond, initPlaces, logisticsDemand, seedStocks, stockSecond } from './settlements';
 import { econIncome, econSecond } from './econ';
 import { fundSecond } from './econai';
 import { createHighCommand, thinkHighCommand } from './command';
@@ -239,7 +239,7 @@ function economySecond(match: Match): void {
       const need = forecastNeeds(world, f);
       const out = stewardStep(f, {
         needP60: need.p, needM60: need.m, incomeP60: rates.pPerMin, incomeM60: rates.mPerMin,
-        forecastDemand: f.supplyDemand * 1.1, logistics: rates.logistics, now: world.time,
+        forecastDemand: logisticsDemand(world, f, rates.logistics, f.supplyDemand * 1.1), logistics: rates.logistics, now: world.time,
       }, rules);
       if (out.changed) {
         const names = ['P', 'I', 'L'];

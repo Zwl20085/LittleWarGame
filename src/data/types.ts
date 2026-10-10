@@ -115,6 +115,13 @@ export interface LogisticsRules {
   readonly truck_seek_radius_m: number;
   readonly stock_seek_radius_m: number;
   readonly contested_refund_seconds: number;
+  /**
+   * 2.2 wave 2: a place refills at most this × its share (cap ÷ the faction's total cap) of the
+   * logistics flow per second — a drained front town no longer soaks up the whole flow. Absent = no limit.
+   */
+  readonly place_fill_burst?: number;
+  /** 2.2 wave 2: the steward asks for logistics while the stocks are below this share of their caps (absent = 2.1 demand rule). */
+  readonly steward_stock_target?: number;
 }
 
 export interface EconBuildingRules {
