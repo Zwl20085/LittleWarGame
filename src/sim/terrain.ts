@@ -1,5 +1,6 @@
 import type { MapDef, TownDef } from './mapdef';
 import { nearWall } from './buildings';
+import { placeRoadside } from './roadside';
 import { ValueNoise } from './noise';
 import { Rng } from './rng';
 import { clamp, type V2 } from './vec';
@@ -271,9 +272,9 @@ export class Terrain {
     return pts;
   }
 
-  /** Straight segment clear of buildings (0.8 m samples on the 2 m raster). */
-  wallFree(a: V2, b: V2, walk: Walk = ALWAYS): boolean {
-    const n = Math.ceil(Math.hypot(b.x - a.x, b.z - a.z) / 0.8);
+  /** Straight segment clear of buildings (0.8 m samples on the 2 m raster; `stepM` finer to catch clipped corners). */
+  wallFree(a: V2, b: V2, walk: Walk = ALWAYS, stepM = 0.8): boolean {
+    const n = Math.ceil(Math.hypot(b.x - a.x, b.z - a.z) / stepM);
     for (let k = 1; k <= n; k++) {
       const t = k / n;
       const x = a.x + (b.x - a.x) * t;
@@ -553,6 +554,8 @@ export class Terrain {
         this.trees.push({ x, z, s: rng.range(0.8, 1.35) });
       }
     }
+    // 2.2: single farmsteads, barns, inns, chapels and sheds along the roads (own RNG stream).
+    placeRoadside(this);
   }
 
   /**

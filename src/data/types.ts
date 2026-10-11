@@ -96,6 +96,66 @@ export interface DefensiveRules {
   };
 }
 
+export type PlaceKind = 'capital' | 'city' | 'town';
+export type EconKind = 'factory' | 'recruit' | 'depot';
+
+export interface LogisticsRules {
+  readonly ammo_cost_multiplier: number;
+  readonly stock_cap_k: Record<PlaceKind, number>;
+  readonly initial_stock_ratio: number;
+  readonly draw_radius_m: Record<PlaceKind, number>;
+  readonly rearm_per_second: number;
+  readonly crowd_free: number;
+  readonly crowd_penalty: number;
+  readonly place_handover_per_second_k: number;
+  readonly convoy_area_cell_m: number;
+  readonly convoy_area_cap_per_second_k: number;
+  readonly rearm_below: number;
+  readonly rearm_until: number;
+  readonly truck_seek_radius_m: number;
+  readonly stock_seek_radius_m: number;
+  readonly contested_refund_seconds: number;
+  /**
+   * 2.2 wave 2: a place refills at most this × its share (cap ÷ the faction's total cap) of the
+   * logistics flow per second — a drained front town no longer soaks up the whole flow. Absent = no limit.
+   */
+  readonly place_fill_burst?: number;
+  /** 2.2 wave 2: the steward asks for logistics while the stocks are below this share of their caps (absent = 2.1 demand rule). */
+  readonly steward_stock_target?: number;
+  /**
+   * 2.2 supply round: a unit that fired within this many seconds draws from a place only inside its
+   * core (the settlement radius × draw_core_ratio: the town's defenders), and takes nothing from a
+   * truck — rearming is a pause in the fight, not a trickle while shooting. Absent = no rule.
+   */
+  readonly draw_contact_seconds?: number;
+  readonly draw_core_ratio?: number;
+  /** Convoy truck: cargo carried and cargo handed over per second (absent = convoy.ts defaults 40 / 8). */
+  readonly truck_capacity?: number;
+  readonly truck_unload_per_second?: number;
+  /** Convoy truck hand-over radius (m; absent = convoy.ts default 190): units come to the truck. */
+  readonly truck_handover_radius_m?: number;
+}
+
+export interface EconBuildingRules {
+  readonly cost_p: number;
+  readonly cost_m: number;
+  readonly build_seconds: number;
+  readonly max_hp: number;
+  readonly m_per_min_k: number;
+  readonly p_per_min_k: number;
+  readonly stock_cap_k?: number;
+  readonly fill_per_min_k?: number;
+}
+
+export interface EconRules {
+  readonly slots: Record<string, number>;
+  readonly captured_hp_ratio: number;
+  readonly rebuild_cost_ratio: number;
+  readonly demolish_hp_per_second: Record<'engineer' | 'infantry' | 'vehicle', number>;
+  readonly demolish_radius_m: number;
+  readonly buildings: Record<EconKind, EconBuildingRules>;
+}
+
 export interface Rules {
   readonly proposed_defaults: {
     readonly army_scale?: number;
@@ -197,6 +257,10 @@ export interface Rules {
     readonly return_morale: number;
     readonly return_ammo_ratio: number;
   };
+  /** 2.2 settlement supply stocks, gradual rearming, crowding (V22_SPEC §3; optional for old rule sets). */
+  readonly logistics?: LogisticsRules;
+  /** 2.2 economic buildings (V22_SPEC §5). */
+  readonly econ?: EconRules;
   readonly morale: {
     readonly suppression_enter: number;
     readonly suppression_exit: number;

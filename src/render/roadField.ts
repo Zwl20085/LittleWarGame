@@ -1,3 +1,4 @@
+import * as THREE from 'three';
 import type { Terrain } from '../sim/terrain';
 
 /** Value for vertices far from any road (metres). */
@@ -53,4 +54,63 @@ export function roadDistanceField(t: Terrain): Float32Array {
     }
   }
   return out;
+}
+
+/** Road distance texture: metres per texel and the encoding scale (byte = metres × scale). */
+export interface RoadTexture {
+  readonly texture: THREE.DataTexture;
+  readonly scale: number;
+}
+
+/** Byte value per metre of distance (0.16 m steps up to ROAD_FAR). */
+const ROAD_TEX_SCALE = 255 / ROAD_FAR;
+/** Largest texture side (texels); the texel grows on very large maps. */
+const ROAD_TEX_MAX = 2048;
+
+/**
+ * The same unsigned road distance at ~2 m per texel, sampled per fragment (2.2). Interpolating
+ * the 4 m vertex field across terrain triangles bent the carriageway edges and wheel ruts into a
+ * zig-zag wherever a road ran diagonally to the grid; a bilinear texture at half the spacing is
+ * straight to within a few centimetres. Built by stamping each segment's padded bounding box
+ * (only texels near roads are visited).
+ */
+export function roadDistanceTexture(t: Terrain): RoadTexture {
+  const texel = Math.max(2, Math.max(t.width, t.depth) / ROAD_TEX_MAX);
+  const w = Math.ceil(t.width / texel) + 1;
+  const h = Math.ceil(t.depth / texel) + 1;
+  const dist = new Float32Array(w * h).fill(ROAD_FAR);
+  for (const road of t.def.roads) {
+    for (let s = 0; s < road.length - 1; s++) {
+      const ax = road[s].x;
+      const az = road[s].z;
+      const dx = road[s + 1].x - ax;
+      const dz = road[s + 1].z - az;
+      const l2 = dx * dx + dz * dz;
+      const i0 = Math.max(0, Math.floor((Math.min(ax, ax + dx) - ROAD_FAR) / texel));
+      const i1 = Math.min(w - 1, Math.ceil((Math.max(ax, ax + dx) + ROAD_FAR) / texel));
+      const j0 = Math.max(0, Math.floor((Math.min(az, az + dz) - ROAD_FAR) / texel));
+      const j1 = Math.min(h - 1, Math.ceil((Math.max(az, az + dz) + ROAD_FAR) / texel));
+      for (let j = j0; j <= j1; j++) {
+        const z = j * texel;
+        for (let i = i0; i <= i1; i++) {
+          const x = i * texel;
+          const u = l2 > 0 ? Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / l2)) : 0;
+          const d = Math.hypot(x - (ax + dx * u), z - (az + dz * u));
+          const k = j * w + i;
+          if (d < dist[k]) dist[k] = d;
+        }
+      }
+    }
+  }
+  const bytes = new Uint8Array(w * h);
+  for (let k = 0; k < bytes.length; k++) bytes[k] = Math.min(255, Math.round(dist[k] * ROAD_TEX_SCALE));
+  const texture = new THREE.DataTexture(bytes, w, h, THREE.RedFormat, THREE.UnsignedByteType);
+  texture.magFilter = THREE.LinearFilter;
+  texture.minFilter = THREE.LinearFilter;
+  texture.generateMipmaps = false;
+  texture.unpackAlignment = 1;
+  texture.needsUpdate = true;
+  // Texel centres sit on the grid nodes: the shader maps world (x, z) → ((x/texel + 0.5)/w, …).
+  texture.userData = { texel, w, h };
+  return { texture, scale: ROAD_TEX_SCALE };
 }

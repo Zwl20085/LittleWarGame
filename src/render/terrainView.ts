@@ -1,8 +1,9 @@
 import * as THREE from 'three';
+import { FRONTLINE } from '../sim/config';
 import { Ground, type Terrain } from '../sim/terrain';
 import { smoothBankHeights } from './bankSmoothing';
 import { buildBridges } from './bridges';
-import { roadDistanceField } from './roadField';
+import { roadDistanceField, roadDistanceTexture } from './roadField';
 import { buildScatter } from './scatter';
 import { buildSettlements, type Settlements } from './settlements';
 import { computeTerrainAttribs } from './terrainColor';
@@ -72,15 +73,22 @@ export class TerrainView {
     this.shore = shoreLevels(terrain);
     this.towns = townGrids(terrain);
     this.overlayCanvas = document.createElement('canvas');
-    // 2.5 m per pixel; the 10 m field is upscaled with blur for soft contours.
-    this.overlayCanvas.width = Math.ceil(terrain.width / 2.5);
-    this.overlayCanvas.height = Math.ceil(terrain.depth / 2.5);
+    // One pixel per control-field cell (2.2): the terrain shader blurs it with a few bilinear
+    // taps. (2.1 upscaled it with a canvas blur filter onto a 2.5 m canvas — ~15 ms on the main
+    // thread every field update, four times a second at 8×.)
+    const fnx = Math.ceil(terrain.width / FRONTLINE.cell);
+    const fnz = Math.ceil(terrain.depth / FRONTLINE.cell);
+    this.overlayCanvas.width = fnx;
+    this.overlayCanvas.height = fnz;
     this.overlayTex = new THREE.CanvasTexture(this.overlayCanvas);
     this.overlayTex.magFilter = THREE.LinearFilter;
     this.overlayTex.minFilter = THREE.LinearFilter;
     this.overlayTex.generateMipmaps = false;
     this.overlayTex.colorSpace = THREE.SRGBColorSpace;
-    const { material, uniforms } = terrainMaterial(this.overlayTex, terrain.width, terrain.depth);
+    // Premultiplied: bilinear taps between a tinted and an empty cell fade the tint instead of
+    // darkening it toward the empty cells' black.
+    this.overlayTex.premultiplyAlpha = true;
+    const { material, uniforms } = terrainMaterial(this.overlayTex, fnx * FRONTLINE.cell, fnz * FRONTLINE.cell, roadDistanceTexture(terrain), new THREE.Vector2(fnx, fnz));
     this.uniforms = uniforms;
     this.group.add(this.buildTiles(material));
     this.water = new WaterView(terrain, this.heights);

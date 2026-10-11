@@ -66,7 +66,11 @@ export class MapLabels {
     return this.features;
   }
 
-  draw(o: ScreenOverlay, ppm: number, zoom: number, lang: 'zh' | 'en', avoid: Declutter | null): void {
+  /**
+   * `stockOf` (2.2): supply-stock fill 0..1 of the settlement a label names (null = no bar), drawn
+   * as a thin ink-outlined gauge under the name.
+   */
+  draw(o: ScreenOverlay, ppm: number, zoom: number, lang: 'zh' | 'en', avoid: Declutter | null, stockOf: ((f: MapFeature) => number | null) | null = null): void {
     const g = o.ctx;
     this.declutter.clear();
     const k = Math.max(0.8, Math.min(1.45, 0.95 + 0.3 * Math.log2(Math.max(0.2, zoom))));
@@ -103,6 +107,8 @@ export class MapLabels {
       // ~150 labels per frame was the overlay's main cost at the overview zoom.
       const sprite = this.sprite(g.font, spacing, text, st.color, st.halo, Math.max(3, px * 0.28), o.dpr);
       g.drawImage(sprite.canvas, P.x - sprite.w / 2, ly - sprite.h / 2, sprite.w, sprite.h);
+      const fill = stockOf && (st.symbol === 'city' || st.symbol === 'town') ? stockOf(f) : null;
+      if (fill !== null) this.stockGauge(g, P.x, ly + px * 0.75, Math.max(26, Math.min(52, tw * 0.85)), fill);
       if (f.kind === 'mountain' || f.kind === 'hill') {
         const elev = `${Math.round(y)} m`;
         const es = this.sprite(`${Math.round(px * 0.68)}px ${SANS}`, '0px', elev, st.color, st.halo, Math.max(3, px * 0.28), o.dpr);
@@ -142,6 +148,21 @@ export class MapLabels {
     const sprite = { canvas, w, h };
     this.sprites.set(key, sprite);
     return sprite;
+  }
+
+  /** Supply gauge: dark well, khaki fill (amber when low), ink outline — a war-room tally strip. */
+  private stockGauge(g: CanvasRenderingContext2D, cx: number, y: number, w: number, fill: number): void {
+    const h = 4;
+    const x = Math.round(cx - w / 2) + 0.5;
+    const yy = Math.round(y) + 0.5;
+    const k = Math.max(0, Math.min(1, fill));
+    g.fillStyle = 'rgba(35, 38, 31, 0.7)';
+    g.fillRect(x, yy, w, h);
+    g.fillStyle = k < 0.25 ? '#c98a4a' : '#d8c68c';
+    g.fillRect(x, yy, w * k, h);
+    g.strokeStyle = 'rgba(244, 236, 217, 0.85)';
+    g.lineWidth = 1;
+    g.strokeRect(x - 0.5, yy - 0.5, w + 1, h + 1);
   }
 
   private symbol(g: CanvasRenderingContext2D, st: Style, x: number, y: number, px: number): void {

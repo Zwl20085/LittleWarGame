@@ -13,12 +13,14 @@ export interface QualityProfile {
   readonly scatter: boolean;
   /** Town detail (street furniture, gardens, yards, telegraph poles) and chimney smoke. */
   readonly townProps: boolean;
+  /** Procedural ground texture in the terrain shader (2.2). */
+  readonly groundDetail: boolean;
 }
 
 export const QUALITY_PROFILES: readonly QualityProfile[] = [
-  { shadowMap: 2048, soldierShadows: true, maxPixelRatio: 2, scatter: true, townProps: true },
-  { shadowMap: 1024, soldierShadows: false, maxPixelRatio: 1.5, scatter: false, townProps: false },
-  { shadowMap: 0, soldierShadows: false, maxPixelRatio: 1, scatter: false, townProps: false },
+  { shadowMap: 2048, soldierShadows: true, maxPixelRatio: 2, scatter: true, townProps: true, groundDetail: true },
+  { shadowMap: 1024, soldierShadows: false, maxPixelRatio: 1.5, scatter: false, townProps: false, groundDetail: true },
+  { shadowMap: 0, soldierShadows: false, maxPixelRatio: 1, scatter: false, townProps: false, groundDetail: false },
 ];
 
 const LEVEL_OF: Record<Exclude<QualityMode, 'auto'>, QualityLevel> = { high: 0, medium: 1, low: 2 };
@@ -30,6 +32,43 @@ const SLOW_HOLD_S = 3;
 /** Minimum spacing between automatic step-downs (s). */
 const COOLDOWN_S = 12;
 
+/** What the starting tier is guessed from (auto mode). */
+export interface DeviceHint {
+  /** Unmasked WebGL renderer string ('' when the browser hides it). */
+  readonly gpu: string;
+  /** Logical CPU cores (navigator.hardwareConcurrency; 0 = unknown). */
+  readonly cores: number;
+}
+
+/**
+ * Starting tier for auto mode (2.2). 2.1 always started high and waited for 3 s of slow frames,
+ * so weak machines stuttered through the opening of every match: software rasterisers start
+ * low, integrated / mobile GPUs and machines with few cores (the simulation worker needs one
+ * of them) start medium; everything else starts high and still steps down when slow.
+ */
+export function initialLevel(hint: DeviceHint): QualityLevel {
+  const gpu = hint.gpu.toLowerCase();
+  if (/swiftshader|llvmpipe|softpipe|software|basic render|microsoft basic/.test(gpu)) return 2;
+  // Intel Arc cards are discrete; every other Intel GPU (HD / UHD / Iris) is integrated.
+  const integrated = /intel|mali|adreno|powervr|videocore|apple a\d/.test(gpu) && !/\barc\b/.test(gpu);
+  if (integrated) return 1;
+  if (hint.cores > 0 && hint.cores <= 4) return 1;
+  return 0;
+}
+
+/** Device hint from a live WebGL context (renderer string where the browser exposes it). */
+export function deviceHint(gl: WebGLRenderingContext | WebGL2RenderingContext): DeviceHint {
+  let gpu = '';
+  try {
+    const ext = gl.getExtension('WEBGL_debug_renderer_info');
+    gpu = String((ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER)) ?? '');
+  } catch {
+    gpu = '';
+  }
+  const cores = typeof navigator !== 'undefined' ? navigator.hardwareConcurrency ?? 0 : 0;
+  return { gpu, cores };
+}
+
 /**
  * Decides the active quality tier. In auto mode it watches the smoothed real frame time and
  * lowers the tier when the machine cannot hold a steady frame rate; it never steps back up
@@ -37,18 +76,26 @@ const COOLDOWN_S = 12;
  */
 export class QualityGovernor {
   level: QualityLevel = 0;
+  /** Where auto mode starts (from the device hint). */
+  private autoStart: QualityLevel = 0;
   private mode: QualityMode = 'auto';
   private ema = 16;
   private slowFor = 0;
   private sinceChange = 0;
+
+  /** Set the auto-mode starting tier (applies now when in auto mode and nothing stepped yet). */
+  setAutoStart(level: QualityLevel): void {
+    this.autoStart = level;
+    if (this.mode === 'auto' && this.level < level) this.level = level;
+  }
 
   setMode(mode: QualityMode): QualityLevel {
     const was = this.mode;
     this.mode = mode;
     if (mode !== 'auto') this.level = LEVEL_OF[mode];
     else if (was !== 'auto') {
-      // Back to auto: start high again and let the frame-time watch decide.
-      this.level = 0;
+      // Back to auto: start at the device's tier again and let the frame-time watch decide.
+      this.level = this.autoStart;
       this.ema = 16;
       this.sinceChange = 0;
     }

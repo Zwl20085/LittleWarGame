@@ -11,7 +11,7 @@ import type { BatteryReveal } from './operations';
 import { createStats, type MatchStats } from './stats';
 import { createBattleLog, type BattleLog } from './events';
 import type {
-  Faction, Fort, FxEvent, LogEntry, MatchConfig, MatchResult, Objective, Projectile, Unit, Personality,
+  EconBuilding, Faction, Fort, FxEvent, LogEntry, MatchConfig, MatchResult, Objective, Place, Projectile, Unit, Personality,
 } from './types';
 import type { V2 } from './vec';
 import { DEG } from './vec';
@@ -54,6 +54,10 @@ export class World {
   readonly objectives: Objective[] = [];
   readonly projectiles: Projectile[] = [];
   readonly forts: Fort[] = [];
+  /** 2.2 production / supply places (capitals, cities, towns; settlements.ts initPlaces). */
+  readonly places: Place[] = [];
+  /** 2.2 economic buildings (econ.ts), ruins included. */
+  readonly econ: EconBuilding[] = [];
   readonly fx: FxEvent[] = [];
   readonly log: LogEntry[] = [];
   readonly spatial = new SpatialHash(40);
@@ -282,6 +286,13 @@ export class World {
       progressIdx: -1,
       progressD: Infinity,
       progressAt: this.time,
+      movedX: pos.x,
+      movedZ: pos.z,
+      movedAt: this.time,
+      boxedUntil: 0,
+      unstuckAt: -1e9,
+      rearming: false,
+      rearmAt: 0,
     };
     this.units.set(u.id, u);
     this.aliveUnits.push(u);

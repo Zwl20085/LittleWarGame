@@ -118,8 +118,7 @@ export function supplyTick(world: World, u: Unit, seconds: number): void {
     u.ammo = Math.min(1, u.ammo + s.ammo_regeneration_per_second * seconds);
     return;
   }
-  // Away from the city, ammunition arrives only by convoy (see convoy.ts).
-  if (dist(u.pos, world.hqPos(u.owner)) <= s.city_local_radius_m) u.ammo = Math.min(1, u.ammo + s.ammo_regeneration_per_second * 3 * seconds);
+  // 2.2: ammunition comes only from settlement stocks (settlements.drawSecond) and convoys.
   if (u.hp >= u.def.maxHp || u.moving || world.time - u.lastDamagedAt < 5) return;
   const hq = world.hqPos(u.owner);
   let canRecover = dist(u.pos, hq) <= s.city_recovery_radius_m;

@@ -1,4 +1,6 @@
 import { economyRates } from '../sim/economy';
+import { econCounts } from '../sim/econ';
+import { stockSummary } from '../sim/settlements';
 import type { GameContext } from './context';
 import { h } from './dom';
 import { t } from './i18n';
@@ -31,7 +33,7 @@ export class EconomyPanel {
       return;
     }
     this.el.style.display = '';
-    const sig = JSON.stringify([f.alloc.map((a) => Math.round(a * 100)), f.locks, f.autoEconomy, f.stewardReason, f.stewardParams, Math.round(f.incomeP), Math.round(f.incomeM)]);
+    const sig = JSON.stringify([f.alloc.map((a) => Math.round(a * 100)), f.locks, f.autoEconomy, f.stewardReason, f.stewardParams, Math.round(f.incomeP), Math.round(f.incomeM), Math.round(f.econP), Math.round(f.econM), Math.round(f.depot / 10), econCounts(w, f.id)]);
     if (sig === this.sig) return;
     this.sig = sig;
     const rates = economyRates(f.alloc, w.data.rules);
@@ -62,6 +64,15 @@ export class EconomyPanel {
           h('span', { class: 'small' }, outputs[i]));
       }),
       h('div', { class: 'small' }, t('eco.buildMul', { v: rates.buildTimeMul.toFixed(2) })),
+      // 2.2: economic buildings and the settlement supply stocks.
+      (() => {
+        const c = econCounts(w, f.id);
+        return h('div', { class: 'small' }, t('eco.buildings', { f: c.factory, r: c.recruit, d: c.depot, p: Math.round(f.econP), m: Math.round(f.econM) }));
+      })(),
+      (() => {
+        const s = stockSummary(w, f);
+        return h('div', { class: 'small' }, t('eco.stock', { s: Math.round(s.stock), c: Math.round(s.cap) }));
+      })(),
       h('div', { class: 'reason' }, t(f.stewardReason, f.stewardParams)),
     );
   }

@@ -5,6 +5,7 @@ import type { GameContext } from './context';
 import { h, setText } from './dom';
 import { natoSymbol, silhouette } from './icons';
 import { t, unitName, unitShortName, weaponName } from './i18n';
+import { objectiveLabel } from './labels';
 
 interface Card {
   el: HTMLButtonElement;
@@ -179,7 +180,7 @@ export class ProductionBar {
       this.queue.dataset.sig = qsig;
       this.queue.innerHTML = '';
       for (const o of f.orders) {
-        this.queue.append(h('button', { class: 'qitem', title: t('prod.cancel'), onclick: () => this.ctx.issue({ type: 'cancelOrder', orderId: o.id }) }, natoSymbol(o.unitId), unitShortName(o.unitId), o.manual ? ' ✱' : ''));
+        this.queue.append(h('button', { class: 'qitem', title: `${t('prod.at', { place: objectiveLabel(w, o.placeId) })} · ${t('prod.cancel')}`, onclick: () => this.ctx.issue({ type: 'cancelOrder', orderId: o.id }) }, natoSymbol(o.unitId), unitShortName(o.unitId), o.manual ? ' ✱' : ''));
       }
       for (const q of f.manualQueue) this.queue.append(h('span', { class: 'qitem pending' }, natoSymbol(q.unitId), unitShortName(q.unitId), ' …'));
     }

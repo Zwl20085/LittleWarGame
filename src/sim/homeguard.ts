@@ -767,6 +767,9 @@ export function thinkHomeGuard(world: World, u: Unit): boolean {
   if (foe && bd < HOME.sandbagR + 40) {
     // Inside the town: go for them (the capture ring must hold a defender).
     if (u.def.kind !== 'crew') moveTo(world, u, foe.pos);
+    // A gun fights where it stands: with no route left, clear a stale failed one (it otherwise
+    // reads 'unreachable' for as long as the enemy stays in town).
+    else if (u.path.length === 0) stop(u);
     selectTarget(world, u, foe.pos);
     return true;
   }
@@ -832,8 +835,17 @@ function guardPost(world: World, u: Unit, hq: V2, bearing: number): V2 {
   const s = spreadOf(u);
   if (u.def.kind === 'crew' || u.def.kind === 'vehicle') {
     const r = u.def.kind === 'crew' ? HOME.trenchR - 40 : HOME.sandbagR + 30;
-    const a = bearing + s * 0.9;
-    return postAt(world, u, { x: hq.x + Math.cos(a) * r, z: hq.z + Math.sin(a) * r });
+    // 2.2 wave 2 (soak: AT guns 'unreachable' for minutes on a post across a ford / in a pocket):
+    // the first post on the gun's own connected ground, turning away from the bearing step by step.
+    const nav = world.navFor(u);
+    let first: V2 | null = null;
+    for (let k = 0; k < 7; k++) {
+      const a = bearing + s * 0.9 + (k === 0 ? 0 : (k % 2 ? 1 : -1) * Math.ceil(k / 2) * 0.35);
+      const p = postAt(world, u, { x: hq.x + Math.cos(a) * r, z: hq.z + Math.sin(a) * r });
+      first ??= p;
+      if (nav.connected(u.pos, p)) return p;
+    }
+    return first!;
   }
   // Infantry: a place along a finished home work facing the threat (cover), else the town edge.
   let best: { a: V2; b: V2; facing: number } | null = null;
@@ -911,7 +923,8 @@ function recallable(f: Faction, s: Front): boolean {
   if (!s.manualTarget) return true;
   const ht = f.command.homeThreat;
   const gates = ht.breach || (ht.eta >= 0 && ht.eta <= HOME.gatesEtaS && ht.aimed >= HOME.minThreat);
-  return gates && s.order.issuedAt < ht.since;
+  // 2.2: front commanders re-issue their orders from the directive, so the supreme HQ's choice dates from the directive.
+  return gates && Math.min(s.order.issuedAt, f.directive.issuedAt) < ht.since;
 }
 
 /** A new order for a recalled front (the player's): it leaves the recall, its saved orders are void. */

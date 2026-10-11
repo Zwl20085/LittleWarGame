@@ -1,6 +1,6 @@
 // Challenge lab: read-only world queries and command helpers shared by the strategies.
 // The challenger is omniscient (open info mode): strategies may read any world state.
-import type { OrderKind, Objective, Unit } from '../../src/sim/types';
+import type { DirectiveKind, Objective, Unit } from '../../src/sim/types';
 import { dist, type V2 } from '../../src/sim/vec';
 import type { World } from '../../src/sim/world';
 import { faction, type StrategyCtx } from './types';
@@ -76,12 +76,24 @@ export function isCapital(world: World, o: Objective): boolean {
 /** The challenger's front ids, in a stable order. */
 export const frontIds = (ctx: StrategyCtx): number[] => faction(ctx).fronts.map((s) => s.id).sort((a, b) => a - b);
 
-export function order(ctx: StrategyCtx, frontId: number, kind: OrderKind, a: V2, b?: V2): void {
-  ctx.issue(b ? { type: 'frontOrder', frontId, kind, a: { ...a }, b: { ...b } } : { type: 'frontOrder', frontId, kind, a: { ...a } });
+/**
+ * 2.2: the supreme HQ's one universal directive (setDirective) — the strategies' only operational
+ * command. Not re-sent while the same directive (kind, axis within 30 m, line) already stands.
+ */
+export function directive(ctx: StrategyCtx, kind: DirectiveKind, axis?: V2, line?: { a: V2; b: V2 }): void {
+  const cur = faction(ctx).directive;
+  const near = (p: V2 | null | undefined, q: V2 | null | undefined): boolean => (!p && !q) || (!!p && !!q && dist(p, q) < 30);
+  if (cur.manual && cur.kind === kind && near(cur.axis, axis) && near(cur.line?.a, line?.a) && near(cur.line?.b, line?.b)) return;
+  ctx.issue({ type: 'setDirective', kind, ...(axis ? { axis: { ...axis } } : {}), ...(line ? { line: { a: { ...line.a }, b: { ...line.b } } } : {}) });
 }
 
-export function orderAll(ctx: StrategyCtx, kind: OrderKind, a: V2): void {
-  for (const id of frontIds(ctx)) order(ctx, id, kind, a);
+/** A line of `len` m centred `r` m out from `from` toward `to`, square to that bearing (a fortify line). */
+export function lineAcross(from: V2, to: V2, r: number, len: number): { a: V2; b: V2 } {
+  const c = towards(from, to, r);
+  const l = Math.max(1e-6, dist(from, to));
+  const nx = -(to.z - from.z) / l;
+  const nz = (to.x - from.x) / l;
+  return { a: { x: c.x + nx * len / 2, z: c.z + nz * len / 2 }, b: { x: c.x - nx * len / 2, z: c.z - nz * len / 2 } };
 }
 
 /**

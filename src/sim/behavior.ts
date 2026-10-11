@@ -18,9 +18,14 @@ import { enemyConvoyTargets } from './operations';
 import { EAGER, eagerOn, stormOn } from './strategyai';
 import { crewPost, gunPost, holdAfterFire } from './crewai';
 import { coverSpot, threatCentre } from './terrainai';
+import { rearmDuty } from './settlements';
+import { isCommander } from './formulas';
+import { takeShelter } from './shelter';
 import type { Front, Unit } from './types';
 import { dist, headingTo, type V2 } from './vec';
 import type { World } from './world';
+import { ARMOUR_AB, orphanTank, paceArmour } from './armour';
+import { thinkEconRaid } from './econwar';
 
 /** Deterministic per-unit spread offset so a squad group doesn't stack on one point. */
 function spread(u: Unit, radius: number): V2 {
@@ -65,7 +70,6 @@ function nearRepairPoint(world: World, u: Unit): boolean {
 function needsRetreat(world: World, u: Unit): boolean {
   if (u.def.id === 'supply_truck') return u.hp <= u.def.maxHp * 0.3;
   if (u.hp <= u.def.maxHp * world.data.rules.morale.auto_retreat_hp_ratio) return true;
-  if (!u.supplied && u.ammo < 0.05 && world.time - u.noTargetSince > 20) return true;
   return false;
 }
 
@@ -127,8 +131,17 @@ export function thinkUnit(world: World, u: Unit): void {
   }
   // 2.0 defensive buildings (structures.ts, works agent): man a pillbox / bunker, work an assigned site, or go to a free building.
   // Round 7: HQ-point holders and breach responders before structure duty (a pillbox off the point must not hold them).
+  // 2.2 (V22_SPEC §3.4): out of ammunition (fresh from production, or run dry) → nearest truck / stock first.
+  // (2.2 wave 2: a raid party fights with what it carries; it does not walk home to rearm.)
+  if (u.opRole !== 'raid' && rearmDuty(world, u, moveTo, stop, isCommander(u.def))) {
+    selectTarget(world, u, null);
+    return;
+  }
   if (u.opRole === 'garrison' && hqDuty(world, u)) return;
   if (u.def.id !== 'supply_truck' && structureDuty(world, u, s)) return;
+  // 2.2: shelled in the open → the nearest free building's lee wall until the shelling stops (shelter.ts).
+  // (2.2 wave 2: a raid party keeps moving under fire — getting through is its job.)
+  if (u.opRole !== 'raid' && takeShelter(world, u)) return;
   if (u.def.id === 'supply_truck') return thinkConvoyTruck(world, u);
   if (u.spearhead && thinkSpearhead(world, u)) return;
   if (u.opRole === 'garrison' && thinkGarrison(world, u)) return;
@@ -140,7 +153,8 @@ export function thinkUnit(world: World, u: Unit): void {
   if (u.opRole === 'rearguard' && thinkRearGuard(world, u)) return;
   // 2.1: a unit on a binding line order keeps its place on the line (no truck hunts / escorts away from it).
   const onLine = boundLine(s);
-  if (!onLine && (u.def.id === 'recon' || u.def.id === 'light_tank') && thinkRaid(world, u)) return;
+  // 2.2 (V22_SPEC §7): light tanks stay with their armour group; recon hunts the trucks.
+  if (!onLine && (u.def.id === 'recon' || (u.def.id === 'light_tank' && !ARMOUR_AB.on)) && thinkRaid(world, u)) return;
   if (!onLine && u.def.kind !== 'crew' && thinkEscort(world, u)) return;
   if (s.posture === 'withdraw') {
     u.behavior = 'rally';
@@ -416,13 +430,23 @@ function thinkCommander(world: World, u: Unit, s: Front): void {
   const post = commanderPost(world, f, s);
   const off = spread(u, 14);
   const want = { x: post.x + off.x, z: post.z + off.z };
-  const near = world.spatial.findOwner(u.pos.x, u.pos.z, COMMANDER_WITHDRAW_M, hostileMask(world, u.owner), (o) => o.hp > 0 && !!o.primary && world.knows(u.owner, o));
+  // Hysteresis: once stepping back it keeps clear of the enemy by a wider margin, else it walked
+  // back toward a post beyond the enemy, re-entered 160 m and turned again every second (2.2 soak:
+  // commanders 'stuck' for minutes on the edge of the radius).
+  const withdrawing = world.time < (withdrawUntil.get(u) ?? -1);
+  const r = withdrawing ? COMMANDER_WITHDRAW_M * COMMANDER_WITHDRAW_HOLD_K : COMMANDER_WITHDRAW_M;
+  const near = world.spatial.findOwner(u.pos.x, u.pos.z, r, hostileMask(world, u.owner), (o) => o.hp > 0 && !!o.primary && world.knows(u.owner, o));
   if (near) {
+    withdrawUntil.set(u, world.time + COMMANDER_WITHDRAW_HOLD_S);
     const exit = world.cityOf(u.owner).exit;
     const away = headingTo(near.pos, u.pos);
     const toExit = headingTo(u.pos, exit);
     const p = { x: u.pos.x + (Math.cos(away) + Math.cos(toExit)) * 60, z: u.pos.z + (Math.sin(away) + Math.sin(toExit)) * 60 };
     moveTo(world, u, world.navFor(u).nearestPassable(p, 40) ?? exit);
+    u.status = 'status.commanderWithdraw';
+  } else if (withdrawing) {
+    // The enemy dropped out of sight a moment ago (spotting flickers): keep stepping back on the
+    // current route rather than turning toward the post and back again every second.
     u.status = 'status.commanderWithdraw';
   } else {
     // The spot in cover near the post (cached per post: no cover search every think).
@@ -437,6 +461,10 @@ function thinkCommander(world: World, u: Unit, s: Front): void {
 
 /** Armed enemies this close make a front commander step back (it fights only in self-defence). */
 const COMMANDER_WITHDRAW_M = 160;
+/** While withdrawing (and this long after the last sighting) the radius is this much wider. */
+const COMMANDER_WITHDRAW_HOLD_K = 1.35;
+const COMMANDER_WITHDRAW_HOLD_S = 10;
+const withdrawUntil = new WeakMap<Unit, number>();
 
 /** Siege: riflemen and engineers dig the trench line at their ring position unless the enemy is close. */
 function siegeDig(world: World, u: Unit, s: Front, t: Unit | null): boolean {
@@ -638,9 +666,11 @@ function thinkSpearhead(world: World, u: Unit): boolean {
     u.spearhead = null;
     return false;
   }
+  if (orphanTank(world, u, pos)) return false;
   selectTarget(world, u, pos);
   const off = spread(u, 24);
-  if (u.moraleState === 'pinned') stop(u);
+  // 2.2: tanks lead the thrust but wait for the riflemen (armour.paceArmour).
+  if (u.moraleState === 'pinned' || paceArmour(world, u, pos)) stop(u);
   else moveTo(world, u, { x: pos.x + off.x, z: pos.z + off.z });
   u.status = 'status.spearhead';
   return true;
@@ -652,9 +682,10 @@ function thinkManeuver(world: World, u: Unit): boolean {
     u.opRole = 'line';
     return false;
   }
+  if (orphanTank(world, u, u.opTarget)) return false;
   selectTarget(world, u, u.opTarget);
   const off = spread(u, 30);
-  if (u.moraleState === 'pinned') stop(u);
+  if (u.moraleState === 'pinned' || paceArmour(world, u, u.opTarget)) stop(u);
   else moveTo(world, u, { x: u.opTarget.x + off.x, z: u.opTarget.z + off.z });
   u.status = 'status.maneuver';
   return true;
@@ -692,13 +723,20 @@ function thinkInfiltrator(world: World, u: Unit): boolean {
 
 /** Raid detachment: infiltrate to the enemy rear, ambush convoys, come home when time is up. */
 function thinkOpRaid(world: World, u: Unit): boolean {
+  // 2.2: an economic raid party goes for its building (econwar.ts).
+  if (u.opObjective?.startsWith('econ:')) return thinkEconRaid(world, u);
   if (u.routing || u.manual || world.time > u.opUntil || u.hp < u.def.maxHp * 0.4 || !u.opTarget) {
     u.opRole = 'line';
     u.opTarget = null;
     return false;
   }
-  const trucks = enemyConvoyTargets(world, u.owner, u.pos, 450);
-  const truck = trucks.sort((a, b) => dist(a.pos, u.pos) - dist(b.pos, u.pos))[0];
+  // Keep hunting the truck already chosen while it stays known and within 650 m (as thinkRaid
+  // does): re-picking "nearest within 450 m" every think flipped the goal between a truck at the
+  // edge of that radius and the raid point behind, and the squad jittered on a slope for minutes.
+  let truck = world.unitAlive(u.raidTargetId);
+  if (truck && (truck.def.id !== 'supply_truck' || !world.knows(u.owner, truck) || dist(truck.pos, u.pos) > 650)) truck = null;
+  if (!truck) truck = enemyConvoyTargets(world, u.owner, u.pos, 450).sort((a, b) => dist(a.pos, u.pos) - dist(b.pos, u.pos))[0] ?? null;
+  u.raidTargetId = truck ? truck.id : null;
   const goal = truck ? truck.pos : u.opTarget;
   selectTarget(world, u, goal);
   if (truck && u.primary && dist(u.pos, truck.pos) < u.primary.range * 0.85) {

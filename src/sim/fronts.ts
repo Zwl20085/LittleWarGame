@@ -15,6 +15,8 @@ import type { World } from './world';
 import { isCommander } from './formulas';
 import { activeSegment, inMass, LINE_ORDER, lineThrough, massSlot, orderAlong, terrainLine } from './frontslots';
 import { boundLine, boundOrder, frontById } from './frontref';
+import { armourSlots, isTank } from './armour';
+import { econWorth, planEconRaids } from './econwar';
 
 export { frontById };
 
@@ -38,7 +40,7 @@ export function newFront(world: World, f: Faction, target: Objective, wing: Fron
     targetCity: null, rally: lerpV(city.exit, target.pos, 0.35), reason: 'reason.capturePoint', reasonParams: { point: target.id }, lastRetarget: -999, postureSince: 0,
     manualTarget: false, gatheredSince: -1, advancing: false,
     front: { ...target.pos }, facing: headingTo(city.hq, target.pos), slots: {}, crossing: null, stagedSince: -1, lastSpearhead: -999, mode: 'advance', shelledAt: -999, segment: [], bridgeSite: null, bridgeCheckAt: 0,
-    op: 'frontal', opLocked: false, opRoute: [], opPhase: '',
+    op: 'frontal', opLocked: false, opRoute: [], opPhase: '', response: '', responseParams: {},
   };
 }
 
@@ -155,15 +157,16 @@ export function issueFrontOrder(world: World, f: Faction, s: Front, order: Front
   if (order.kind === 'fallBack') {
     // Everyone drops what they are doing and marches back to the new line before fighting again
     // (behavior.fallingBack keeps them marching until they reach it). 2.1: on the player's order
-    // town garrisons come back too (only the capital's guards stay).
+    // town garrisons come back too (only the capital's guards stay) — 2.2: not under Contract, which keeps its towns garrisoned.
+    const keepGarrisons = f.directive.kind === 'contract';
     for (const u of frontUnits(world, f.id, s.id)) {
       if (u.manual || u.def.id === 'supply_truck' || isCommander(u.def)) continue;
       u.spearhead = null;
-      if (u.opRole !== 'garrison' || (order.manual && !capitalGuard(u))) { u.opRole = 'line'; u.opTarget = null; u.opObjective = null; }
+      if (u.opRole !== 'garrison' || (order.manual && !capitalGuard(u) && !keepGarrisons)) { u.opRole = 'line'; u.opTarget = null; u.opObjective = null; }
       u.behavior = 'advance';
     }
   }
-  if (boundOrder(s)) recallDetachments(s, frontUnits(world, f.id, s.id));
+  if (boundOrder(s)) recallDetachments(s, frontUnits(world, f.id, s.id), keptGarrison(world, f));
 }
 
 /** A home guard of the capital (standing garrison, HQ point): exempt from binding orders (user rule 8). */
@@ -174,12 +177,24 @@ const capitalGuard = (u: Unit): boolean => u.opRole === 'garrison' && !!u.opObje
  * occupations, raids and rear guards; on a line order also manoeuvre / siege parties and
  * spearheads, and nobody waits at the rally point. The capital's guards stay (user rule 8).
  */
-export function recallDetachments(s: Front, units: readonly Unit[]): void {
+/**
+ * 2.2: which town garrisons a bound front keeps — every one under Contract; under Defend / Fortify
+ * those of towns with economic buildings (the fronts protect the economy, econwar.econWorth).
+ */
+function keptGarrison(world: World, f: Faction): (u: Unit) => boolean {
+  const k = f.directive.kind;
+  if (k === 'contract') return () => true;
+  if (k !== 'defend' && k !== 'fortify') return () => false;
+  return (u) => !!u.opObjective && econWorth(world, u.opObjective, f.id) > 0;
+}
+
+export function recallDetachments(s: Front, units: readonly Unit[], keepGarrison: boolean | ((u: Unit) => boolean) = false): void {
   const line = boundLine(s);
+  const keep = typeof keepGarrison === 'function' ? keepGarrison : (): boolean => keepGarrison;
   for (const u of units) {
     if (u.manual || u.def.id === 'supply_truck' || isCommander(u.def) || capitalGuard(u)) continue;
     const r = u.opRole;
-    if (r === 'garrison' || r === 'occupy' || r === 'raid' || r === 'rearguard' || (line && (r === 'maneuver' || r === 'infiltrate' || r === 'siege'))) {
+    if ((r === 'garrison' && !keep(u)) || r === 'occupy' || r === 'raid' || r === 'rearguard' || (line && (r === 'maneuver' || r === 'infiltrate' || r === 'siege'))) {
       u.opRole = 'line';
       u.opTarget = null;
       u.opObjective = null;
@@ -203,18 +218,35 @@ const ZONE_MIN_M = 60;
  */
 export function addZone(world: World, f: Faction, s: Front): Zone | null {
   if (!s.line) return null;
-  const { a, b } = s.line;
+  return addZoneLine(world, f, s.line.a, s.line.b, s.id, s.name);
+}
+
+/**
+ * Register a line a–b as a permanent fortified zone (2.2: also straight from a drawn Fortify
+ * directive, held by `frontId`, else unheld until a front takes the line). Same line again: re-bound.
+ */
+export function addZoneLine(world: World, f: Faction, a: V2, b: V2, frontId: number | null = null, name = ''): Zone | null {
   // A zone needs a real line to lay works along (a point order resolved on the capital gave a == b).
   if (dist(a, b) < ZONE_MIN_M) return null;
   const same = f.zones.find((z) => !z.cancelled && ((dist(z.a, a) < ZONE_SAME_M && dist(z.b, b) < ZONE_SAME_M) || (dist(z.a, b) < ZONE_SAME_M && dist(z.b, a) < ZONE_SAME_M)));
   if (same) {
-    same.frontId = s.id;
+    if (frontId !== null) same.frontId = frontId;
     return same;
   }
-  const z: Zone = { id: f.zoneSeq++, a: { ...a }, b: { ...b }, frontId: s.id, createdAt: world.time, cancelled: false };
+  const z: Zone = { id: f.zoneSeq++, a: { ...a }, b: { ...b }, frontId, createdAt: world.time, cancelled: false };
   f.zones = [...f.zones, z];
-  world.note(f.id, 'log.zonePlanned', { point: s.name }, 'info');
+  world.note(f.id, 'log.zonePlanned', { point: name || nearestPlaceId(world, { x: (a.x + b.x) / 2, z: (a.z + b.z) / 2 }) }, 'info');
   return z;
+}
+
+function nearestPlaceId(world: World, p: V2): string {
+  let best = '';
+  let bd = Infinity;
+  for (const o of world.objectives) {
+    const d = dist(o.pos, p);
+    if (d < bd) { bd = d; best = o.id; }
+  }
+  return best;
 }
 
 function setPosture(world: World, s: Front, p: Front['posture']): void {
@@ -440,6 +472,8 @@ export function thinkFronts(world: World, f: Faction): void {
   const segs = frontSegments(world, f, world.frontInfo[f.id]?.cells ?? []);
   f.fronts.forEach((s, i) => (s.segment = segs[i] ?? []));
   planOperations(world, f);
+  // 2.2: economic raid parties against enemy buildings (econwar.ts).
+  planEconRaids(world, f);
   const groups = frontGroups(world, f);
   planPincer(world, f, groups);
   for (const s of f.fronts) {
@@ -479,11 +513,11 @@ export function thinkFronts(world: World, f: Faction): void {
         s.rally = lerpV(world.cityOf(f.id).exit, s.targetPos, t.city !== null ? 0.5 : 0.35);
       }
     }
-    // Round 7: the player's attack orders get the AI's cautious ⇄ assault rule (cityai never runs for players).
-    if (f.isPlayer && ROUND7_AB.assault) orderedAssault(world, f, s, units);
+    // Round 7: binding attack orders get the AI's cautious ⇄ assault rule (2.2: cityai sets the other fronts' postures, the player's included).
+    if (boundOrder(s) && ROUND7_AB.assault) orderedAssault(world, f, s, units);
     // 2.1 binding orders: detachments come back; a line order is held frontally (no manoeuvre ops).
     const bound = boundOrder(s);
-    if (bound) recallDetachments(s, units);
+    if (bound) recallDetachments(s, units, keptGarrison(world, f));
     // Battle doctrine for this group's attack (flank, pincer, infiltration, siege …).
     if (bound && boundLine(s)) holdOperation(world, s, units);
     else runOperation(world, f, s, units);
@@ -728,6 +762,12 @@ function planFront(world: World, f: Faction, s: Front, units: Unit[], defensive:
   }
   // 2.1: on an ordered line, squads man the finished works along it first (structures.structureSlots).
   if (ordered && s.line) manWorks(world, f, s.line, liners, slots);
+  // 2.2 (V22_SPEC §7): the front's tanks fight as one block — a reserve behind the line, or
+  // assembled and then leading the infantry attack (armour.ts).
+  const approach = !contact && !holding && s.posture !== 'withdraw' && !defendingHome(s);
+  const attacking = !ordered && !siegeSlots && !defendingHome(s) && (s.mode === 'push' || attackLine || approach);
+  // (A siege ring / capital storm and the home defence keep their own slots: tanks storm with the rest.)
+  if (!siegeSlots && !defendingHome(s)) armourSlots(world, s, liners, slots, { front, facing, pushing: attacking && !defensive });
   s.slots = slots;
 }
 
@@ -818,13 +858,16 @@ function eagerPush(world: World, f: Faction, s: Front, units: Unit[], anchor: V2
  * to drive through the front and seize an enemy settlement behind it — or the enemy capital.
  */
 const SPEAR_MOBILE = new Set(['light_tank', 'medium_tank', 'heavy_tank', 'motor_inf']);
-const spearReady = (u: Unit): boolean => !u.spearhead && !u.manual && !u.routing && u.behavior === 'advance' && u.hp > u.def.maxHp * 0.6;
+// 2.2 wave 2: a unit on a detachment (raid, garrison …) is not pulled into a thrust.
+const spearReady = (u: Unit): boolean => !u.spearhead && !u.manual && !u.routing && u.behavior === 'advance' && u.hp > u.def.maxHp * 0.6 && u.opRole === 'line';
 /** Fresh tanks and motorized squads free for a thrust. */
 function mobileFresh(units: Unit[]): number {
   let n = 0;
   for (const u of units) if (SPEAR_MOBILE.has(u.def.id) && spearReady(u)) n++;
   return n;
 }
+
+const spearRank = (u: Unit): number => (isTank(u) ? 0 : SPEAR_MOBILE.has(u.def.id) ? 1 : 2);
 
 function launchSpearhead(world: World, f: Faction, s: Front, units: Unit[], anchor: V2): void {
   let target: string | null = null;
@@ -862,7 +905,8 @@ function launchSpearhead(world: World, f: Faction, s: Front, units: Unit[], anch
     .filter((u) => spearReady(u)
       && (u.def.kind === 'vehicle' ? u.def.id !== 'supply_truck' : u.def.id === 'infantry' || u.def.id === 'engineer' || u.def.id === 'motor_inf'))
     // Armour and motorized rifles lead the thrust; then the nearest riflemen.
-    .sort((a, b) => (SPEAR_MOBILE.has(b.def.id) ? 1 : 0) - (SPEAR_MOBILE.has(a.def.id) ? 1 : 0) || dist(a.pos, anchor) - dist(b.pos, anchor));
+    // 2.2 (V22_SPEC §7): the tanks first, so the front's armour goes as one group, not one by one.
+    .sort((a, b) => spearRank(a) - spearRank(b) || dist(a.pos, anchor) - dist(b.pos, anchor));
   const size = Math.max(4, Math.round(units.length * EAGER.spearShare));
   // Riflemen to take the objective: at least 3 foot squads ride with an armoured thrust.
   const head = pool.slice(0, size);

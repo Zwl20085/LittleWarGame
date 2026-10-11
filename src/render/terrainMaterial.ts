@@ -1,12 +1,18 @@
 import * as THREE from 'three';
+import { GLSL_NOISE } from './glslNoise';
+import type { RoadTexture } from './roadField';
 import { PAL } from './palette';
 
 export interface TerrainUniforms {
   readonly uOverlay: { value: THREE.Texture };
   readonly uSize: { value: THREE.Vector2 };
+  /** Overlay texture size in texels (for the blur taps). */
+  readonly uOverlayRes: { value: THREE.Vector2 };
   readonly uTerrainLayer: { value: number };
   /** Territory tint strength (softer when zoomed in). */
   readonly uOverlayK: { value: number };
+  /** Ground texture noise on (1) / off (0, low quality tier). */
+  readonly uDetail: { value: number };
   readonly uFieldCols: { value: THREE.Color[] };
   readonly uHedge: { value: THREE.Color };
   readonly uRoad: { value: THREE.Color };
@@ -15,6 +21,10 @@ export interface TerrainUniforms {
   readonly uKerb: { value: THREE.Color };
   readonly uFlag: { value: THREE.Color };
   readonly uGarden: { value: THREE.Color };
+  /** Road distance texture (2.2) and its grid: (metres per texel, width, height), byte scale. */
+  readonly uRoadTex: { value: THREE.Texture | null };
+  readonly uRoadGrid: { value: THREE.Vector3 };
+  readonly uRoadScale: { value: number };
 }
 
 const VERT_PARS = /* glsl */ `
@@ -45,8 +55,10 @@ vSquare = aSquare;
 const FRAG_PARS = /* glsl */ `
 uniform sampler2D uOverlay;
 uniform vec2 uSize;
+uniform vec2 uOverlayRes;
 uniform float uTerrainLayer;
 uniform float uOverlayK;
+uniform float uDetail;
 uniform vec3 uFieldCols[6];
 uniform vec3 uHedge;
 uniform vec3 uRoad;
@@ -54,6 +66,9 @@ uniform vec3 uSett;
 uniform vec3 uKerb;
 uniform vec3 uFlag;
 uniform vec3 uGarden;
+uniform sampler2D uRoadTex;
+uniform vec3 uRoadGrid;
+uniform float uRoadScale;
 varying float vRoadD;
 varying vec4 vTown;
 varying float vSquare;
@@ -61,7 +76,8 @@ varying vec3 vWPos;
 varying vec3 vWNor;
 varying float vFarm;
 varying float vFieldAng;
-float th(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+${GLSL_NOISE}
+float th(vec2 p) { return hash12(p); }
 float lineAA(float v, float width) {
   float fw = max(fwidth(v), 1e-4);
   float d = abs(fract(v - 0.5) - 0.5) / fw;
@@ -70,6 +86,31 @@ float lineAA(float v, float width) {
 `;
 
 const FRAG_MAIN = /* glsl */ `
+// Ground texture (2.2): the vertex colours are 4 m cells — smooth washes that read as blur once
+// the camera is down among the troops. Layered value noise breaks them into tufts, patches and
+// soil, each octave fading out before it is small enough to shimmer.
+float mpp = length(fwidth(vWPos.xz)) * 0.7071; // metres per pixel
+// Road distance per fragment from the 2 m texture (straight edges); the 4 m vertex field is the
+// fallback when no texture is bound.
+float roadD = uRoadGrid.x > 0.0 ? texture2D(uRoadTex, (vWPos.xz / uRoadGrid.x + 0.5) / uRoadGrid.yz).r * 255.0 / uRoadScale : vRoadD;
+float flatK = smoothstep(0.55, 0.85, vWNor.y);
+if (uDetail > 0.5) {
+  float n0 = vnoise(vWPos.xz * 0.055 + 7.0);
+  float n1 = vnoise(vWPos.xz * 0.21 + 3.0);
+  float n2 = vnoise(vWPos.xz * 0.83);
+  float n3 = vnoise(vWPos.xz * 2.9 + 11.0);
+  float k1 = 1.0 - smoothstep(1.2, 2.4, mpp);
+  float k2 = 1.0 - smoothstep(0.35, 0.7, mpp);
+  float k3 = 1.0 - smoothstep(0.1, 0.2, mpp);
+  float det = (n0 - 0.5) * 0.10 + (n1 - 0.5) * 0.10 * k1 + (n2 - 0.5) * 0.10 * k2 + (n3 - 0.5) * 0.08 * k3;
+  diffuseColor.rgb *= 1.0 + det;
+  // Large dry / lush patches shift the hue a little (sun-bleached grass vs. damp hollows).
+  diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(1.06, 1.02, 0.9), smoothstep(0.55, 0.8, n0) * 0.6 * flatK);
+  diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(0.9, 0.98, 0.88), smoothstep(0.45, 0.2, n0) * 0.5 * flatK);
+  // Steep ground shows bare soil and rock through the turf.
+  float bare = (1.0 - flatK) * smoothstep(0.35, 0.65, n1);
+  diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.55, 0.49, 0.40) * (0.9 + 0.2 * n2), bare * 0.45);
+}
 // Field patchwork (crisp at any zoom): rotated grid, hashed crop colour, hedgerows, furrows.
 if (vFarm > 0.02) {
   // Farm blocks (~260 m, wavy lane borders) each keep one field orientation, so the patchwork
@@ -98,13 +139,22 @@ if (vFarm > 0.02) {
   float lum = dot(diffuseColor.rgb, vec3(0.3, 0.59, 0.11)) / 0.32;
   vec3 crop = fc * furrow * clamp(lum, 0.75, 1.15);
   diffuseColor.rgb = mix(diffuseColor.rgb, crop, vFarm * 0.8);
-  // Hedgerows on field borders, a slightly wider darker hedge + lane on block borders.
-  float hedge = max(1.0 - smoothstep(0.8, 2.2, edge), (1.0 - smoothstep(1.4, 3.2, blockEdge)) * 1.1);
-  diffuseColor.rgb = mix(diffuseColor.rgb, uHedge, min(1.0, hedge) * vFarm * 0.78);
+  // Hedgerows on field borders, a wider hedge + lane on block borders: ragged bushes with crisp
+  // (anti-aliased) edges up close, a soft band from afar; a little shade on the lee side.
+  float bushN = vnoise(vWPos.xz * 0.42 + 5.0);
+  float hw = 1.0 + 1.3 * bushN;
+  float bw = 2.0 + 1.6 * bushN;
+  float aE = max(fwidth(edge), 0.05) + 0.25;
+  float aB = max(fwidth(blockEdge), 0.05) + 0.25;
+  float hedge = max(1.0 - smoothstep(hw - aE, hw + aE, edge), (1.0 - smoothstep(bw - aB, bw + aB, blockEdge)) * 1.1);
+  float lee = (1.0 - smoothstep(hw, hw + 3.5, edge)) * 0.1 + (1.0 - smoothstep(bw, bw + 4.5, blockEdge)) * 0.1;
+  diffuseColor.rgb *= 1.0 - lee * vFarm;
+  vec3 bush = uHedge * (0.78 + 0.4 * vnoise(vWPos.xz * 1.1 + 9.0) * (1.0 - smoothstep(0.25, 0.6, mpp)) + 0.12 * bushN);
+  diffuseColor.rgb = mix(diffuseColor.rgb, bush, min(1.0, hedge) * vFarm * 0.85);
 }
 // Carriageway: crisp packed-earth road with darker verges and wheel ruts (fade before aliasing).
-if (vRoadD < 30.0 && vRoadD > -30.0) {
-  float d = abs(vRoadD);
+if (roadD < 30.0) {
+  float d = roadD;
   float aa = max(fwidth(d), 0.02);
   float onRoad = 1.0 - smoothstep(3.9 - aa, 3.9 + aa, d);
   float n = th(floor(vWPos.xz * 1.3));
@@ -128,7 +178,7 @@ if (vTown.z > 0.5) {
   bool alongV = fq.x < fq.y;
   float dGrid = min(fq.x, fq.y);
   // Map roads crossing the town are paved too (no course direction for them).
-  float d = min(dGrid, abs(vRoadD));
+  float d = min(dGrid, roadD);
   float along = alongV ? vTown.y : vTown.x;
   // Streets fade out over the last metres instead of ending in a clipped rim.
   float inTown = smoothstep(-10.0, 0.0, vTown.w);
@@ -161,8 +211,13 @@ if (vTown.z > 0.5) {
   diffuseColor.rgb = mix(diffuseColor.rgb, sqc, sq);
   diffuseColor.rgb = mix(diffuseColor.rgb, uKerb * 0.92, ring);
 }
-vec4 ov = texture2D(uOverlay, vec2(vWPos.x / uSize.x, 1.0 - vWPos.z / uSize.y));
-diffuseColor.rgb = mix(diffuseColor.rgb, ov.rgb, ov.a * uOverlayK);
+// Territory wash: one texel per control cell, softened with five bilinear taps (premultiplied).
+vec2 ouv = vec2(vWPos.x / uSize.x, 1.0 - vWPos.z / uSize.y);
+vec2 ot = 0.9 / uOverlayRes;
+vec4 ov = texture2D(uOverlay, ouv) * 0.32
+  + (texture2D(uOverlay, ouv + vec2(ot.x, ot.y)) + texture2D(uOverlay, ouv + vec2(-ot.x, ot.y))
+   + texture2D(uOverlay, ouv + vec2(ot.x, -ot.y)) + texture2D(uOverlay, ouv + vec2(-ot.x, -ot.y))) * 0.17;
+diffuseColor.rgb = diffuseColor.rgb * (1.0 - ov.a * uOverlayK) + ov.rgb * uOverlayK;
 if (uTerrainLayer > 0.5) {
   // Paper-map reading of the ground: wash, contours every 10 m (index every 50 m), steep hatch.
   diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.78, 0.74, 0.62), 0.35);
@@ -177,12 +232,15 @@ if (uTerrainLayer > 0.5) {
 `;
 
 /** Matte vertex-coloured ground with shader-side fields, the overlay map and the terrain layer. */
-export function terrainMaterial(overlay: THREE.Texture, width: number, depth: number): { material: THREE.MeshStandardMaterial; uniforms: TerrainUniforms } {
+export function terrainMaterial(overlay: THREE.Texture, width: number, depth: number, road: RoadTexture | null = null, overlayRes = new THREE.Vector2(width / 2.5, depth / 2.5)): { material: THREE.MeshStandardMaterial; uniforms: TerrainUniforms } {
+  const rg = road?.texture.userData as { texel: number; w: number; h: number } | undefined;
   const uniforms: TerrainUniforms = {
     uOverlay: { value: overlay },
     uSize: { value: new THREE.Vector2(width, depth) },
+    uOverlayRes: { value: overlayRes },
     uTerrainLayer: { value: 0 },
     uOverlayK: { value: 1 },
+    uDetail: { value: 1 },
     uFieldCols: { value: PAL.fields.slice(0, 6) },
     uHedge: { value: PAL.hedge },
     uRoad: { value: PAL.road },
@@ -190,6 +248,9 @@ export function terrainMaterial(overlay: THREE.Texture, width: number, depth: nu
     uKerb: { value: PAL.kerb },
     uFlag: { value: PAL.flag },
     uGarden: { value: PAL.garden },
+    uRoadTex: { value: road?.texture ?? null },
+    uRoadGrid: { value: rg ? new THREE.Vector3(rg.texel, rg.w, rg.h) : new THREE.Vector3(0, 1, 1) },
+    uRoadScale: { value: road?.scale ?? 1 },
   };
   const material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.97, metalness: 0 });
   material.onBeforeCompile = (shader) => {
@@ -201,6 +262,6 @@ export function terrainMaterial(overlay: THREE.Texture, width: number, depth: nu
       .replace('#include <common>', `#include <common>\n${FRAG_PARS}`)
       .replace('#include <color_fragment>', `#include <color_fragment>\n${FRAG_MAIN}`);
   };
-  material.customProgramCacheKey = () => 'terrain-v4';
+  material.customProgramCacheKey = () => 'terrain-v7';
   return { material, uniforms };
 }

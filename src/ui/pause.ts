@@ -34,6 +34,9 @@ export function settingsFields(onLang?: () => void): HTMLElement {
     h('label', { class: 'field check' },
       h('input', { type: 'checkbox', checked: s.muted, onchange: (e: Event) => updateSettings({ muted: (e.target as HTMLInputElement).checked }) }),
       h('span', {}, t('set.mute'))),
+    h('label', { class: 'field check' },
+      h('input', { type: 'checkbox', checked: s.checkUpdates, onchange: (e: Event) => updateSettings({ checkUpdates: (e.target as HTMLInputElement).checked }) }),
+      h('span', {}, t('set.checkUpdates'))),
   );
 }
 

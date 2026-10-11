@@ -7,6 +7,8 @@ import { clamp, dist2, type V2 } from './vec';
 const GOAL_LATTICE_M = 128;
 /** Cached flow fields per navigation grid (each ~0.8 MB on a large map). */
 const FIELD_CACHE = 128;
+/** Passable regions of at most this many cells are closed (pathing traps, see pruneIslands). */
+const ISLAND_MAX_CELLS = 6;
 
 export interface NavClass {
   readonly vehicle: boolean;
@@ -105,6 +107,43 @@ export class NavGrid {
     this.built = new Uint8Array(n);
     this.walk = new Uint8Array(n);
     for (let j = 0; j < this.nz; j++) for (let i = 0; i < this.nx; i++) this.cost[j * this.nx + i] = this.cellCost(terrain, i, j);
+    this.pruneIslands();
+  }
+
+  /**
+   * Close tiny islands: a few passable cells joined to the rest only across a diagonal corner
+   * (between two cells too steep for this class) are never on a route, but per-tick movement and
+   * separation can push a unit in across the corner, and it can then never be routed out (2.2
+   * soak: supply trucks jammed for minutes in one such 22° cell). Closed, they are ordinary
+   * blocked ground: nothing walks in, and a unit already there escapes to the nearest open cell.
+   */
+  private pruneIslands(): void {
+    const lab = this.buildRegions();
+    // Only islands cut off by terrain (slope, water): a street pocket between town blocks is cut
+    // off on the 8 m graph by houses but walkable on the 2 m raster, and stays open.
+    const keep = new Set<number>();
+    const nx = this.nx;
+    for (let k = 0; k < lab.length; k++) {
+      if (lab[k] === 0 || this.regionSize[lab[k]] > ISLAND_MAX_CELLS) continue;
+      if (this.built[k]) { keep.add(lab[k]); continue; }
+      const ci = k % nx;
+      const cj = (k / nx) | 0;
+      for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) {
+        const i = ci + di;
+        const j = cj + dj;
+        if (i < 0 || j < 0 || i >= nx || j >= this.nz) continue;
+        const n = j * nx + i;
+        if (this.cost[n] <= 0 && this.walk[n] === 1) keep.add(lab[k]);
+      }
+    }
+    for (let k = 0; k < lab.length; k++) {
+      if (lab[k] !== 0 && this.regionSize[lab[k]] <= ISLAND_MAX_CELLS && !keep.has(lab[k])) {
+        this.cost[k] = 0;
+        this.walk[k] = 0;
+        lab[k] = 0;
+      }
+    }
+    this.regions = lab;
   }
 
   /** Travel-cost multiplier of cell (i, j) from the current terrain (0 = blocked). */
@@ -143,6 +182,138 @@ export class NavGrid {
     for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) this.cost[j * this.nx + i] = this.cellCost(terrain, i, j);
     this.edges = null;
     this.fields.clear();
+    this.pruneIslands();
+  }
+
+  /** Connected-component label per cell (0 = blocked), built lazily; see `regionAt`. */
+  private regions: Int32Array | null = null;
+  /** Cells per region label (index = label). */
+  private regionSize: number[] = [0];
+
+  /**
+   * Label the connected regions of passable cells, with the same moves as `findPath` (8-way, no
+   * diagonal squeeze between two blocked cells). Static terrain: built once per grid (≈ 0.2 M
+   * cells, a few ms) and again only after `refreshArea`.
+   */
+  private buildRegions(): Int32Array {
+    const nx = this.nx;
+    const nz = this.nz;
+    const n = nx * nz;
+    const lab = new Int32Array(n);
+    const queue = new Int32Array(n);
+    const cost = this.cost;
+    let next = 0;
+    const size: number[] = [0];
+    for (let s = 0; s < n; s++) {
+      if (lab[s] !== 0 || cost[s] <= 0) continue;
+      const id = ++next;
+      lab[s] = id;
+      let head = 0;
+      let tail = 0;
+      queue[tail++] = s;
+      while (head < tail) {
+        const cur = queue[head++];
+        const ci = cur % nx;
+        const cj = (cur / nx) | 0;
+        for (let dj = -1; dj <= 1; dj++) {
+          const nj = cj + dj;
+          if (nj < 0 || nj >= nz) continue;
+          for (let di = -1; di <= 1; di++) {
+            const ni = ci + di;
+            if ((di === 0 && dj === 0) || ni < 0 || ni >= nx) continue;
+            const k = nj * nx + ni;
+            if (lab[k] !== 0 || cost[k] <= 0) continue;
+            if (di !== 0 && dj !== 0 && (cost[cj * nx + ni] <= 0 || cost[nj * nx + ci] <= 0)) continue;
+            lab[k] = id;
+            queue[tail++] = k;
+          }
+        }
+      }
+      size.push(tail);
+    }
+    this.regionSize = size;
+    return lab;
+  }
+
+  /** Region label of the cell under `p` (0 = blocked cell). Equal labels = mutually reachable. */
+  regionAt(p: V2): number {
+    this.regions ??= this.buildRegions();
+    return this.regions[this.idx(p)];
+  }
+
+  /**
+   * Last-resort way out for a unit that has not got anywhere for a minute: the open cell centre
+   * (passable, in `region`, not built on) of the nearest ring around `p` (8–24 m, never its own
+   * cell) that lies closest to `toward`. Null when there is none.
+   */
+  unstickPoint(p: V2, region: number, toward: V2): V2 | null {
+    this.regions ??= this.buildRegions();
+    const lab = this.regions;
+    const ci = Math.round(p.x / this.cell);
+    const cj = Math.round(p.z / this.cell);
+    for (let r = 1; r <= 3; r++) {
+      let best: V2 | null = null;
+      let bd = Infinity;
+      for (let dj = -r; dj <= r; dj++) {
+        for (let di = -r; di <= r; di++) {
+          if (Math.max(Math.abs(di), Math.abs(dj)) !== r) continue;
+          const i = ci + di;
+          const j = cj + dj;
+          if (i < 0 || j < 0 || i >= this.nx || j >= this.nz || lab[j * this.nx + i] !== region) continue;
+          const q = { x: i * this.cell, z: j * this.cell };
+          if (this.terrain.buildingH(q.x, q.z) > 0) continue;
+          const d = dist2(q, toward);
+          if (d < bd) { bd = d; best = q; }
+        }
+      }
+      if (best) return best;
+    }
+    return null;
+  }
+
+  /** Number of cells in region `r` (0 for the blocked label). */
+  regionCells(r: number): number {
+    this.regions ??= this.buildRegions();
+    return this.regionSize[r] ?? 0;
+  }
+
+  /** Region a unit standing at `p` moves in (its own cell, or the nearest passable one it escapes to). */
+  regionFrom(p: V2): number {
+    const r = this.regionAt(p);
+    if (r !== 0) return r;
+    const q = this.nearestPassable(p, 24);
+    return q ? this.regionAt(q) : 0;
+  }
+
+  /**
+   * A destination a unit in region `region` can actually reach near `p`: `p` itself when its cell
+   * is passable and in that region (a point in a house there is left to `Terrain.freeNear`); else
+   * the nearest cell centre of the region within `maxDist` m; null when none is that close.
+   */
+  reachableNear(p: V2, region: number, maxDist = 48): V2 | null {
+    this.regions ??= this.buildRegions();
+    const lab = this.regions;
+    if (region === 0) return null;
+    if (lab[this.idx(p)] === region) return p;
+    const ci = Math.round(p.x / this.cell);
+    const cj = Math.round(p.z / this.cell);
+    const R = Math.ceil(maxDist / this.cell);
+    let best = -1;
+    let bestD = Infinity;
+    for (let dj = -R; dj <= R; dj++) {
+      const j = cj + dj;
+      if (j < 0 || j >= this.nz) continue;
+      for (let di = -R; di <= R; di++) {
+        const i = ci + di;
+        if (i < 0 || i >= this.nx) continue;
+        const d = di * di + dj * dj;
+        if (d >= bestD || lab[j * this.nx + i] !== region) continue;
+        bestD = d;
+        best = j * this.nx + i;
+      }
+    }
+    if (best < 0 || Math.sqrt(bestD) * this.cell > maxDist) return null;
+    return { x: (best % this.nx) * this.cell, z: ((best / this.nx) | 0) * this.cell };
   }
 
   private idx(p: V2): number {
@@ -177,7 +348,10 @@ export class NavGrid {
 
   /** Nearest passable cell centre within maxDist metres (spiral search). */
   nearestPassable(p: V2, maxDist = 40): V2 | null {
-    if (this.passable(p)) return p;
+    // A passable cell can still have a house on part of it: a point inside the house is not a
+    // place to stand (a unit spawned there walked out through the wall into a closed yard and
+    // stayed there for the rest of the war). The cell centre (never built on) is used instead.
+    if (this.passable(p) && this.terrain.buildingH(p.x, p.z) === 0) return p;
     const ci = Math.round(p.x / this.cell);
     const cj = Math.round(p.z / this.cell);
     const R = Math.ceil(maxDist / this.cell);

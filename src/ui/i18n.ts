@@ -1,3 +1,5 @@
+import { COMMAND_EN, COMMAND_ZH } from './i18n-command';
+
 export type Lang = 'zh' | 'en';
 
 type Dict = Record<string, string>;
@@ -95,12 +97,12 @@ const zh: Dict = {
   'zone.worksTip': '工事：已建成 / 计划（堑壕、炮楼、堡垒），+在建', 'zone.cancel': '取消', 'zone.cancelTip': '停止该筑垒地域施工（已建成的工事保留）',
   // statuses
   'status.noArc': '无可行弹道', 'status.unreachable': '目标无法到达', 'status.routing': '溃退中', 'status.retreat': '撤退中',
-  'status.recovering': '休整补员', 'status.withdraw': '撤收', 'status.rally': '集结中', 'status.suppressed': '被压制，伏低',
+  'status.recovering': '休整补员', 'status.withdraw': '撤收', 'status.rally': '集结中', 'status.suppressed': '被压制，伏低', 'status.takingCover': '遭炮击，进屋隐蔽',
   'status.engaging': '交战中', 'status.holding': '据守', 'status.assaultCity': '进攻城市', 'status.advancing': '推进中',
   'status.firing': '射击', 'status.positioning': '转移阵位', 'status.covering': '架设警戒', 'status.settingUp': '架设中',
   'status.observing': '前沿观察', 'status.noBudget': '缺工程预算', 'status.building': '施工中', 'status.buildingPillbox': '修筑炮楼', 'status.buildingBunker': '修筑堡垒', 'status.garrisoned': '据守工事', 'status.enteringStructure': '进入工事驻防', 'status.supplying': '中继补给',
   'status.manualMove': '手动：移动', 'status.manualAttackMove': '手动：攻击移动', 'status.manualFocus': '手动：集火',
-  'status.spearhead': '突破纵深', 'status.bridging': '架设浮桥', 'status.relocating': '炮兵转移阵地', 'status.huntRaiders': '清剿后方渗透之敌', 'status.rearGuard': '警戒补给线', 'status.garrison': '奉命守备城镇', 'status.homeGuard': '首都警卫', 'status.fallingBack': '有序后撤，回防首都', 'status.occupy': '奉命占领城镇', 'status.toDepot': '返回补给站', 'status.loading': '装载弹药', 'status.convoyOut': '运送补给', 'status.unloading': '分发弹药', 'status.convoyBack': '空车返回', 'status.raiding': '袭击敌补给线', 'status.escort': '掩护补给车',
+  'status.spearhead': '突破纵深', 'status.raidEcon': '潜入敌后破坏经济设施', 'status.bridging': '架设浮桥', 'status.relocating': '炮兵转移阵地', 'status.huntRaiders': '清剿后方渗透之敌', 'status.rearGuard': '警戒补给线', 'status.garrison': '奉命守备城镇', 'status.homeGuard': '首都警卫', 'status.fallingBack': '有序后撤，回防首都', 'status.occupy': '奉命占领城镇', 'status.toDepot': '返回补给站', 'status.loading': '装载弹药', 'status.convoyOut': '运送补给', 'status.unloading': '分发弹药', 'status.convoyBack': '空车返回', 'status.raiding': '袭击敌补给线', 'status.escort': '掩护补给车',
   'status.manualRetreat': '手动：撤退', 'status.manualHold': '手动：固守',
   'morale.normal': '正常', 'morale.suppressed': '受压制', 'morale.pinned': '钉住', 'morale.routing': '溃退', 'morale.wavering': '动摇',
   // logs
@@ -109,7 +111,7 @@ const zh: Dict = {
   'log.overflow': '资源已达上限，溢出部分丢弃', 'log.eliminated': '{f} 被淘汰（{reason}）',
   'log.resumeAuto': '{unit} 恢复自动任务',
   'log.unreachable': '{unit} 目标无法到达，已恢复自动',
-  'log.convoyThreat': '补给车队遭遇敌军，掉头返回', 'log.spearhead': '组织 {n} 支部队突破敌线，直取 {point}', 'log.raidLaunched': '{n} 支部队渗透敌后，袭击补给线', 'log.bridgeStarted': '工兵开始架设浮桥', 'log.reservesShifted': '抽调 {n} 支部队增援吃紧的战区', 'log.bridgeBuilt': '浮桥架设完成', 'log.pillboxBuilt': '工兵建成一座炮楼', 'log.bunkerBuilt': '工兵建成一座堡垒', 'log.structureLost': '炮楼/堡垒被摧毁，守军被迫撤出', 'log.capitalLine': '统帅部：工兵开始修筑首都防线（堑壕与炮楼）', 'log.engineersRequested': '统帅部：工事待工，补充工兵 ×{n}', 'log.hqDefend': '统帅部：抽调 {n} 支部队守备 {point}', 'log.homeThreat': '首都受威胁！敌军约 {enemy}，预计 {eta} 秒后抵达', 'log.homeDefence': '统帅部：回防首都，调回 {groups} 个集团军、{n} 支警卫部队（敌约 {enemy}）', 'log.homeFortify': '统帅部：敌军将至，在首都外围构筑堑壕与沙袋工事', 'log.homeSafe': '首都威胁解除，各集团军恢复原任务', 'log.hqOccupy': '统帅部：派 {n} 支部队占领 {point}', 'log.frontOpened': '统帅部开设 {point} 方面', 'log.zonePlanned': '统帅部批准 {point} 方面筑垒地域（永备工事）', 'log.frontMerged': '{point} 方面并入 {into} 方面', 'log.frontFallBack': '统帅部：{point} 方面回防', 'log.counterStrike': '统帅部：敌军倾巢而出，反击 {point}', 'log.raid': '{unit} 出击袭扰敌补给线',
+  'log.convoyThreat': '补给车队遭遇敌军，掉头返回', 'log.spearhead': '组织 {n} 支部队突破敌线，直取 {point}', 'log.raidLaunched': '{n} 支部队渗透敌后，袭击补给线', 'log.armourMassed': '统帅部：抽调 {n} 辆坦克集中于主攻方向', 'log.econRaid': '派出 {n} 支小分队潜入敌后，破坏 {point} 的{bld}', 'log.bridgeStarted': '工兵开始架设浮桥', 'log.reservesShifted': '抽调 {n} 支部队增援吃紧的战区', 'log.bridgeBuilt': '浮桥架设完成', 'log.pillboxBuilt': '工兵建成一座炮楼', 'log.bunkerBuilt': '工兵建成一座堡垒', 'log.structureLost': '炮楼/堡垒被摧毁，守军被迫撤出', 'log.capitalLine': '统帅部：工兵开始修筑首都防线（堑壕与炮楼）', 'log.engineersRequested': '统帅部：工事待工，补充工兵 ×{n}', 'log.hqDefend': '统帅部：抽调 {n} 支部队守备 {point}', 'log.homeThreat': '首都受威胁！敌军约 {enemy}，预计 {eta} 秒后抵达', 'log.homeDefence': '统帅部：回防首都，调回 {groups} 个集团军、{n} 支警卫部队（敌约 {enemy}）', 'log.homeFortify': '统帅部：敌军将至，在首都外围构筑堑壕与沙袋工事', 'log.homeSafe': '首都威胁解除，各集团军恢复原任务', 'log.hqOccupy': '统帅部：派 {n} 支部队占领 {point}', 'log.frontOpened': '统帅部开设 {point} 方面', 'log.zonePlanned': '统帅部批准 {point} 方面筑垒地域（永备工事）', 'log.frontMerged': '{point} 方面并入 {into} 方面', 'log.frontFallBack': '统帅部：{point} 方面回防', 'log.counterStrike': '统帅部：敌军倾巢而出，反击 {point}', 'log.raid': '{unit} 出击袭扰敌补给线',
   'log.protect': '为 {unit} 预留资源', 'log.protectExpired': '{unit} 资源预留到期', 'log.exitBlocked': '城市出口拥堵，等待出场', 'log.capitalBesieged': '首都被围，新部队无法出城',
   'reason.resolve': '战役意志耗尽', 'reason.hq': '指挥部失守',
   // results
@@ -126,11 +128,12 @@ const zh: Dict = {
   'ai.balanced': '均衡', 'ai.armor': '装甲', 'ai.infantry': '步兵', 'ai.artillery': '炮兵',  // title screen (titles stay English by design; descriptions follow the language)
   'title.kicker': 'OPERATIONS ROOM · EUROPE 1944', 'title.name': 'LITTLE WAR', 'title.sub': 'A WWII BATTLE DIORAMA',
   'title.quick': 'QUICK BATTLE', 'title.custom': 'CUSTOM BATTLE', 'title.spectate': 'SPECTATE', 'title.settings': 'SETTINGS',
-  'title.quickDesc': '四方混战 · 随机生成地图 · 普通难度', 'title.customDesc': '地图、对手、难度、敌情模式与种子',
-  'title.spectateDesc': '全 AI 对战，自由观看', 'title.settingsDesc': '语言、界面缩放、烟雾、镜头震动与声音',
+  'title.quickDesc': '四方混战 · 随机生成地图 · 普通难度 · 战争迷雾', 'title.customDesc': '地图、对手、难度、敌情模式与种子',
+  'title.spectateDesc': '全 AI 对战，自由观看', 'title.settingsDesc': '语言、界面缩放、烟雾、镜头震动、声音与更新检查',
   'title.live': '实况 · AI 交战', 'title.deploying': '部队展开中 {p}%', 'title.keys': '↑↓ 选择 · Enter 确认 · Esc 返回', 'title.back': '返回',
   'set.lang': '语言',
   'set.volMaster': '总音量', 'set.volMusic': '音乐', 'set.volSfx': '音效', 'set.mute': '静音',
+  'set.checkUpdates': '启动时检查更新', 'update.kicker': '新版本 {v} 已发布 · 当前 {cur}', 'update.download': '前往下载', 'update.version': '当前版本',
   'setup.factions': '参战方', 'setup.mapSize': '地图尺寸', 'size.medium': '中型', 'size.large': '大型', 'setup.random': '随机',
   'map.generated': '随机生成', 'map.four_cities.short': '四城（测试）', 'map.greystone_pinecreek.short': '灰石—松溪（测试）',
   'err.start': '无法开始对局', 'err.reload': '重新载入',
@@ -147,6 +150,22 @@ const zh: Dict = {
   'reason.crossAt': '在{feature}渡河（{kind}）', 'reason.holdRiver': '依托{feature}河线固守', 'reason.holdHigh': '占据{feature}高地', 'reason.holdLine': '在{feature}一线固守', 'reason.holdFront': '在{feature}前线固守', 'reason.pushFront': '向{point}推进战线', 'reason.bridging': '工兵架设浮桥中', 'feat.here': '前沿',
   'prod.unlockShort': '{s}秒解锁',
   'hud.sides': '各方意志', 'hud.territory': '各方据点', 'res.held': '持有据点', 'hud.speedTip': '模拟速度', 'hud.pauseTip': '暂停 / 继续（Space）', 'hud.logiTip': '后勤满足度：供给能力 / 需求', 'hud.resolveTip': '战役意志：归零即淘汰',
+  // 2.2 logistics: town panel, supply stocks, per-place queues, economic buildings
+  'town.kind.capital': '首都', 'town.kind.city': '城市', 'town.kind.town': '城镇', 'town.neutral': '无主', 'town.contested': '争夺中',
+  'town.stock': '补给储备', 'town.stockTip': '{r} 米内的部队从此逐步补充弹药；运输车由此装载',
+  'town.queue': '本地生产', 'town.fac.barracks': '兵营', 'town.fac.vehicle': '车辆', 'town.fac.support': '支援',
+  'town.noSlots': '此地没有生产位', 'town.queueEmpty': '队列为空', 'town.queueHere': '在此生产：',
+  'town.buildings': '经济建筑', 'town.capitalNoBuild': '首都不设经济建筑位', 'town.noBuildSlots': '此地没有建筑位',
+  'town.ruin': '废墟（可重建）', 'town.building': '施工 {p}%', 'town.hp': '完好 {p}%', 'town.depotOut': '提高储备上限与补充速度',
+  'town.fail.NO_RULES': '不可用', 'town.fail.NO_PLACE': '此地不能建造', 'town.fail.NOT_OWNER': '不属我方', 'town.fail.CONTESTED': '争夺中，无法施工',
+  'town.fail.NO_SLOT': '建筑位已满', 'town.fail.INSUFFICIENT_P': '兵员不足', 'town.fail.INSUFFICIENT_M': '军需不足',
+  'econ.factory': '工厂', 'econ.recruit': '征兵站', 'econ.depot': '仓库',
+  'econ.factoryTip': '工厂：持续增加军需（M）收入', 'econ.recruitTip': '征兵站：持续增加兵员（P）收入', 'econ.depotTip': '仓库：提高本地补给储备上限与补充速度',
+  'log.econStarted': '{point} 开始建造{bld}', 'log.econBuilt': '{point} 的{bld}已建成', 'log.econLost': '{point} 的{bld}被摧毁！', 'log.econCaptured': '缴获 {point} 的{bld}',
+  'log.queueLost': '{point} 失守或被围，{unit} 生产取消（返还一半）', 'log.queueDropped': '{point} 已失守，排队的 {unit} 取消',
+  'status.rearming': '前往补给点补充弹药', 'fail.NO_SLOT': '此地没有对应的生产位 / 建筑位', 'fail.CONTESTED': '争夺中，无法施工',
+  'eco.buildings': '经济建筑：工厂 {f} · 征兵站 {r} · 仓库 {d}（+{p} P / +{m} M 每分）', 'eco.stock': '各地补给储备 {s} / {c}',
+  'prod.at': '于 {place}', 'hud.stockTip': '各城镇补给储备合计',
 };
 
 const en: Dict = {
@@ -235,12 +254,12 @@ const en: Dict = {
   'zone.title': 'Fortified zones', 'zone.mapLabel': 'Fortified zone #{n}', 'zone.unheld': 'unheld', 'zone.works': '{n}/{of}', 'zone.building': '+{n} bldg',
   'zone.worksTip': 'Works finished / planned (trenches, pillboxes, bunkers), + under construction', 'zone.cancel': 'Cancel', 'zone.cancelTip': 'Stop work on this fortified zone (finished works remain)',
   'status.noArc': 'No firing solution', 'status.unreachable': 'Destination unreachable', 'status.routing': 'Routing', 'status.retreat': 'Retreating',
-  'status.recovering': 'Refitting', 'status.withdraw': 'Withdrawing', 'status.rally': 'Rallying', 'status.suppressed': 'Suppressed — going to ground',
+  'status.recovering': 'Refitting', 'status.withdraw': 'Withdrawing', 'status.rally': 'Rallying', 'status.suppressed': 'Suppressed — going to ground', 'status.takingCover': 'Shelled — taking cover in a building',
   'status.engaging': 'Engaging', 'status.holding': 'Holding', 'status.assaultCity': 'Assaulting city', 'status.advancing': 'Advancing',
   'status.firing': 'Firing', 'status.positioning': 'Repositioning', 'status.covering': 'Deployed, covering', 'status.settingUp': 'Deploying',
   'status.observing': 'Forward observing', 'status.noBudget': 'No works budget', 'status.building': 'Building', 'status.buildingPillbox': 'Building a pillbox', 'status.buildingBunker': 'Building a bunker', 'status.garrisoned': 'Manning a strongpoint', 'status.enteringStructure': 'Moving into a strongpoint', 'status.supplying': 'Relaying supply',
   'status.manualMove': 'Manual: move', 'status.manualAttackMove': 'Manual: attack-move', 'status.manualFocus': 'Manual: focus fire',
-  'status.spearhead': 'Spearhead: breaking through', 'status.bridging': 'Building a pontoon bridge', 'status.relocating': 'Battery relocating', 'status.huntRaiders': 'Hunting raiders in the rear', 'status.rearGuard': 'Guarding supply route', 'status.garrison': 'Garrisoning a town (HQ order)', 'status.homeGuard': 'Guarding the capital', 'status.fallingBack': 'Falling back to the capital in good order', 'status.occupy': 'Occupying a town (HQ order)', 'status.toDepot': 'To depot', 'status.loading': 'Loading ammunition', 'status.convoyOut': 'Convoy en route', 'status.unloading': 'Issuing ammunition', 'status.convoyBack': 'Returning empty', 'status.raiding': 'Raiding enemy supply', 'status.escort': 'Protecting convoy',
+  'status.spearhead': 'Spearhead: breaking through', 'status.raidEcon': 'Raiding enemy economic buildings', 'status.bridging': 'Building a pontoon bridge', 'status.relocating': 'Battery relocating', 'status.huntRaiders': 'Hunting raiders in the rear', 'status.rearGuard': 'Guarding supply route', 'status.garrison': 'Garrisoning a town (HQ order)', 'status.homeGuard': 'Guarding the capital', 'status.fallingBack': 'Falling back to the capital in good order', 'status.occupy': 'Occupying a town (HQ order)', 'status.toDepot': 'To depot', 'status.loading': 'Loading ammunition', 'status.convoyOut': 'Convoy en route', 'status.unloading': 'Issuing ammunition', 'status.convoyBack': 'Returning empty', 'status.raiding': 'Raiding enemy supply', 'status.escort': 'Protecting convoy',
   'status.manualRetreat': 'Manual: retreat', 'status.manualHold': 'Manual: hold',
   'morale.normal': 'Steady', 'morale.suppressed': 'Suppressed', 'morale.pinned': 'Pinned', 'morale.routing': 'Routing', 'morale.wavering': 'Wavering',
   'log.unitLost': 'Lost {unit} ({weapon})', 'log.routing': '{unit} morale broke', 'log.unitRouting': '{unit} routing',
@@ -248,7 +267,7 @@ const en: Dict = {
   'log.overflow': 'Stockpile full — overflow discarded', 'log.eliminated': '{f} eliminated ({reason})',
   'log.resumeAuto': '{unit} resumed automatic tasks',
   'log.unreachable': '{unit}: destination unreachable, back to auto',
-  'log.convoyThreat': 'Convoy ran into the enemy and turned back', 'log.spearhead': '{n} units break through toward {point}', 'log.raidLaunched': '{n} units infiltrate to raid enemy supply', 'log.bridgeStarted': 'Engineers started a pontoon bridge', 'log.reservesShifted': '{n} units shifted to a hard-pressed front', 'log.bridgeBuilt': 'Pontoon bridge completed', 'log.pillboxBuilt': 'Engineers completed a pillbox', 'log.bunkerBuilt': 'Engineers completed a bunker', 'log.structureLost': 'A pillbox / bunker was destroyed; its garrison was thrown out', 'log.capitalLine': 'High command: engineers begin the capital defence line (trenches and pillboxes)', 'log.engineersRequested': 'Supreme HQ: works are waiting — {n} engineer(s) queued', 'log.hqDefend': 'High command: {n} units sent to hold {point}', 'log.homeThreat': 'Capital threatened! ≈{enemy} enemy strength, arriving in about {eta} s', 'log.homeDefence': 'High command: {groups} army group(s) and {n} guard units recalled to the capital (enemy ≈{enemy})', 'log.homeFortify': 'High command: attack expected, digging trenches and sandbags around the capital', 'log.homeSafe': 'Threat to the capital has passed; army groups resume their orders', 'log.hqOccupy': 'High command: {n} units sent to occupy {point}', 'log.frontOpened': 'Supreme HQ opens the {point} Front', 'log.zonePlanned': 'Supreme HQ approves a fortified zone (permanent works) on the {point} Front', 'log.frontMerged': '{point} Front merged into the {into} Front', 'log.frontFallBack': 'Supreme HQ: {point} Front falls back', 'log.counterStrike': 'Supreme HQ: the enemy has committed everything — counter-strike on {point}', 'log.raid': '{unit} sent to raid enemy supply',
+  'log.convoyThreat': 'Convoy ran into the enemy and turned back', 'log.spearhead': '{n} units break through toward {point}', 'log.raidLaunched': '{n} units infiltrate to raid enemy supply', 'log.armourMassed': 'Supreme HQ: {n} tanks massed on the main effort', 'log.econRaid': '{n} squads slip behind the lines to wreck the {bld} at {point}', 'log.bridgeStarted': 'Engineers started a pontoon bridge', 'log.reservesShifted': '{n} units shifted to a hard-pressed front', 'log.bridgeBuilt': 'Pontoon bridge completed', 'log.pillboxBuilt': 'Engineers completed a pillbox', 'log.bunkerBuilt': 'Engineers completed a bunker', 'log.structureLost': 'A pillbox / bunker was destroyed; its garrison was thrown out', 'log.capitalLine': 'High command: engineers begin the capital defence line (trenches and pillboxes)', 'log.engineersRequested': 'Supreme HQ: works are waiting — {n} engineer(s) queued', 'log.hqDefend': 'High command: {n} units sent to hold {point}', 'log.homeThreat': 'Capital threatened! ≈{enemy} enemy strength, arriving in about {eta} s', 'log.homeDefence': 'High command: {groups} army group(s) and {n} guard units recalled to the capital (enemy ≈{enemy})', 'log.homeFortify': 'High command: attack expected, digging trenches and sandbags around the capital', 'log.homeSafe': 'Threat to the capital has passed; army groups resume their orders', 'log.hqOccupy': 'High command: {n} units sent to occupy {point}', 'log.frontOpened': 'Supreme HQ opens the {point} Front', 'log.zonePlanned': 'Supreme HQ approves a fortified zone (permanent works) on the {point} Front', 'log.frontMerged': '{point} Front merged into the {into} Front', 'log.frontFallBack': 'Supreme HQ: {point} Front falls back', 'log.counterStrike': 'Supreme HQ: the enemy has committed everything — counter-strike on {point}', 'log.raid': '{unit} sent to raid enemy supply',
   'log.protect': 'Reserving resources for {unit}', 'log.protectExpired': 'Reservation for {unit} expired', 'log.exitBlocked': 'City exit congested, units waiting', 'log.capitalBesieged': 'Capital besieged: no units can roll out',
   'reason.resolve': 'resolve exhausted', 'reason.hq': 'HQ captured',
   'res.victory': 'Victory', 'res.defeat': 'Defeat', 'res.draw': 'Mutual destruction', 'res.timeout': 'Time limit · decision',
@@ -263,11 +282,12 @@ const en: Dict = {
   'you': ' (you)',
   'ai.balanced': 'Balanced', 'ai.armor': 'Armour', 'ai.infantry': 'Infantry', 'ai.artillery': 'Artillery',  'title.kicker': 'OPERATIONS ROOM · EUROPE 1944', 'title.name': 'LITTLE WAR', 'title.sub': 'A WWII BATTLE DIORAMA',
   'title.quick': 'QUICK BATTLE', 'title.custom': 'CUSTOM BATTLE', 'title.spectate': 'SPECTATE', 'title.settings': 'SETTINGS',
-  'title.quickDesc': '4-way free-for-all · generated map · normal', 'title.customDesc': 'Map, opponents, difficulty, intel and seed',
-  'title.spectateDesc': 'All-AI battle, free camera', 'title.settingsDesc': 'Language, UI scale, smoke, camera shake, sound',
+  'title.quickDesc': '4-way FFA · generated map · normal · fog of war', 'title.customDesc': 'Map, opponents, difficulty, intel and seed',
+  'title.spectateDesc': 'All-AI battle, free camera', 'title.settingsDesc': 'Language, UI scale, smoke, camera shake, sound, updates',
   'title.live': 'LIVE · AI BATTLE', 'title.deploying': 'DEPLOYING FORCES {p}%', 'title.keys': '↑↓ Select · Enter Confirm · Esc Back', 'title.back': 'Back',
   'set.lang': 'Language',
   'set.volMaster': 'Master volume', 'set.volMusic': 'Music', 'set.volSfx': 'Effects', 'set.mute': 'Mute',
+  'set.checkUpdates': 'Check for updates on start', 'update.kicker': 'New version {v} released · you have {cur}', 'update.download': 'Download', 'update.version': 'Current version',
   'setup.factions': 'Factions', 'setup.mapSize': 'Map size', 'size.medium': 'Medium', 'size.large': 'Large', 'setup.random': 'Random',
   'map.generated': 'Generated', 'map.four_cities.short': 'Four Cities (test)', 'map.greystone_pinecreek.short': 'Greystone 1v1 (test)',
   'err.start': 'Failed to start match', 'err.reload': 'Reload',
@@ -282,6 +302,22 @@ const en: Dict = {
   'reason.crossAt': 'Crossing at {feature} ({kind})', 'reason.holdRiver': 'Holding the river line at {feature}', 'reason.holdHigh': 'Holding high ground at {feature}', 'reason.holdLine': 'Holding the line near {feature}', 'reason.holdFront': 'Holding the front near {feature}', 'reason.pushFront': 'Pushing the front toward {point}', 'reason.bridging': 'Engineers bridging the river', 'feat.here': 'the front',
   'prod.unlockShort': 'Unlock {s}s',
   'hud.sides': 'All sides', 'hud.territory': 'Territory', 'res.held': 'Settlements', 'hud.speedTip': 'Simulation speed', 'hud.pauseTip': 'Pause / resume (Space)', 'hud.logiTip': 'Logistics: supply capacity / demand', 'hud.resolveTip': 'Resolve: a side at zero is eliminated',
+  // 2.2 logistics: town panel, supply stocks, per-place queues, economic buildings
+  'town.kind.capital': 'Capital', 'town.kind.city': 'City', 'town.kind.town': 'Town', 'town.neutral': 'Unheld', 'town.contested': 'contested',
+  'town.stock': 'Supply stock', 'town.stockTip': 'Units within {r} m rearm here gradually; trucks load here',
+  'town.queue': 'Local production', 'town.fac.barracks': 'Barracks', 'town.fac.vehicle': 'Vehicles', 'town.fac.support': 'Support',
+  'town.noSlots': 'No production slots here', 'town.queueEmpty': 'Queue empty', 'town.queueHere': 'Build here:',
+  'town.buildings': 'Economic buildings', 'town.capitalNoBuild': 'The capital has no economic building slots', 'town.noBuildSlots': 'No building slots here',
+  'town.ruin': 'Ruin (rebuildable)', 'town.building': 'Building {p}%', 'town.hp': 'Intact {p}%', 'town.depotOut': 'Raises stock cap and refill',
+  'town.fail.NO_RULES': 'Unavailable', 'town.fail.NO_PLACE': 'Cannot build here', 'town.fail.NOT_OWNER': 'Not ours', 'town.fail.CONTESTED': 'Contested: no construction',
+  'town.fail.NO_SLOT': 'All slots used', 'town.fail.INSUFFICIENT_P': 'Not enough manpower', 'town.fail.INSUFFICIENT_M': 'Not enough munitions',
+  'econ.factory': 'Factory', 'econ.recruit': 'Recruiting office', 'econ.depot': 'Depot',
+  'econ.factoryTip': 'Factory: adds munitions (M) income', 'econ.recruitTip': 'Recruiting office: adds manpower (P) income', 'econ.depotTip': 'Depot: raises the local supply stock cap and refill rate',
+  'log.econStarted': '{bld} under construction at {point}', 'log.econBuilt': '{bld} at {point} completed', 'log.econLost': '{bld} at {point} destroyed!', 'log.econCaptured': 'Captured the {bld} at {point}',
+  'log.queueLost': '{point} lost or besieged: {unit} production cancelled (half refunded)', 'log.queueDropped': '{point} lost: queued {unit} dropped',
+  'status.rearming': 'Going to a supply point to rearm', 'fail.NO_SLOT': 'No matching slot at that place', 'fail.CONTESTED': 'Contested: no construction',
+  'eco.buildings': 'Economic buildings: factories {f} · recruiting {r} · depots {d} (+{p} P / +{m} M per min)', 'eco.stock': 'Supply stocks {s} / {c}',
+  'prod.at': 'at {place}', 'hud.stockTip': 'Total supply stock in our towns',
 };
 
 /** Historical-flavour equipment names (fictional factions; user-approved naming). */
@@ -346,7 +382,9 @@ export function onLangChange(fn: () => void): () => void {
 
 export function t(key: string, params: Record<string, string | number> = {}): string {
   const dict = current === 'zh' ? zh : en;
-  const raw = dict[key] ?? en[key] ?? key;
+  // 2.2 command strings first (they also replace the 2.1 per-front order texts).
+  const cmd = current === 'zh' ? COMMAND_ZH : COMMAND_EN;
+  const raw = cmd[key] ?? dict[key] ?? COMMAND_EN[key] ?? en[key] ?? key;
   return raw.replace(/\{(\w+)\}/g, (_, k: string) => String(params[k] ?? `{${k}}`));
 }
 

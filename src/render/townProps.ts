@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { Ground, type Building, type Terrain } from '../sim/terrain';
 import { GeoBuilder, trs } from './instancing';
+import { isRoadside } from '../sim/roadside';
 import type { TownGrid } from './townPlan';
 
 /**
@@ -38,6 +39,9 @@ const C = {
   roof: new THREE.Color('#6e4a3a'),
   pole: new THREE.Color('#5d4b36'),
   insulator: new THREE.Color('#d9d4c4'),
+  leafA: new THREE.Color('#5d7040'),
+  leafB: new THREE.Color('#71803f'),
+  soil: new THREE.Color('#5e4a35'),
 };
 
 /** Pre-de-indexed primitives: GeoBuilder.add would otherwise de-index on every call. */
@@ -74,6 +78,10 @@ export interface Frame {
   cone(r: number, h: number, seg: number, x: number, y: number, z: number, c: THREE.Color, ry?: number): void;
   /** Wedge from local x0 (height 0) to x1 (height h), `depth` across, base at y. */
   slope(x0: number, x1: number, depth: number, y: number, h: number, c: THREE.Color): void;
+  /** Rectangular pyramid (hipped roof), base centred at (x, y, z), w along x, d along z. */
+  pyramid(w: number, h: number, d: number, x: number, y: number, z: number, c: THREE.Color): void;
+  /** Low-poly blob (tree crown, bush) of radius r, squashed by `sy`. */
+  blob(r: number, x: number, y: number, z: number, c: THREE.Color, sy?: number): void;
   /** World position of a local point. */
   point(x: number, y: number, z: number): THREE.Vector3;
 }
@@ -96,6 +104,14 @@ export function frameAt(b: GeoBuilder, x: number, z: number, yaw: number): Frame
     },
     slope(x0, x1, depth, y, h, c) {
       b.add(cached('wedge', wedgeGeo), at(trs(x0, y, 0, 0, 0, 0, x1 - x0, h, depth)), c);
+    },
+    pyramid(w, h, d, x, y, z, c) {
+      const g = cached('pyr', () => new THREE.ConeGeometry(Math.SQRT1_2, 1, 4, 1).rotateY(Math.PI / 4).translate(0, 0.5, 0));
+      b.add(g, at(trs(x, y, z, 0, 0, 0, w, h, d)), c);
+    },
+    blob(r, x, y, z, c, sy = 1) {
+      const g = cached('ico', () => new THREE.IcosahedronGeometry(1, 0));
+      b.add(g, at(trs(x, y, z, 0, (x * 7.1 + z * 3.3) % 6.28, 0, r, r * sy, r)), c);
     },
     point(px, py, pz) {
       return new THREE.Vector3(px, py, pz).applyMatrix4(base);
@@ -327,6 +343,27 @@ function garden(f: Frame, g: TownGrid, bld: Building, gy: (u: number, v: number)
     if (near < 6.5) continue;
     fenceRun(f, u0, v0, u1, v1, gy, stone);
   }
+  // 2.2: something growing in the garden — a fruit tree, a bush, or a vegetable plot.
+  const pick = hash(bld.x, bld.z, 24);
+  const [tu, tv] = P((hash(bld.x, bld.z, 25) - 0.5) * halfW, back0 + depth * (0.45 + hash(bld.x, bld.z, 26) * 0.3));
+  const near = Math.min(...lines.map((l) => Math.abs(tu - l)), ...lines.map((l) => Math.abs(tv - l)));
+  if (near < 8 || blocked(tu, tv, 1.6)) return;
+  const y = gy(tu, tv);
+  if (pick < 0.55) {
+    const r = 1.6 + hash(bld.x, bld.z, 27) * 1.2;
+    f.cyl(0.14, 0.2, 2.0, 5, tu, y + 1.0, tv, C.woodDark);
+    f.blob(r, tu, y + 1.6 + r * 0.8, tv, (pick < 0.3 ? C.leafA : C.leafB).clone().multiplyScalar(0.9 + pick * 0.3), 0.85);
+  } else if (pick < 0.8) {
+    f.blob(0.9, tu, y + 0.5, tv, C.yew, 0.7);
+    f.blob(0.7, tu + 1.1, y + 0.4, tv + 0.4, C.leafB, 0.7);
+  } else {
+    // Vegetable rows (dark soil, green lines).
+    for (let i = -1; i <= 1; i++) {
+      const [ru, rv] = alongU ? [tu, tv + i * 0.9] : [tu + i * 0.9, tv];
+      f.box(alongU ? 3.4 : 0.5, 0.12, alongU ? 0.5 : 3.4, ru, gy(ru, rv) + 0.04, rv, C.soil);
+      f.box(alongU ? 3.0 : 0.22, 0.3, alongU ? 0.22 : 3.0, ru, gy(ru, rv) + 0.2, rv, C.leafB);
+    }
+  }
 }
 
 /** Low wall around the church, a gate on the tower side, headstones and two yews. */
@@ -467,6 +504,80 @@ function village(tiles: Tiles, t: Terrain, town: { x: number; z: number; r: numb
   }
 }
 
+/**
+ * 2.2 roadside farmsteads, barns, inns and chapels (sim roadside.ts): a fenced yard on the side
+ * away from the road, and by kind a hay rick, a well, a vegetable plot, a woodpile or a cart.
+ */
+function roadsideProps(tiles: Tiles, t: Terrain, ground: Ground3): void {
+  const all = t.buildings.filter((b) => isRoadside(t.def, b));
+  for (const bld of all) {
+    const b = tiles.at(bld.x, bld.z);
+    const f = buildingFrame(b, bld);
+    const yAt = (lx: number, lz: number): number => {
+      const p = f.point(lx, 0, lz);
+      return ground(p.x, p.z);
+    };
+    const others = all.filter((o) => o !== bld && Math.hypot(o.x - bld.x, o.z - bld.z) < 40);
+    const free = (lx: number, lz: number): boolean => {
+      const p = f.point(lx, 0, lz);
+      const g = t.groundAt(p.x, p.z);
+      return !inBuilding(others, p.x, p.z, 0.8) && g !== Ground.Road && g !== Ground.Water && g !== Ground.Ford;
+    };
+    // Yard on the side (±local z) whose far edge stays clear of the road.
+    const reach = bld.d / 2 + 9;
+    const sgn = free(0, reach) && free(0, reach * 0.6) ? 1 : free(0, -reach) && free(0, -reach * 0.6) ? -1 : 0;
+    if (sgn === 0) continue;
+    const h0 = hash(bld.x, bld.z, 41);
+    const hw = bld.w / 2 + 1.5 + h0 * 2;
+    const z0 = sgn * (bld.d / 2 + 0.3);
+    const z1 = sgn * (bld.d / 2 + 7 + h0 * 3);
+    const stone = hash(bld.x, bld.z, 42) < 0.35;
+    for (const [ax, az, bx, bz] of [[-hw, z0, -hw, z1], [-hw, z1, hw, z1], [hw, z1, hw, z0]] as const) {
+      if (!free((ax + bx) / 2, (az + bz) / 2) || !free(bx, bz)) continue;
+      fenceRun(f, ax, az, bx, bz, yAt, stone);
+    }
+    const zm = (z0 + z1) / 2;
+    const pick = hash(bld.x, bld.z, 43);
+    if (bld.kind === 'barn' || pick < 0.3) {
+      // Hay rick in the yard.
+      const lx = -hw * 0.5;
+      if (free(lx, zm)) {
+        const y = yAt(lx, zm);
+        f.cyl(1.3, 1.5, 2.0, 8, lx, y + 1.0, zm, C.hay);
+        f.cone(1.55, 1.3, 8, lx, y + 2.65, zm, C.hay);
+      }
+    }
+    if (bld.kind !== 'barn' && pick > 0.45) {
+      // Well with a little roof.
+      const lx = hw * 0.45;
+      if (free(lx, zm)) {
+        const y = yAt(lx, zm);
+        f.cyl(0.8, 0.85, 0.85, 10, lx, y + 0.42, zm, C.stone);
+        f.cyl(0.6, 0.6, 0.08, 10, lx, y + 0.82, zm, C.water);
+        for (const dz of [-0.75, 0.75]) f.box(0.12, 2.0, 0.12, lx, y + 1.0, zm + dz, C.wood);
+        f.pyramid(1.9, 0.6, 2.1, lx, y + 2.0, zm, C.roof);
+      }
+    } else if (bld.kind !== 'barn') {
+      // Vegetable rows.
+      for (let i = -1; i <= 1; i++) {
+        const lz = zm + i * 1.0;
+        if (!free(hw * 0.4, lz)) continue;
+        f.box(3.6, 0.12, 0.5, hw * 0.4, yAt(hw * 0.4, lz) + 0.04, lz, C.soil);
+        f.box(3.2, 0.3, 0.22, hw * 0.4, yAt(hw * 0.4, lz) + 0.2, lz, C.leafB);
+      }
+    }
+    // Woodpile against the wall, and a fruit tree by the yard.
+    if (free(-bld.w / 2 - 1, 0)) f.box(0.9, 1.0, Math.min(3, bld.d * 0.6), -bld.w / 2 - 0.6, yAt(-bld.w / 2 - 0.6, 0) + 0.5, 0, C.woodLight);
+    const tz = z1 + sgn * 2.5;
+    if (hash(bld.x, bld.z, 44) < 0.6 && free(hw, tz)) {
+      const y = yAt(hw, tz);
+      const r = 1.8 + hash(bld.x, bld.z, 45);
+      f.cyl(0.16, 0.22, 2.2, 5, hw, y + 1.1, tz, C.woodDark);
+      f.blob(r, hw, y + 1.8 + r * 0.8, tz, C.leafA, 0.85);
+    }
+  }
+}
+
 /** Telegraph poles along the country roads (not in towns, water or on bridges). */
 function telegraph(tiles: Tiles, t: Terrain, ground: Ground3): void {
   const towns = t.def.towns;
@@ -515,6 +626,7 @@ export function buildTownProps(t: Terrain, grids: readonly TownGrid[], ground: G
     const bs = t.buildings.filter((b) => Math.hypot(b.x - town.x, b.z - town.z) < town.r + 12);
     village(tiles, t, town, bs, ground);
   }
+  roadsideProps(tiles, t, ground);
   telegraph(tiles, t, ground);
   return tiles.map;
 }

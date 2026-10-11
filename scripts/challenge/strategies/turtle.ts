@@ -1,17 +1,17 @@
-// turtle — every front fortifies a line ~400 m out toward its wing's objective; engineers / MG /
-// AT heavy production; after 25 min all fronts attack the weakest neighbour's capital.
+// turtle — Fortify with a line drawn ~400 m out across the nearest enemy's approach (every other front
+// fortifies its own line); engineers / MG / AT heavy production; after 25 min a general offensive on
+// the weakest neighbour's capital.
 import type { Strategy } from '../types';
 import { setMix } from '../worldq';
-import { allOnCapital, holdRing, rememberAxes, weakestNeighbour } from './common';
+import { allOnCapital, holdRing, weakestNeighbour } from './common';
 
 const BREAKOUT_S = 25 * 60;
 
 export const turtle: Strategy = {
   id: 'turtle',
-  summary: 'fortify a ring ~400 m out (engineers / MG / AT mix); after 25 min all fronts attack the weakest neighbour capital',
+  summary: 'fortify (line ~400 m out; engineers / MG / AT mix); after 25 min an offensive on the weakest neighbour capital',
   setup(ctx) {
     setMix(ctx, { infantry: 25, engineer: 18, mg: 18, at_gun: 18, mortar: 8, medium_tank: 4 }, { engineer: 10, mg: 12, at_gun: 12, mortar: 6 });
-    rememberAxes(ctx);
     holdRing(ctx, 'fortify', 400);
   },
   tick(ctx) {

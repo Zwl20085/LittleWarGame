@@ -1,3 +1,4 @@
+import { housedIn, SHELTER } from './shelter';
 import type { WeaponDef } from '../data/types';
 import { arcClear, solveArc } from './ballistics';
 import { COMBAT, DISPERSION, TERRAIN_COMBAT } from './config';
@@ -114,7 +115,17 @@ export function selectTarget(world: World, u: Unit, objective: V2 | null): void 
     const objRel = objective ? Math.max(0, 1 - dist(t.pos, objective) / 300) : 0.5;
     const convoyBonus = t.def.id === 'supply_truck' ? 0.15 : 0;
     let score = convoyBonus + 0.3 * threatOf(t, u) + 0.25 * suit + 0.2 * objRel + 0.15 * (1 - d / radius) + (t.id === u.targetId ? 0.1 : 0);
-    if (isIndirect(w)) score += clusterBonus(world, t) * 0.2 - friendlyRisk(world, u, t.pos, w) * 2 + counterBatteryBonus(world, u.owner, t);
+    if (isIndirect(w)) {
+      const cluster = clusterBonus(world, t);
+      const housed = housedIn(world, t) >= 0;
+      // 2.2 wave 2: a shell must be worth it — supply is short, so guns hold fire on a lone squad
+      // inside a building or a single vehicle and keep their rounds for exposed concentrations.
+      // (Not at an enemy capital: a storm needs every gun on the defenders, sheltered or not.)
+      if (shellWorth(suit, housed, cluster) < ARTY.minWorth + (u.ammo < ARTY.lowAmmo ? ARTY.lowAmmoExtra : 0) && !nearCapital(world, t)) continue;
+      score += cluster * 0.2 - friendlyRisk(world, u, t.pos, w) * 2 + counterBatteryBonus(world, u.owner, t);
+      // 2.2: guns prefer exposed targets over squads sheltering inside intact buildings (shelter.ts).
+      if (housed) score -= SHELTER.artyInsidePenalty;
+    }
     if (t.id === u.targetId) curScore = score;
     if (score > bestScore) {
       bestScore = score;
@@ -132,6 +143,31 @@ export function selectTarget(world: World, u: Unit, objective: V2 | null): void 
   } else {
     u.targetId = null;
   }
+}
+
+/**
+ * 2.2 wave 2 (lead: with sheltering on, guns fired 1.5–2× the shells for −6 % damage): what one
+ * indirect round on this target is worth — role suitability × exposure (a squad inside an intact
+ * building takes ×0.3 blast) × concentration (0.5 alone … 1.5 with four or more around it).
+ */
+export const ARTY = {
+  housedExposure: 0.3,
+  /** Below this worth an indirect weapon does not engage … */
+  minWorth: 0.2,
+  /** … and a battery under lowAmmo of its load needs lowAmmoExtra more. */
+  lowAmmo: 0.5,
+  lowAmmoExtra: 0.1,
+  /** Every target within this of its capital is worth a shell (capital storms). */
+  capitalR: 450,
+} as const;
+
+/** Target within ARTY.capitalR of its own faction's capital HQ. */
+function nearCapital(world: World, t: Unit): boolean {
+  return dist(t.pos, world.hqPos(t.owner)) < ARTY.capitalR;
+}
+
+export function shellWorth(suit: number, housed: boolean, cluster: number): number {
+  return suit * (housed ? ARTY.housedExposure : 1) * (0.5 + cluster);
 }
 
 function clusterBonus(world: World, t: Unit): number {

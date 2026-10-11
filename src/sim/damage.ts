@@ -9,9 +9,11 @@ import { frontById } from './frontref';
 import { noteHit } from './events';
 import { noteBuildingHit, shieldBuilding } from './buildings';
 import { exposureSuppressionMul } from './terrainrules';
+import { housedIn, insideBlastMul, noteShellBurst } from './shelter';
 import type { Fort, ProjectileKind, Unit, V3 } from './types';
 import { angleDiff, DEG, headingTo, type V2 } from './vec';
 import type { World } from './world';
+import { damageEconAt } from './econ';
 
 /** Query scratch arrays: the blast loop calls applyDamage, which queries with its own. */
 const SC_WIPE: Unit[] = [];
@@ -27,6 +29,8 @@ export function coverAgainst(world: World, u: Unit, from: V2 | null, buildings =
   // Inside a pillbox / bunker: its cover from every direction (structures.ts).
   const inside = garrisonCover(u);
   if (inside !== null) return inside;
+  // 2.2: sheltering inside a building (shelter.ts): all-round cover while it stands.
+  if (housedIn(world, u) >= 0) return 3;
   // Trench / sandbag line between us and the attacker: best cover.
   if (worksProtect(u, from)) return 3;
   if (u.fixed) {
@@ -149,6 +153,8 @@ export function resolveBlast(
   if (radius <= 0) return;
   // Structural damage: AP rounds are shaped for armour, not walls (capped and halved).
   noteBuildingHit(world, at, kind === 'ap' ? Math.min(damage, 150) * 0.5 : damage);
+  // 2.2: squads around an artillery / mortar burst look for a building to shelter in (shelter.ts).
+  if (kind === 'shell') noteShellBurst(world, at);
   const hits = world.spatial.query(at.x, at.z, radius + 4, SC_BLAST);
   for (const u of hits) {
     if (u.id === exclude || u.hp <= 0) continue;
@@ -167,12 +173,16 @@ export function resolveBlast(
     // Crowded troops suffer more under shellfire (shock + no room to go to ground).
     const crowdMul = kind === 'shell' && crowding(world, u) >= OPS.crowdThreshold ? 1.35 : 1;
     const cover = coverAgainst(world, u, { x: at.x, z: at.z }, !blocked);
-    const dmg = damage * fall * (garrisonBlastMul(u) ?? COVER[cover].blast) * heTargetMul(u.def) * blockMul;
+    // Inside a building (shelter.ts): reduced blast, the walls take part of it; no double count with the blocked ray.
+    const inside = garrisonBlastMul(u) === null ? insideBlastMul(world, u, damage * fall * heTargetMul(u.def)) : null;
+    const dmg = damage * fall * (garrisonBlastMul(u) ?? inside ?? COVER[cover].blast) * heTargetMul(u.def) * (inside !== null ? 1 : blockMul);
     const supMul = armorSuppressionMul(u.def) * (blocked ? 0.5 : 1) * crowdMul * exposureSuppressionMul(world, u);
     addSuppression(world, u, suppression * fall * COVER[cover].supp * supMul);
     applyDamage(world, u, dmg, attackerOwner, weaponId, src);
   }
   for (const f of world.forts) damageFort(world, f, at, radius, kind === 'ap' ? Math.min(damage, COMBAT.apStructureCap) : damage, attackerOwner);
+  // 2.2 economic buildings (econ.ts): shellfire wrecks factories, offices and depots.
+  damageEconAt(world, at, radius, (kind === 'ap' ? Math.min(damage, COMBAT.apStructureCap) : damage) * COMBAT.heTargetMul.fort);
 }
 
 function damageFort(world: World, f: Fort, at: V3, radius: number, damage: number, attackerOwner: number): void {

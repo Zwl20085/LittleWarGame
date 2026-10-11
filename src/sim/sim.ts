@@ -12,12 +12,16 @@ import { advanceProduction, normalizedWeights, populationCap, populationOf, sche
 import { initFronts, thinkFronts } from './fronts';
 import { supplyTick, type SupplyNode } from './supply';
 import { convoySecond } from './convoy';
+import { drawSecond, initPlaces, logisticsDemand, seedStocks, stockSecond } from './settlements';
+import { econIncome, econSecond } from './econ';
+import { fundSecond } from './econai';
 import { createHighCommand, thinkHighCommand } from './command';
+import { initialDirective } from './directive';
 import { buildFrontInfoFor } from './frontai';
 import type { Faction, MatchConfig, Unit } from './types';
 import { hostileMask } from './spatial';
 import { DEG, dist } from './vec';
-import { placeStructure } from './structures';
+import { isStructure, leaveStructure, placeStructure } from './structures';
 import { FACTION_COLORS, ROMAN, World } from './world';
 import { scaledData } from './scale';
 import { sampleStats, STATS_SAMPLE_SECONDS } from './stats';
@@ -46,7 +50,7 @@ function makeFaction(world: World, id: number, isPlayer: boolean): Faction {
     stewardHoldUntil: 0, stewardLastDir: -1, stewardReason: 'steward.default', stewardParams: {},
     resolve: world.data.rules.victory.initial_resolve, popPresent: 0, popReserved: 0, logistics: 0, supplyDemand: 0,
     weights, caps: { ...world.data.rules.proposed_defaults.production_unit_caps }, paused: {},
-    spent: [], protectedOrder: null, protectRetryAt: 0, nextRaidAt: 240, command: createHighCommand(), depot: 0, lastWorksAt: -999, orders: [], manualQueue: [], fronts: [], mainFront: 0, frontSeq: 0, zones: [], zoneSeq: 0,
+    spent: [], protectedOrder: null, protectRetryAt: 0, nextRaidAt: 240, command: createHighCommand(), depot: 0, econP: 0, econM: 0, econFund: { p: 0, m: 0, active: false }, econInvested: 0, lastWorksAt: -999, orders: [], manualQueue: [], fronts: [], directive: initialDirective(isPlayer), mainFront: 0, frontSeq: 0, zones: [], zoneSeq: 0,
     incomeP: 0, incomeM: 0, overflowWarnAt: -1e9, hqProgress: {}, lostUnits: 0, producedUnits: 0,
     spentTotalP: 0, spentTotalM: 0, aiThinkAt: id * 0.7, trucksUnderFire: [],
   };
@@ -107,6 +111,9 @@ export function createMatch(baseData: GameData, config: MatchConfig): Match {
     }
     if (best >= 0 && bd < initR) o.owner = best;
   }
+  // 2.2: production / supply places and their starting stocks (settlements.ts).
+  initPlaces(world);
+  seedStocks(world);
   for (const u of world.units.values()) updateHeight(world, u);
   world.spatial.rebuild(world.aliveUnits);
   const front = new FrontlineField(world, null);
@@ -213,7 +220,11 @@ function economySecond(match: Match): void {
       bonus = { p, m };
       cityShare = terr.capital_income_share;
     }
-    const rates = economyRates(f.alloc, rules, bonus.p, bonus.m, cityShare);
+    // 2.2 economic buildings (econ.ts) add to the territory output.
+    const econ = econIncome(world, f.id, (fi, p) => inSupply(match, fi, p));
+    f.econP = econ.p;
+    f.econM = econ.m;
+    const rates = economyRates(f.alloc, rules, bonus.p + econ.p, bonus.m + econ.m, cityShare);
     f.incomeP = rates.pPerMin;
     f.incomeM = rates.mPerMin;
     f.logistics = rates.logistics;
@@ -228,7 +239,7 @@ function economySecond(match: Match): void {
       const need = forecastNeeds(world, f);
       const out = stewardStep(f, {
         needP60: need.p, needM60: need.m, incomeP60: rates.pPerMin, incomeM60: rates.mPerMin,
-        forecastDemand: f.supplyDemand * 1.1, logistics: rates.logistics, now: world.time,
+        forecastDemand: logisticsDemand(world, f, rates.logistics, f.supplyDemand * 1.1), logistics: rates.logistics, now: world.time,
       }, rules);
       if (out.changed) {
         const names = ['P', 'I', 'L'];
@@ -236,10 +247,15 @@ function economySecond(match: Match): void {
         f.stewardParams = { to: Math.round(out.alloc[out.to] * 100), from: names[out.from] };
       }
     }
+    fundSecond(world, f);
     scheduleProduction(world, f);
     advanceProduction(world, f, 1);
     convoySecond(world, f);
   }
+  // 2.2 logistics: settlement stocks fill, units draw from them; economic buildings.
+  stockSecond(world, (fi, p) => inSupply(match, fi, p));
+  drawSecond(world);
+  econSecond(world);
   for (const u of world.units.values()) {
     if (u.hp <= 0) continue;
     supplyTick(world, u, 1);
@@ -328,6 +344,13 @@ export function step(match: Match): void {
     const u = units[i];
     if (u.hp <= 0) continue;
     if (u.behavior === 'evacuate' && world.time >= u.evacuateAt) {
+      // Free its work / pillbox slot at once (the 10 s sweep below is only the backstop).
+      if (u.fortId !== null) {
+        const fort = world.fortById(u.fortId);
+        if (fort && isStructure(fort.kind)) leaveStructure(world, u);
+        else if (fort && fort.occupant === u.id) fort.occupant = null;
+        u.fortId = null;
+      }
       u.hp = 0;
       continue;
     }

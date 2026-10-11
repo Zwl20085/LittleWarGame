@@ -100,7 +100,33 @@ export function buildGameData(unitsCsv: string, weaponsCsv: string, rulesJson: s
   }
   if (!rules.command || !units.has(rules.command.commander_unit)) throw new Error('rules.json: command.commander_unit must name a unit in units.csv');
   validateDefensive(rules.construction?.defensive, units, weapons);
-  return { units, weapons, rules, unitOrder: unitList.map((u) => u.id) };
+  validateLogistics(rules);
+  // 2.2 endurance (V22_SPEC §3.1): one documented lever, every weapon's ammo cost × multiplier.
+  const ammoMul = rules.logistics?.ammo_cost_multiplier ?? 1;
+  const effWeapons = ammoMul === 1 ? weapons : new Map([...weapons].map(([id, w]) => [id, { ...w, ammoCost: w.ammoCost * ammoMul }]));
+  return { units, weapons: effWeapons, rules, unitOrder: unitList.map((u) => u.id) };
+}
+
+/** rules.json `logistics` / `econ` (2.2): positive caps, rates and costs. */
+function validateLogistics(rules: Rules): void {
+  const l = rules.logistics;
+  if (l) {
+    if (!(l.ammo_cost_multiplier > 0)) throw new Error('rules.json: logistics.ammo_cost_multiplier must be > 0');
+    for (const k of ['capital', 'city', 'town'] as const) {
+      if (!(l.stock_cap_k?.[k] > 0) || !(l.draw_radius_m?.[k] > 0)) throw new Error(`rules.json: logistics stock_cap_k / draw_radius_m missing for ${k}`);
+    }
+    if (!(l.rearm_per_second > 0) || !(l.rearm_until > l.rearm_below)) throw new Error('rules.json: logistics rearm rates invalid');
+    if (l.place_fill_burst !== undefined && !(l.place_fill_burst > 0)) throw new Error('rules.json: logistics.place_fill_burst must be > 0');
+    if (l.steward_stock_target !== undefined && !(l.steward_stock_target > 0 && l.steward_stock_target <= 1)) throw new Error('rules.json: logistics.steward_stock_target must be in (0, 1]');
+  }
+  const e = rules.econ;
+  if (e) {
+    for (const k of ['factory', 'recruit', 'depot'] as const) {
+      const b = e.buildings?.[k];
+      if (!b || !(b.max_hp > 0) || !(b.build_seconds > 0) || b.cost_p < 0 || b.cost_m < 0) throw new Error(`rules.json: econ.buildings.${k} invalid`);
+    }
+    if (!(e.captured_hp_ratio > 0 && e.captured_hp_ratio <= 1)) throw new Error('rules.json: econ.captured_hp_ratio must be in (0, 1]');
+  }
 }
 
 /** rules.json `construction.defensive`: unique ids, positive HP / work, known units and weapons. */

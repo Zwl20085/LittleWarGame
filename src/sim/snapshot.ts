@@ -1,7 +1,7 @@
 import type { SupplyNode } from './supply';
 import type { Match } from './sim';
 import type {
-  Behavior, Faction, Fort, FxEvent, LogEntry, ManualTask, MatchResult, MoraleState, Objective, Projectile, SetupState, Unit,
+  Behavior, EconBuilding, Faction, Fort, FxEvent, LogEntry, ManualTask, MatchResult, MoraleState, Objective, Projectile, SetupState, Unit,
 } from './types';
 import type { V2 } from './vec';
 
@@ -38,7 +38,12 @@ export interface Snapshot {
    */
   readonly objectives: { owner: Int8Array; contested: Uint8Array; activeAt: Float32Array; leader: Int8Array; progress: Float32Array };
   readonly projectiles: Projectile[];
-  readonly forts: Fort[];
+  /** Null on most snapshots: sent every FORT_EVERY-th, and whenever works are added or removed. */
+  readonly forts: Fort[] | null;
+  /** 2.2 supply stock per place (world.places order) and economic buildings (render + town panel). */
+  readonly placeStock: Float32Array;
+  readonly placeContestedSince: Float32Array;
+  readonly econ: EconBuilding[];
   readonly fx: FxEvent[];
   readonly log: LogEntry[];
   /** Observer's visible enemy ids and memory (fog mode only; null in open mode). */
@@ -46,7 +51,8 @@ export interface Snapshot {
   readonly lastSeen: [number, number, V2][] | null;
   readonly front: { owner: Int8Array; version: number } | null;
   readonly frontView: { owner: Int8Array; version: number } | null;
-  readonly supplyNodes: SupplyNode[][];
+  /** Null on most snapshots (sent with the faction records; only the supply layer reads it). */
+  readonly supplyNodes: SupplyNode[][] | null;
   readonly result: MatchResult | null;
 }
 
@@ -61,6 +67,8 @@ export interface SnapshotCursor {
   sent: number;
   /** Unit type id → index in `unitOrder` (built once, not per snapshot). */
   defIndex: Map<string, number> | null;
+  /** Number of works in the last fort list sent (-1 = never sent). */
+  fortCount?: number;
 }
 
 export const newCursor = (): SnapshotCursor => ({ lastLog: null, frontVersion: -1, viewVersion: -1, statusIndex: new Map(), statusSent: 0, sent: 0, defIndex: null });
@@ -87,6 +95,8 @@ function packObjectives(objectives: readonly Objective[]): Snapshot['objectives'
 
 /** Faction records are sent on every N-th snapshot (the HUD refreshes at 5 Hz). */
 const FACTION_EVERY = 4;
+/** Works (hp, build progress) are cloned every other snapshot: 70–100 records late in a war. */
+const FORT_EVERY = 2;
 
 export function makeSnapshot(match: Match, cur: SnapshotCursor, observer: number): Snapshot {
   const fog = match.world.config.infoMode === 'fog';
@@ -131,6 +141,9 @@ export function makeSnapshot(match: Match, cur: SnapshotCursor, observer: number
   const frontView = fv && fv.version !== cur.viewVersion ? { owner: fv.owner.slice(), version: fv.version } : null;
   if (fv) cur.viewVersion = fv.version;
   const seen = w.lastSeen[observer];
+  const sendForts = cur.sent % FORT_EVERY === 0 || w.forts.length !== (cur.fortCount ?? -1);
+  if (sendForts) cur.fortCount = w.forts.length;
+  const slow = cur.sent % FACTION_EVERY === 0;
   return {
     tick: w.tick,
     units: buf,
@@ -138,10 +151,13 @@ export function makeSnapshot(match: Match, cur: SnapshotCursor, observer: number
     manual,
     // Faction records (economy, orders, groups) feed the HUD, which refreshes at 5 Hz: sending
     // them with every snapshot (up to 60 Hz) is wasted cloning on both threads.
-    factions: cur.sent % FACTION_EVERY === 0 ? w.factions.map((f) => ({ ...f, command: { ...f.command, attackBias: {}, threatAt: {} }, spent: [], fronts: f.fronts.map((s) => ({ ...s, slots: {}, segment: [], bridgeSite: null })) })) : null,
+    factions: slow ? w.factions.map((f) => ({ ...f, command: { ...f.command, attackBias: {}, threatAt: {} }, spent: [], fronts: f.fronts.map((s) => ({ ...s, slots: {}, segment: [], bridgeSite: null })) })) : null,
     objectives: packObjectives(w.objectives),
     projectiles: w.projectiles,
-    forts: w.forts,
+    forts: sendForts ? w.forts : null,
+    placeStock: Float32Array.from(w.places, (p) => p.stock),
+    placeContestedSince: Float32Array.from(w.places, (p) => p.contestedSince),
+    econ: w.econ,
     fx,
     log,
     // Only the observer's visibility matters on the main thread, and only in fog mode.
@@ -149,7 +165,7 @@ export function makeSnapshot(match: Match, cur: SnapshotCursor, observer: number
     lastSeen: fog && seen ? [...seen].map(([id, v]) => [id, v.tick, v.pos]) : null,
     front,
     frontView,
-    supplyNodes: match.supplyNodes,
+    supplyNodes: slow || cur.sent === 1 ? match.supplyNodes : null,
     result: w.result,
   };
 }
@@ -214,7 +230,12 @@ export function applySnapshot(match: Match, snap: Snapshot, observer: number): v
     }
   }
   replace(w.projectiles, snap.projectiles);
-  replace(w.forts, snap.forts);
+  if (snap.forts) replace(w.forts, snap.forts);
+  for (let i = 0; i < w.places.length && i < snap.placeStock.length; i++) {
+    w.places[i].stock = snap.placeStock[i];
+    w.places[i].contestedSince = snap.placeContestedSince[i];
+  }
+  replace(w.econ, snap.econ);
   for (const e of snap.fx) w.fx.push(e);
   if (w.fx.length > 4000) w.fx.splice(0, w.fx.length - 4000);
   for (const l of snap.log) w.log.push(l);
@@ -237,7 +258,7 @@ export function applySnapshot(match: Match, snap: Snapshot, observer: number): v
     match.frontView.owner.set(snap.frontView.owner);
     match.frontView.version = snap.frontView.version;
   }
-  match.supplyNodes = snap.supplyNodes;
+  if (snap.supplyNodes) match.supplyNodes = snap.supplyNodes;
   w.result = snap.result;
   w.spatial.rebuild(w.aliveUnits);
 }

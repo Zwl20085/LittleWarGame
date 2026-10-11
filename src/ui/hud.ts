@@ -4,10 +4,11 @@ import { h } from './dom';
 import { onLangChange, t } from './i18n';
 import { MinimapPanel } from './minimap';
 import { ProductionBar } from './production';
-import { FrontsPanel } from './fronts';
+import { DIRECTIVE_TONE, FrontsPanel } from './fronts';
 import { frontLabel } from './labels';
 import { SelectionPanel } from './selection';
 import { TopBar } from './topbar';
+import { TownPanel } from './town';
 
 /** Assembles the layered war-room HUD over the canvas and refreshes it at ~5 Hz. */
 export class Hud {
@@ -18,6 +19,8 @@ export class Hud {
   readonly selection: SelectionPanel;
   readonly minimap: MinimapPanel;
   readonly economy: EconomyPanel;
+  /** 2.2 town panel (stock, queue, economic buildings) for the place clicked on the map. */
+  readonly town: TownPanel;
   private readonly toasts: HTMLElement;
   private readonly modeHint: HTMLElement;
   private readonly help: HTMLElement;
@@ -27,6 +30,7 @@ export class Hud {
 
   constructor(parent: HTMLElement, private readonly ctx: GameContext) {
     this.economy = new EconomyPanel(ctx);
+    this.town = new TownPanel(ctx);
     this.help = h('div', { class: 'help panel paper-stack' });
     this.help.style.display = 'none';
     this.top = new TopBar(ctx, () => this.economy.toggle(), () => this.toggleHelp());
@@ -39,7 +43,7 @@ export class Hud {
     this.hiddenHint = h('div', { class: 'hidden-hint' }, t('hud.hideHint'));
     this.pausedBadge = h('div', { class: 'paused-badge' }, t('hud.paused'));
     this.root = h('div', { class: 'hud' },
-      this.top.el, this.fronts.el, this.selection.el, this.economy.el, this.help,
+      this.top.el, this.fronts.el, this.selection.el, this.economy.el, this.town.el, this.help,
       h('div', { class: 'bottom-row' }, this.production.el, this.minimap.el),
       this.toasts, this.modeHint, this.pausedBadge, this.production.tip, this.fronts.briefing);
     parent.append(this.root, this.hiddenHint);
@@ -50,7 +54,24 @@ export class Hud {
       return s ? `${frontLabel(ctx.match.world, fid, id)} · ${t(`order.${s.order.kind}`)}` : '';
     };
     ctx.renderer.orderLines.zoneLabel = (_fid, z) => t('zone.mapLabel', { n: z.id + 1 });
+    // Panel heights are followed by a ResizeObserver instead of reading offsetHeight in every
+    // 5 Hz refresh (each read forced a full layout right after the panels' DOM writes).
+    if (typeof ResizeObserver !== 'undefined') {
+      this.sizeObserver = new ResizeObserver(() => this.syncStackHeights());
+      this.sizeObserver.observe(this.minimap.el);
+      this.sizeObserver.observe(this.production.el);
+    }
     this.refresh();
+  }
+
+  private readonly sizeObserver: ResizeObserver | null = null;
+
+  /** Keep the selection dossier clear of the minimap stack and the orders column clear of the production bar. */
+  private syncStackHeights(): void {
+    const miniH = `${Math.ceil(this.minimap.el.offsetHeight)}px`;
+    if (this.root.style.getPropertyValue('--mini-h') !== miniH) this.root.style.setProperty('--mini-h', miniH);
+    const botH = `${Math.ceil(this.production.el.offsetHeight)}px`;
+    if (this.root.style.getPropertyValue('--bottom-h') !== botH) this.root.style.setProperty('--bottom-h', botH);
   }
 
   private toggleHelp(): void {
@@ -65,6 +86,7 @@ export class Hud {
     this.selection.relabel();
     this.minimap.relabel();
     this.economy.relabel();
+    this.town.relabel();
     this.hiddenHint.textContent = t('hud.hideHint');
     this.pausedBadge.textContent = t('hud.paused');
     if (this.help.style.display !== 'none') this.help.textContent = t('help.body');
@@ -90,21 +112,20 @@ export class Hud {
     this.selection.refresh();
     this.minimap.refresh();
     this.economy.refresh();
-    // Keep the selection dossier clear of the minimap stack.
-    const miniH = `${Math.ceil(this.minimap.el.offsetHeight)}px`;
-    if (this.root.style.getPropertyValue('--mini-h') !== miniH) this.root.style.setProperty('--mini-h', miniH);
-    // Keep the orders column clear of the production bar.
-    const botH = `${Math.ceil(this.production.el.offsetHeight)}px`;
-    if (this.root.style.getPropertyValue('--bottom-h') !== botH) this.root.style.setProperty('--bottom-h', botH);
+    this.town.refresh();
+    // Without ResizeObserver, measure here (forces a synchronous layout after the DOM writes).
+    if (!this.sizeObserver) this.syncStackHeights();
     const m = this.ctx.mode;
     const hint = m.kind === 'attackMove' ? t('cmd.pickAttack') : this.fronts.modeHint();
     if (this.modeHint.textContent !== hint) this.modeHint.textContent = hint;
     this.modeHint.style.display = hint ? '' : 'none';
-    this.modeHint.className = `mode-hint ${m.kind === 'frontOrder' ? `order k-${m.order}` : m.kind === 'newFront' ? 'order k-defend' : ''}`;
+    this.modeHint.className = `mode-hint ${m.kind === 'directive' ? `order k-${DIRECTIVE_TONE[m.directive]}` : ''}`;
   }
 
   dispose(): void {
+    this.sizeObserver?.disconnect();
     this.offLang();
+    this.fronts.dispose();
     this.ctx.renderer.orderLines.label = null;
     this.ctx.renderer.orderLines.zoneLabel = null;
     this.root.remove();
