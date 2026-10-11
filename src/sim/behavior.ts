@@ -430,13 +430,23 @@ function thinkCommander(world: World, u: Unit, s: Front): void {
   const post = commanderPost(world, f, s);
   const off = spread(u, 14);
   const want = { x: post.x + off.x, z: post.z + off.z };
-  const near = world.spatial.findOwner(u.pos.x, u.pos.z, COMMANDER_WITHDRAW_M, hostileMask(world, u.owner), (o) => o.hp > 0 && !!o.primary && world.knows(u.owner, o));
+  // Hysteresis: once stepping back it keeps clear of the enemy by a wider margin, else it walked
+  // back toward a post beyond the enemy, re-entered 160 m and turned again every second (2.2 soak:
+  // commanders 'stuck' for minutes on the edge of the radius).
+  const withdrawing = world.time < (withdrawUntil.get(u) ?? -1);
+  const r = withdrawing ? COMMANDER_WITHDRAW_M * COMMANDER_WITHDRAW_HOLD_K : COMMANDER_WITHDRAW_M;
+  const near = world.spatial.findOwner(u.pos.x, u.pos.z, r, hostileMask(world, u.owner), (o) => o.hp > 0 && !!o.primary && world.knows(u.owner, o));
   if (near) {
+    withdrawUntil.set(u, world.time + COMMANDER_WITHDRAW_HOLD_S);
     const exit = world.cityOf(u.owner).exit;
     const away = headingTo(near.pos, u.pos);
     const toExit = headingTo(u.pos, exit);
     const p = { x: u.pos.x + (Math.cos(away) + Math.cos(toExit)) * 60, z: u.pos.z + (Math.sin(away) + Math.sin(toExit)) * 60 };
     moveTo(world, u, world.navFor(u).nearestPassable(p, 40) ?? exit);
+    u.status = 'status.commanderWithdraw';
+  } else if (withdrawing) {
+    // The enemy dropped out of sight a moment ago (spotting flickers): keep stepping back on the
+    // current route rather than turning toward the post and back again every second.
     u.status = 'status.commanderWithdraw';
   } else {
     // The spot in cover near the post (cached per post: no cover search every think).
@@ -451,6 +461,10 @@ function thinkCommander(world: World, u: Unit, s: Front): void {
 
 /** Armed enemies this close make a front commander step back (it fights only in self-defence). */
 const COMMANDER_WITHDRAW_M = 160;
+/** While withdrawing (and this long after the last sighting) the radius is this much wider. */
+const COMMANDER_WITHDRAW_HOLD_K = 1.35;
+const COMMANDER_WITHDRAW_HOLD_S = 10;
+const withdrawUntil = new WeakMap<Unit, number>();
 
 /** Siege: riflemen and engineers dig the trench line at their ring position unless the enemy is close. */
 function siegeDig(world: World, u: Unit, s: Front, t: Unit | null): boolean {
@@ -716,8 +730,13 @@ function thinkOpRaid(world: World, u: Unit): boolean {
     u.opTarget = null;
     return false;
   }
-  const trucks = enemyConvoyTargets(world, u.owner, u.pos, 450);
-  const truck = trucks.sort((a, b) => dist(a.pos, u.pos) - dist(b.pos, u.pos))[0];
+  // Keep hunting the truck already chosen while it stays known and within 650 m (as thinkRaid
+  // does): re-picking "nearest within 450 m" every think flipped the goal between a truck at the
+  // edge of that radius and the raid point behind, and the squad jittered on a slope for minutes.
+  let truck = world.unitAlive(u.raidTargetId);
+  if (truck && (truck.def.id !== 'supply_truck' || !world.knows(u.owner, truck) || dist(truck.pos, u.pos) > 650)) truck = null;
+  if (!truck) truck = enemyConvoyTargets(world, u.owner, u.pos, 450).sort((a, b) => dist(a.pos, u.pos) - dist(b.pos, u.pos))[0] ?? null;
+  u.raidTargetId = truck ? truck.id : null;
   const goal = truck ? truck.pos : u.opTarget;
   selectTarget(world, u, goal);
   if (truck && u.primary && dist(u.pos, truck.pos) < u.primary.range * 0.85) {

@@ -286,6 +286,11 @@ export class World {
       progressIdx: -1,
       progressD: Infinity,
       progressAt: this.time,
+      movedX: pos.x,
+      movedZ: pos.z,
+      movedAt: this.time,
+      boxedUntil: 0,
+      unstuckAt: -1e9,
       rearming: false,
       rearmAt: 0,
     };

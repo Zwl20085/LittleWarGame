@@ -21,7 +21,7 @@ import { buildFrontInfoFor } from './frontai';
 import type { Faction, MatchConfig, Unit } from './types';
 import { hostileMask } from './spatial';
 import { DEG, dist } from './vec';
-import { placeStructure } from './structures';
+import { isStructure, leaveStructure, placeStructure } from './structures';
 import { FACTION_COLORS, ROMAN, World } from './world';
 import { scaledData } from './scale';
 import { sampleStats, STATS_SAMPLE_SECONDS } from './stats';
@@ -344,6 +344,13 @@ export function step(match: Match): void {
     const u = units[i];
     if (u.hp <= 0) continue;
     if (u.behavior === 'evacuate' && world.time >= u.evacuateAt) {
+      // Free its work / pillbox slot at once (the 10 s sweep below is only the backstop).
+      if (u.fortId !== null) {
+        const fort = world.fortById(u.fortId);
+        if (fort && isStructure(fort.kind)) leaveStructure(world, u);
+        else if (fort && fort.occupant === u.id) fort.occupant = null;
+        u.fortId = null;
+      }
       u.hp = 0;
       continue;
     }
