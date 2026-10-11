@@ -6,10 +6,12 @@ import { clamp, DEG, dist, headingTo, turnToward, type V2, angleDiff } from './v
 import type { World } from './world';
 import { updateWorksCover } from './works';
 import { isStructure, updateStructureGarrison } from './structures';
+import { pocketExit } from './pocket';
 
 /** Set a movement destination; path is (re)computed lazily and rate-limited. */
 export function moveTo(world: World, u: Unit, dest: V2, force = false): void {
   if (u.fixed) return;
+  dest = reachableDest(world, u, dest);
   if (!force && u.dest && dist(u.dest, dest) < 6 && (u.path.length > 0 || dist(u.pos, dest) < 6)) return;
   // A consumed horizon-limited path must continue at once; everything else is rate-limited.
   // A long route is kept longer when the goal only drifts (group slots shift a little every
@@ -32,6 +34,14 @@ export function moveTo(world: World, u: Unit, dest: V2, force = false): void {
   if (longNav !== nav && (!res.ok || res.bestEffort) && dist(u.pos, dest) > 120) {
     const own = nav.pathByField(u.pos, dest, PATH_HORIZON_CELLS);
     if (own.ok && (!own.bestEffort || !res.ok)) res = own;
+  }
+  // A short hop whose small search ran out although both ends are on the same connected ground
+  // (across a river or a ravine from its post, the way round is a far bridge or ford): search
+  // further instead of calling it unreachable (2.2 soak: a mortar 50 m from its post, across a
+  // stream, 'unreachable' for ten minutes).
+  if ((!res.ok || res.bestEffort) && dist(u.pos, dest) <= 120 && nav.regionAt(dest) !== 0 && nav.regionFrom(u.pos) === nav.regionAt(dest)) {
+    const far = nav.findPath(u.pos, dest, DETOUR_SEARCH_CELLS);
+    if (far.ok && !far.bestEffort) res = far;
   }
   // Short direct routes: retry with corner squeezes allowed before giving up.
   if (!res.ok && dist(u.pos, dest) <= 120) res = nav.findPath(u.pos, dest, 4000, true);
@@ -56,6 +66,30 @@ export function moveTo(world: World, u: Unit, dest: V2, force = false): void {
     u.pathPartial = false;
     u.status = 'status.unreachable';
   }
+}
+
+/** A goal off the unit's own connected ground snaps to the nearest reachable cell within this (m). */
+const DEST_SNAP_M = 96;
+/** Search budget (8 m cells) for a short hop that has to go the long way round. */
+const DETOUR_SEARCH_CELLS = 150000;
+/** Regions smaller than this (8 m cells) are islands, not the unit's ground. */
+const MIN_REGION_CELLS = 400;
+
+/**
+ * Every order's destination, checked against the unit's own nav class: a point on ground it cannot
+ * stand on (a 30° bank for a 25° gun, a ford bank, water) or in a pocket cut off from where it is
+ * (behind a steep strip, a closed yard) becomes the nearest cell it can actually reach. Many
+ * 2.2 callers (rearm trips, shelter spots, raid targets, reserve blocks, guard posts) pick plain
+ * geometric points; validating here covers all of them. Far goals in another region (across a
+ * river with no crossing yet) are left alone: the route gets as close as it can (best effort).
+ */
+export function reachableDest(world: World, u: Unit, dest: V2): V2 {
+  const nav = world.navFor(u);
+  const region = nav.regionFrom(u.pos);
+  // A unit in a small island (it squeezed in through a corner) keeps its goal: the route's
+  // corner-squeeze fallback gets it out, snapping would pin it inside.
+  if (region === 0 || nav.regionCells(region) < MIN_REGION_CELLS) return dest;
+  return nav.reachableNear(dest, region, DEST_SNAP_M) ?? dest;
 }
 
 /** Long routes are built in stretches of this many nav cells (8 m each): bounded cost per call. */
@@ -164,9 +198,14 @@ export function updateMovement(world: World, u: Unit): void {
   // deploying and no motorised squad dismounting between stretches of one long route.
   if (u.path.length === 0 && u.pathPartial && u.dest) moveTo(world, u, u.dest, true);
   const wantsMove = u.path.length > 0 && u.pathIdx < u.path.length;
-  if (handleSetupBeforeMove(world, u, wantsMove)) return;
-  if (handleMount(world, u, wantsMove)) return;
+  // Not trying to walk this tick (idle, packing a gun, mounting): the displacement watchdog only
+  // counts time spent trying.
+  if (handleSetupBeforeMove(world, u, wantsMove) || handleMount(world, u, wantsMove)) {
+    u.movedAt = world.time;
+    return;
+  }
   if (!wantsMove) {
+    u.movedAt = world.time;
     if ((world.tick + u.id) % 3 === 0) separate(world, u, 1.8);
     return;
   }
@@ -179,12 +218,16 @@ export function updateMovement(world: World, u: Unit): void {
   if (near && !last && d >= 0.6) {
     if (u.legCheckIdx !== u.pathIdx) {
       u.legCheckIdx = u.pathIdx;
-      u.legClear = world.terrain.wallFree(u.pos, u.path[u.pathIdx + 1]);
+      // With the unit's own walkability, not just houses, and in steps fine enough to see a leg
+      // clip a house corner by a few decimetres: a detour is only finished at its corner (cutting
+      // it early sent the unit back into the bank / wall it was going round, looping for minutes).
+      u.legClear = world.terrain.wallFree(u.pos, u.path[u.pathIdx + 1], world.navFor(u).walkFn, LEG_CHECK_STEP_M);
     }
     near = u.legClear;
   }
   if (near) {
     u.pathIdx++;
+    u.boxedUntil = 0;
     u.detours = 0;
     if (u.pathIdx >= u.path.length) {
       u.path = [];
@@ -196,14 +239,35 @@ export function updateMovement(world: World, u: Unit): void {
   // picks another goal) instead of standing there for the rest of the war.
   // Progress = the waypoint advanced, or the distance to it shrank by 2 m (separation jostling
   // moves a unit about without getting it anywhere).
+  // Last resort on real displacement: a path that keeps advancing (detours inserted and reached,
+  // waypoints skipped) while the unit stays on the same few metres is stuck all the same.
+  if (Math.abs(u.pos.x - u.movedX) > STUCK_MOVE_M || Math.abs(u.pos.z - u.movedZ) > STUCK_MOVE_M) {
+    u.movedX = u.pos.x;
+    u.movedZ = u.pos.z;
+    u.movedAt = world.time;
+    // Real headway is progress too: a long route re-planned in horizon stretches keeps moving
+    // its next waypoint ahead, so "distance to the waypoint" alone never shrinks (an AT gun
+    // walking steadily home had its order dropped after 45 s and stood 'unreachable').
+    u.progressAt = world.time;
+  } else if (world.time - u.movedAt > STUCK_DROP_S + STUCK_REPLAN_S) {
+    u.movedAt = world.time;
+    u.progressAt = world.time;
+    if (!unstick(world, u, wp)) {
+      stop(u);
+      u.pathFailed = true;
+    }
+    return;
+  }
   if (u.pathIdx !== u.progressIdx || d < u.progressD - 2) {
     u.progressIdx = u.pathIdx;
     u.progressD = d;
     u.progressAt = world.time;
   } else if (world.time - u.progressAt > STUCK_DROP_S) {
-    stop(u);
-    u.pathFailed = true;
     u.progressAt = world.time;
+    if (!unstick(world, u, wp)) {
+      stop(u);
+      u.pathFailed = true;
+    }
     return;
   } else if (world.time - u.progressAt > STUCK_REPLAN_S && u.dest && world.time >= u.repathAt) {
     moveTo(world, u, u.dest, true);
@@ -212,14 +276,20 @@ export function updateMovement(world: World, u: Unit): void {
   // Off its own ground (a cell above the slope limit): head for the nearest passable cell first.
   const ter0 = world.terrain;
   const nav0 = world.navFor(u);
-  const esc = !nav0.walkableXZ(u.pos.x, u.pos.z) && ter0.buildingH(u.pos.x, u.pos.z) === 0 ? nav0.nearestPassable(u.pos, 24) : null;
+  // Boxed into a closed yard between houses: walk out to the nearest open cell centre.
+  let esc = !nav0.walkableXZ(u.pos.x, u.pos.z) && ter0.buildingH(u.pos.x, u.pos.z) === 0 ? nav0.nearestPassable(u.pos, 24) : null;
+  if (!esc && world.time < u.boxedUntil) esc = wp;
   const want = headingTo(u.pos, esc ?? wp);
   const veh = u.def.kind === 'vehicle';
   const turnRate = (veh ? u.def.hullTurnDegps : 360) * DEG * world.dt;
   u.heading = turnToward(u.heading, want, turnRate);
   // Vehicles must roughly face the waypoint before driving (no instant pivot exposing armour).
   const misalign = Math.abs(angleDiff(u.heading, want));
-  const s = speedOf(world, u, u.heading) * (veh ? clamp(1 - misalign / (70 * DEG), 0, 1) : 1);
+  // Foot units turn fast but not instantly: an about-turn at full pace walked a half-circle of a
+  // few metres, off a clear leg and into the wall it had just gone round (a detour loop in a town
+  // street, 2.2 soak); they slow down for sharp turns instead.
+  const footTurn = misalign > FOOT_TURN_FREE ? clamp(1 - (misalign - FOOT_TURN_FREE) / (Math.PI - FOOT_TURN_FREE), FOOT_TURN_MIN, 1) : 1;
+  const s = speedOf(world, u, u.heading) * (veh ? clamp(1 - misalign / (70 * DEG), 0, 1) : footTurn);
   const step = Math.min(s * world.dt, d);
   const nx = u.pos.x + Math.cos(u.heading) * step;
   const nz = u.pos.z + Math.sin(u.heading) * step;
@@ -247,7 +317,24 @@ export function updateMovement(world: World, u: Unit): void {
     if (!progressOf(pts)) pts = ter.detour(u.pos, wp, DETOUR_FAR_M, nav.walkFn);
     const progress = progressOf(pts);
     u.detours++;
-    if (pts && progress) u.path.splice(u.pathIdx, 0, ...pts);
+    const exit = progress ? null : pocketExit(ter, u.pos, nav.walkFn);
+    if (exit) {
+      // Boxed into a closed yard: the way out (straight through the corner it slipped in by)
+      // becomes the next waypoint, walked without the wall test.
+      u.path.splice(u.pathIdx, 0, exit);
+      u.legCheckIdx = -1;
+      u.boxedUntil = world.time + BOXED_ESCAPE_S;
+      u.detours = 0;
+      return;
+    }
+    if (pts && progress) {
+      u.path.splice(u.pathIdx, 0, ...pts);
+      // The waypoint at pathIdx is now the detour's first point: the cached "next leg is clear"
+      // answer belonged to the old waypoint. Reusing it let a unit "arrive" early at a detour
+      // corner and turn straight back into the slope it was detouring round, inserting the same
+      // detour again every 1.5 s forever (2.2 soak: infantry on 30°+ slopes, paths of 150 points).
+      u.legCheckIdx = -1;
+    }
     else if (d < WAYPOINT_SKIP_M || ter.buildingH(wp.x, wp.z) > 0) {
       // A close waypoint hugging a wall corner (or inside a house) can never be approached
       // directly, and the detour search keeps a cell of clearance from walls, so it never counts
@@ -305,7 +392,29 @@ function escapeStep(world: World, u: Unit, nav: NavGrid, nx: number, nz: number)
   return (nx - u.pos.x) * dx + (nz - u.pos.z) * dz > 0;
 }
 
+/**
+ * Watchdog's first answer to a unit that got nowhere: step out to an open cell next to it,
+ * through whatever holds it (a closed yard, a crowd, a bank it keeps sliding along), heading for
+ * its waypoint. False when it was walked out recently (or has no open cell near): drop the order.
+ */
+function unstick(world: World, u: Unit, wp: V2): boolean {
+  if (world.time - u.unstuckAt < UNSTICK_AGAIN_S) return false;
+  const nav = world.navFor(u);
+  const out = nav.unstickPoint(u.pos, nav.regionFrom(u.pos), wp);
+  if (!out) return false;
+  u.unstuckAt = world.time;
+  u.path.splice(u.pathIdx, 0, out);
+  u.legCheckIdx = -1;
+  u.detours = 0;
+  u.boxedUntil = world.time + BOXED_ESCAPE_S;
+  return true;
+}
+
 const scratch: Unit[] = [];
+/** Seconds a boxed-in unit walks straight for open ground (through the corner it slipped in by). */
+const BOXED_ESCAPE_S = 4;
+/** A unit walked out of a stuck spot is not walked out again before this (s): then the order is dropped. */
+const UNSTICK_AGAIN_S = 150;
 const SLIDE_ANGLES = [0, 0.52, 1.05, 1.57];
 /** Ticks between terrain speed samples per unit (0.25 s). */
 const TERRAIN_SAMPLE_TICKS = 5;
@@ -316,6 +425,15 @@ const COVER_CHECK_TICKS = 4;
 /** Stuck watchdog: seconds without 1 m of progress before a forced re-plan / dropping the order. */
 const STUCK_REPLAN_S = 20;
 const STUCK_DROP_S = 45;
+/** Displacement watchdog: getting this far (m, per axis) from the anchor counts as moving. */
+const STUCK_MOVE_M = 4;
+/** Share of a head-on push turned into a sidestep to the right (separation). */
+const HEAD_ON_SIDESTEP = 0.5;
+/** Sample step (m) of the next-leg wall test: finer than per-tick movement can slip past. */
+const LEG_CHECK_STEP_M = 0.2;
+/** Foot units: no slowdown for turns up to this (rad); at most down to FOOT_TURN_MIN for an about-turn. */
+const FOOT_TURN_FREE = 45 * DEG;
+const FOOT_TURN_MIN = 0.15;
 /** A wall-blocked waypoint closer than this is skipped rather than detoured to. */
 const WAYPOINT_SKIP_M = 12;
 /** Routes up to this length fall back to the 2 m building raster when the coarse search fails. */
@@ -351,6 +469,12 @@ function separate(world: World, u: Unit, strength: number): void {
     if (back < 0) {
       px -= back * fx;
       pz -= back * fz;
+      // Head-on (two units walking into each other): what was a push back becomes a step to
+      // the walker's right, so both sidestep the same way and pass instead of standing nose to
+      // nose for minutes (2.2 soak: three commanders deadlocked in a town square).
+      const side = -back * HEAD_ON_SIDESTEP;
+      px += -fz * side;
+      pz += fx * side;
     }
   }
   const nx = u.pos.x + clamp(px, -0.4, 0.4);

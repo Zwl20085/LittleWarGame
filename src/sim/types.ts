@@ -122,6 +122,17 @@ export interface Unit {
   progressIdx: number;
   progressD: number;
   progressAt: number;
+  /**
+   * Last-resort watchdog on real displacement: where the unit stood when it last got 4 m
+   * anywhere (detours and skipped waypoints advance the path index without moving it), and when.
+   */
+  movedX: number;
+  movedZ: number;
+  movedAt: number;
+  /** Boxed into a closed yard (no raster way out): walks straight to open ground until then. */
+  boxedUntil: number;
+  /** When the displacement watchdog last walked it out of a stuck spot (see movement.ts). */
+  unstuckAt: number;
   /** 2.2: walking to a stock / truck to rearm (hysteresis between logistics.rearm_below and rearm_until). */
   rearming: boolean;
   /** 2.2: earliest time to search for a rearm point again after none was found. */

@@ -767,6 +767,9 @@ export function thinkHomeGuard(world: World, u: Unit): boolean {
   if (foe && bd < HOME.sandbagR + 40) {
     // Inside the town: go for them (the capture ring must hold a defender).
     if (u.def.kind !== 'crew') moveTo(world, u, foe.pos);
+    // A gun fights where it stands: with no route left, clear a stale failed one (it otherwise
+    // reads 'unreachable' for as long as the enemy stays in town).
+    else if (u.path.length === 0) stop(u);
     selectTarget(world, u, foe.pos);
     return true;
   }

@@ -280,7 +280,8 @@ describe('fronts 2.1: binding orders, more fronts, zone garrisons', () => {
       detached += frontUnits(world, 0, s.id).filter((u) => isDetached(u, 0)).length;
       if (t === 19) {
         // Within 20 s the front's destinations lead toward the objective.
-        const troops = lineTroops(world, 0, s.id).filter((u) => before.has(u.id) && u.dest && !u.routing);
+        // (2.2: squads walking to a stock to rearm first are not marching yet.)
+        const troops = lineTroops(world, 0, s.id).filter((u) => before.has(u.id) && u.dest && !u.routing && !u.rearming);
         expect(troops.length).toBeGreaterThan(0);
         const closer = troops.filter((u) => dist(u.dest!, obj.pos) < before.get(u.id)! - 50).length;
         expect(closer / troops.length).toBeGreaterThan(0.6);
