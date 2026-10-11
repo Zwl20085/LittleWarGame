@@ -2,7 +2,7 @@ import { economyRates } from '../sim/economy';
 import { econCounts } from '../sim/econ';
 import { stockSummary } from '../sim/settlements';
 import type { GameContext } from './context';
-import { h } from './dom';
+import { h, PressGuard } from './dom';
 import { t } from './i18n';
 
 /** Layer-3 popover: labour shares, locks, steward toggle and its reason (§6.2). */
@@ -10,10 +10,17 @@ export class EconomyPanel {
   readonly el: HTMLElement;
   private open = false;
   private sig = '';
+  /** Income and the investment fund change every second: hold rebuilds while a button is pressed. */
+  private readonly guard: PressGuard;
 
   constructor(private readonly ctx: GameContext) {
     this.el = h('div', { class: 'eco panel' });
     this.el.style.display = 'none';
+    this.guard = new PressGuard(this.el);
+  }
+
+  dispose(): void {
+    this.guard.dispose();
   }
 
   toggle(): void {
@@ -33,8 +40,8 @@ export class EconomyPanel {
       return;
     }
     this.el.style.display = '';
-    const sig = JSON.stringify([f.alloc.map((a) => Math.round(a * 100)), f.locks, f.autoEconomy, f.stewardReason, f.stewardParams, Math.round(f.incomeP), Math.round(f.incomeM), Math.round(f.econP), Math.round(f.econM), Math.round(f.depot / 10), econCounts(w, f.id)]);
-    if (sig === this.sig) return;
+    const sig = JSON.stringify([f.alloc.map((a) => Math.round(a * 100)), f.locks, f.autoEconomy, f.autoInvest, Math.round(f.econFund.p), Math.round(f.econFund.m), f.stewardReason, f.stewardParams, Math.round(f.incomeP), Math.round(f.incomeM), Math.round(f.econP), Math.round(f.econM), Math.round(f.depot / 10), econCounts(w, f.id)]);
+    if (sig === this.sig || this.guard.held) return;
     this.sig = sig;
     const rates = economyRates(f.alloc, w.data.rules);
     const names = ['eco.mobil', 'eco.industry', 'eco.logistics'];
@@ -45,6 +52,10 @@ export class EconomyPanel {
       h('div', { class: 'row' },
         h('button', { class: `btn ${f.autoEconomy ? 'on' : ''}`, onclick: () => this.ctx.issue({ type: 'setAuto', on: !f.autoEconomy }) }, f.autoEconomy ? t('eco.autoOn') : t('eco.autoOff')),
         h('button', { class: 'btn', onclick: () => this.ctx.issue({ type: 'resetAlloc' }) }, t('eco.reset'))),
+      // 2.2.1: the steward invests in economic buildings unless the player takes it over.
+      h('div', { class: 'row' },
+        h('button', { class: `btn ${f.autoInvest ? 'on' : ''}`, title: t('eco.investTip'), onclick: () => this.ctx.issue({ type: 'setAutoInvest', on: !f.autoInvest }) }, f.autoInvest ? t('eco.investOn') : t('eco.investOff')),
+        f.autoInvest && (f.econFund.p >= 1 || f.econFund.m >= 1) ? h('span', { class: 'small' }, t('eco.investFund', { p: Math.round(f.econFund.p), m: Math.round(f.econFund.m) })) : null),
       ...f.alloc.map((a, i) => {
         const slider = h('input', { type: 'range', min: 0, max: 100, value: Math.round(a * 100), disabled: f.autoEconomy && !f.locks[i] ? false : false,
           onchange: (e: Event) => {

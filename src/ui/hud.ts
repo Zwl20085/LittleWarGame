@@ -126,6 +126,7 @@ export class Hud {
     this.sizeObserver?.disconnect();
     this.offLang();
     this.fronts.dispose();
+    this.economy.dispose();
     this.ctx.renderer.orderLines.label = null;
     this.ctx.renderer.orderLines.zoneLabel = null;
     this.root.remove();

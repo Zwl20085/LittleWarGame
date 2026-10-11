@@ -112,17 +112,22 @@ function investKind(world: World, f: Faction, p: Place): EconKind {
  * Called from the AI city planner (cityai.thinkCity): at most one building per think. Paid from
  * the investment fund (fundSecond) or, with a full army or a fat reserve, straight from stock.
  */
+/** Return the money set aside for the next building to the stock (threat, or the steward switched off). */
+export function releaseFund(world: World, f: Faction): void {
+  const fund = f.econFund;
+  if (fund.p > 0 || fund.m > 0) refund(f, fund.p, fund.m, world.data.rules);
+  fund.p = 0;
+  fund.m = 0;
+  fund.active = false;
+}
+
 export function thinkInvestment(world: World, f: Faction): void {
-  if (!econRules(world) || f.isPlayer || !f.alive) return;
+  if (!econRules(world) || !f.autoInvest || !f.alive) return;
   const fund = f.econFund;
   const { appetite, safe } = investAppetite(world, f);
   appetites.set(f, appetite);
-  if (appetite <= 0 && (fund.p > 0 || fund.m > 0)) {
-    // Threatened: the money set aside goes back to the army.
-    refund(f, fund.p, fund.m, world.data.rules);
-    fund.p = 0;
-    fund.m = 0;
-  }
+  // Threatened: the money set aside goes back to the army.
+  if (appetite <= 0) releaseFund(world, f);
   const maxSites = appetite >= 1.1 ? ECON_AI.maxSites + 1 : appetite >= 0.5 ? ECON_AI.maxSites : appetite > 0 ? 1 : 0;
   const p = econCounts(world, f.id).sites >= maxSites ? null : investPlace(world, f, ECON_AI.safeDistance + APPETITE.unsafeDistance * (1 - safe));
   fund.active = p !== null;
@@ -156,7 +161,7 @@ export function thinkInvestment(world: World, f: Faction): void {
 export function fundSecond(world: World, f: Faction): void {
   const r = econRules(world);
   const fund = f.econFund;
-  if (!r || f.isPlayer || !f.alive || !fund.active) return;
+  if (!r || !f.autoInvest || !f.alive || !fund.active) return;
   let capP = 0;
   let capM = 0;
   for (const b of Object.values(r.buildings)) {

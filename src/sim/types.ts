@@ -341,6 +341,8 @@ export interface Faction {
   alloc: [number, number, number];
   locks: [boolean, boolean, boolean];
   autoEconomy: boolean;
+  /** 2.2.1: the steward invests in economic buildings (default on, the player can hand it back). */
+  autoInvest: boolean;
   stewardHoldUntil: number;
   stewardLastDir: number;
   stewardReason: string;
