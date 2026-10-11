@@ -164,6 +164,7 @@ const zh: Dict = {
   'log.econStarted': '{point} 开始建造{bld}', 'log.econBuilt': '{point} 的{bld}已建成', 'log.econLost': '{point} 的{bld}被摧毁！', 'log.econCaptured': '缴获 {point} 的{bld}',
   'log.queueLost': '{point} 失守或被围，{unit} 生产取消（返还一半）', 'log.queueDropped': '{point} 已失守，排队的 {unit} 取消',
   'status.rearming': '前往补给点补充弹药', 'fail.NO_SLOT': '此地没有对应的生产位 / 建筑位', 'fail.CONTESTED': '争夺中，无法施工',
+  'eco.investOn': '自动投资：开', 'eco.investOff': '自动投资：关', 'eco.investTip': '开启时由统帅部参谋按局势在后方安全城镇投资经济建筑；首都告急或全线防御 / 战略收缩时暂停并退回预留资金。关闭后只能在城镇面板手动建造。', 'eco.investFund': '投资预留 {p} P / {m} M',
   'eco.buildings': '经济建筑：工厂 {f} · 征兵站 {r} · 仓库 {d}（+{p} P / +{m} M 每分）', 'eco.stock': '各地补给储备 {s} / {c}',
   'prod.at': '于 {place}', 'hud.stockTip': '各城镇补给储备合计',
 };
@@ -316,6 +317,7 @@ const en: Dict = {
   'log.econStarted': '{bld} under construction at {point}', 'log.econBuilt': '{bld} at {point} completed', 'log.econLost': '{bld} at {point} destroyed!', 'log.econCaptured': 'Captured the {bld} at {point}',
   'log.queueLost': '{point} lost or besieged: {unit} production cancelled (half refunded)', 'log.queueDropped': '{point} lost: queued {unit} dropped',
   'status.rearming': 'Going to a supply point to rearm', 'fail.NO_SLOT': 'No matching slot at that place', 'fail.CONTESTED': 'Contested: no construction',
+  'eco.investOn': 'Auto-invest: on', 'eco.investOff': 'Auto-invest: off', 'eco.investTip': 'When on, the HQ staff invest in economic buildings in safe rear towns as the war allows; paused (and the money set aside returned) when the capital is in danger or under Defend / Contract. When off, build by hand from the town panel.', 'eco.investFund': 'Set aside for investment {p} P / {m} M',
   'eco.buildings': 'Economic buildings: factories {f} · recruiting {r} · depots {d} (+{p} P / +{m} M per min)', 'eco.stock': 'Supply stocks {s} / {c}',
   'prod.at': 'at {place}', 'hud.stockTip': 'Total supply stock in our towns',
 };

@@ -46,7 +46,7 @@ function makeFaction(world: World, id: number, isPlayer: boolean): Faction {
   return {
     id, color: FACTION_COLORS[id], roman: ROMAN[id], isPlayer, cityIdx: id, personality, difficulty: world.config.difficulty,
     alive: true, eliminatedAt: null, p: e.starting_p, m: e.starting_m,
-    alloc: [...e.allocation_default] as [number, number, number], locks: [false, false, false], autoEconomy: true,
+    alloc: [...e.allocation_default] as [number, number, number], locks: [false, false, false], autoEconomy: true, autoInvest: true,
     stewardHoldUntil: 0, stewardLastDir: -1, stewardReason: 'steward.default', stewardParams: {},
     resolve: world.data.rules.victory.initial_resolve, popPresent: 0, popReserved: 0, logistics: 0, supplyDemand: 0,
     weights, caps: { ...world.data.rules.proposed_defaults.production_unit_caps }, paused: {},

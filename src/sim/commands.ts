@@ -4,6 +4,7 @@ import { placeById, placeOwner } from './settlements';
 import type { EconKind } from '../data/types';
 import type { Match } from './sim';
 import { DIRECTIVE_KINDS, DIRECTIVE_LINE_MIN_M, setDirective } from './directive';
+import { releaseFund } from './econai';
 import { applyDirectiveNow } from './theatre';
 import type { DirectiveKind, Unit } from './types';
 import { dist, type V2 } from './vec';
@@ -26,6 +27,8 @@ export type Command =
   | { type: 'cancelOrder'; orderId: number }
   | { type: 'setAlloc'; alloc: [number, number, number] }
   | { type: 'setAuto'; on: boolean }
+  /** 2.2.1: automatic investment in economic buildings (off returns the money set aside). */
+  | { type: 'setAutoInvest'; on: boolean }
   | { type: 'setLock'; index: number; locked: boolean }
   | { type: 'resetAlloc' }
   /**
@@ -136,6 +139,10 @@ function apply(match: Match, env: CommandEnvelope): CommandOutcome {
       f.alloc = [c.alloc[0] / sum, c.alloc[1] / sum, c.alloc[2] / sum];
       return OK;
     }
+    case 'setAutoInvest':
+      f.autoInvest = c.on;
+      if (!c.on) releaseFund(w, f);
+      return OK;
     case 'setAuto':
       f.autoEconomy = c.on;
       return OK;
