@@ -93,7 +93,7 @@ function createUpdater({ app, net, shell, ipcMain, builtinRoot }) {
     store.cleanupStaging(dir);
     const installed = store.listInstalled(dir);
     const { state, serve } = logic.onLaunch(store.readState(dir), installed, builtinVersion);
-    store.writeState(dir, state);
+    saveState(state);
     serving = serve;
     store.removeBundles(dir, logic.toPrune(state, installed, serving));
     log('serving', { source: serving ? 'bundle' : 'builtin', version: serving ?? builtinVersion });
@@ -103,16 +103,27 @@ function createUpdater({ app, net, shell, ipcMain, builtinRoot }) {
     return serving ? store.bundlePath(dir, serving) : builtinRoot;
   }
 
+  /** Persist the bundle state; never throws (a failed write must not block the fallback). */
+  function saveState(next) {
+    try {
+      store.writeState(dir, next);
+    } catch (err) {
+      console.warn('[updater] could not save bundle state:', err && err.message);
+      log('error', { stage: 'state', error: String(err && err.message) });
+    }
+  }
+
   function fallBack(reason) {
     if (!serving) return;
     const bad = serving;
     clearTimeout(readyTimer);
-    store.writeState(dir, logic.onFailure(store.readState(dir), bad));
-    serving = null;
+    serving = null; // serve the built-in game from now on, whatever happens below
+    saveState(logic.onFailure(store.readState(dir), bad));
     console.warn(`[updater] bundle ${bad} failed (${reason}); falling back to the built-in game`);
     log('fallback', { version: bad, reason });
     if (win && !win.isDestroyed()) {
-      win.webContents.session.clearCache().finally(() => win.loadURL('app://game/index.html'));
+      const reload = () => { if (!win.isDestroyed()) win.loadURL('app://game/index.html').catch(() => undefined); };
+      win.webContents.session.clearCache().then(reload, reload);
     }
   }
 
@@ -129,7 +140,7 @@ function createUpdater({ app, net, shell, ipcMain, builtinRoot }) {
     log('ready', { source: serving ? 'bundle' : 'builtin', version: serving ?? builtinVersion });
     if (!serving) return;
     clearTimeout(readyTimer);
-    store.writeState(dir, logic.onReady(store.readState(dir), serving));
+    saveState(logic.onReady(store.readState(dir), serving));
   }
 
   // ------------------------------------------------------------ check + download

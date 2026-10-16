@@ -21,7 +21,20 @@ function ensureDir(dir) {
 function writeFileAtomic(file, data) {
   const tmp = `${file}.${crypto.randomBytes(4).toString('hex')}.tmp`;
   fs.writeFileSync(tmp, data);
-  fs.renameSync(tmp, file);
+  // Windows: a virus scanner or indexer briefly holding the target makes rename fail with
+  // EPERM/EBUSY/EACCES; retry a few times before giving up.
+  for (let i = 0; ; i++) {
+    try {
+      fs.renameSync(tmp, file);
+      return;
+    } catch (err) {
+      if (i >= 4 || !['EPERM', 'EBUSY', 'EACCES'].includes(err && err.code)) {
+        fs.rmSync(tmp, { force: true });
+        throw err;
+      }
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50 * (i + 1));
+    }
+  }
 }
 
 function readState(dir) {
@@ -114,7 +127,12 @@ function cleanupStaging(dir) {
     return;
   }
   for (const n of names) {
-    if (n.startsWith('.staging-') || n.endsWith('.part') || n.endsWith('.tmp')) fs.rmSync(path.join(dir, n), { recursive: true, force: true });
+    if (!(n.startsWith('.staging-') || n.endsWith('.part') || n.endsWith('.tmp'))) continue;
+    try {
+      fs.rmSync(path.join(dir, n), { recursive: true, force: true });
+    } catch (err) {
+      console.warn(`[updater] could not clean up ${n}:`, err && err.message);
+    }
   }
 }
 
