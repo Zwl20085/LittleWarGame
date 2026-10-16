@@ -1,4 +1,5 @@
 import type { BankMessage, BankRequest } from './bank.worker';
+import { hallImpulse } from './hall';
 import { impulse, RECIPES, SOUND_IDS, type SoundId } from './recipes';
 
 /** Hard cap on concurrent one-shot voices (loops and music are separate). */
@@ -32,6 +33,19 @@ export interface PlayReq {
   catMax: number;
 }
 
+/** Deepest music duck under heavy battle fire (gain 0.68 ≈ -3.3 dB). */
+export const MUSIC_DUCK_MAX = 0.32;
+
+/**
+ * Music gain under battle effects: no duck for light fire, easing down to
+ * 1 - MUSIC_DUCK_MAX as the near-field fire load (0–1, scaled by the effects volume)
+ * approaches saturation. Pure, so the curve is unit-tested.
+ */
+export function musicDuckGain(load: number): number {
+  const t = Math.max(0, Math.min(1, (load - 0.35) / 0.55));
+  return 1 - MUSIC_DUCK_MAX * t * t * (3 - 2 * t);
+}
+
 export const newReq = (): PlayReq => ({ id: 'click', variant: -1, gain: 1, pan: 0, cutoff: 20000, rate: 1, delay: 0, bus: 'near', prio: 1, cat: 0, catMax: 99 });
 
 /**
@@ -48,6 +62,9 @@ export class Mixer {
   readonly sfxDuck: GainNode;
   readonly musicIn: GainNode;
   readonly musicVerb: GainNode;
+  /** Side-chain style duck of the score under heavy battle fire (see duckMusic). */
+  readonly musicDuck: GainNode;
+  private lastDuck = 1;
   private readonly near: GainNode;
   private readonly far: GainNode;
   private readonly buffers = new Map<SoundId, AudioBuffer[]>();
@@ -74,16 +91,32 @@ export class Mixer {
     this.ctx = new AC({ latencyHint: 'interactive' });
     const c = this.ctx;
     const glue = c.createDynamicsCompressor();
-    glue.threshold.value = -20; glue.knee.value = 10; glue.ratio.value = 3; glue.attack.value = 0.01; glue.release.value = 0.3;
+    // Gentle glue (slow attack keeps transients), then a fast brick-wall safety limiter.
+    glue.threshold.value = -18; glue.knee.value = 12; glue.ratio.value = 2.5; glue.attack.value = 0.02; glue.release.value = 0.25;
     const limiter = c.createDynamicsCompressor();
-    limiter.threshold.value = -4; limiter.knee.value = 0; limiter.ratio.value = 20; limiter.attack.value = 0.002; limiter.release.value = 0.2;
+    limiter.threshold.value = -2.5; limiter.knee.value = 0; limiter.ratio.value = 20; limiter.attack.value = 0.002; limiter.release.value = 0.12;
     this.master = c.createGain();
     this.master.connect(glue).connect(limiter).connect(c.destination);
     this.meter = c.createAnalyser();
     this.meter.fftSize = 2048;
     limiter.connect(this.meter);
+    // Music bus EQ: rumble cut, a little less low-mid mud, a touch of air; then the duck.
     this.musicBus = c.createGain();
-    this.musicBus.connect(this.master);
+    this.musicDuck = c.createGain();
+    const eq = (type: BiquadFilterType, f: number, q: number, g: number): BiquadFilterNode => {
+      const b = c.createBiquadFilter();
+      b.type = type;
+      b.frequency.value = f;
+      b.Q.value = q;
+      b.gain.value = g;
+      return b;
+    };
+    this.musicBus
+      .connect(eq('highpass', 32, 0.7, 0))
+      .connect(eq('peaking', 320, 0.9, -2))
+      .connect(eq('highshelf', 7000, 0.7, 1))
+      .connect(this.musicDuck)
+      .connect(this.master);
     this.sfxBus = c.createGain();
     this.sfxBus.connect(this.master);
     this.uiBus = c.createGain();
@@ -111,7 +144,8 @@ export class Mixer {
     this.musicConv = c.createConvolver();
     const musicWet = c.createGain();
     musicWet.gain.value = 0.55;
-    this.musicVerb.connect(this.musicConv).connect(musicWet).connect(this.musicBus);
+    // The hall return is high-passed so the reverb never muddies the low strings / timpani.
+    this.musicVerb.connect(this.musicConv).connect(musicWet).connect(eq('highpass', 180, 0.7, 0)).connect(this.musicBus);
     for (const id of SOUND_IDS) for (let v = 0; v < RECIPES[id].variants; v++) this.pending.push({ id, v });
     this.startWorker();
   }
@@ -172,7 +206,7 @@ export class Mixer {
     if (this.verbsPending) {
       this.verbsPending = false;
       this.sfxConv.buffer = this.makeStereo(impulse(this.ctx.sampleRate, 1.4, 31, 3000));
-      this.musicConv.buffer = this.makeStereo(impulse(this.ctx.sampleRate, 3.2, 77, 2400));
+      this.musicConv.buffer = this.makeStereo(hallImpulse(this.ctx.sampleRate));
       if (performance.now() - t0 > budgetMs) return;
     }
     while (this.pending.length && performance.now() - t0 < budgetMs) {
@@ -300,6 +334,15 @@ export class Mixer {
     };
     this.plays[q.id] = (this.plays[q.id] ?? 0) + 1;
     return true;
+  }
+
+  /** Duck the score under heavy fire; `load` 0–1 (fast down, slow recovery). */
+  duckMusic(load: number): void {
+    const g = musicDuckGain(load);
+    if (Math.abs(g - this.lastDuck) < 0.01) return;
+    const t = this.ctx.currentTime;
+    this.musicDuck.gain.setTargetAtTime(g, t, g < this.lastDuck ? 0.25 : 1.2);
+    this.lastDuck = g;
   }
 
   /** Long-lived looping voice (rumble bed); caller owns the nodes. */

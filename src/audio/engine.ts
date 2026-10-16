@@ -3,6 +3,7 @@ import type { World } from '../sim/world';
 import { onSettingsChange, settings, type Settings } from '../ui/settings';
 import { AlertWatcher } from './alerts';
 import { BattleListener } from './battle';
+import { isMusicEvent, type MusicEventKind } from './director';
 import { FortuneWatch } from './fortune';
 import { Mixer, newReq, PRIO } from './mixer';
 import { Music, type MusicMode, type MusicMood } from './music';
@@ -29,6 +30,7 @@ export class AudioSession {
   private wasPaused = false;
   private costAcc = 0;
   private costN = 0;
+  private threatsSeen = 0;
   /** Average main-thread cost of update() over the last ~second (ms). */
   costMs = 0;
   disposed = false;
@@ -53,6 +55,15 @@ export class AudioSession {
     let target = battle.intensity;
     if (this.alerts!.dangerUntil > mix.ctx.currentTime) target = Math.max(target, 0.75);
     if (!paused) this.smooth += (target - this.smooth) * Math.min(1, dt / (target > this.smooth ? 1.5 : 6));
+    // ---- 3.0 music hook (WP-L): the player's HQ under attack is the "home threatened"
+    // situation. Other situation events (offensive launched, capitals, doctrine) are wired
+    // by the game through musicEvent() / setDoctrineTheme() in src/audio/index.ts.
+    if (this.alerts!.threats !== this.threatsSeen) {
+      this.threatsSeen = this.alerts!.threats;
+      if (!this.opts.attract && !this.opts.spectator) this.engine.musicEvent('homeThreatened');
+    }
+    // Heavy near-field fire ducks the score a little (scaled by the effects volume).
+    mix.duckMusic(battle.intensity * this.engine.sfxLevel);
     const me = w.factions[this.opts.playerId];
     const over = !!w.result || (!this.opts.spectator && !this.opts.attract && !!me && !me.alive);
     const mode: MusicMode = this.opts.attract ? 'title' : over ? 'aftermath' : 'battle';
@@ -103,6 +114,10 @@ export class AudioEngine {
   private paused = false;
   private lastClick = 0;
   private readonly clickReq = newReq();
+  /** Doctrine theme requested before the score existed (applied when it starts). */
+  private doctrine: unknown = null;
+  /** Effects volume (0–1, squared like the bus) for the music duck. */
+  sfxLevel = 1;
 
   /** Idempotent: hook the first-gesture unlock, UI clicks, settings and the debug handle. */
   install(): void {
@@ -128,6 +143,7 @@ export class AudioEngine {
       try {
         this.mixer = new Mixer();
         this.music = new Music(this.mixer);
+        this.music.setDoctrine(this.doctrine);
         this.applyVolumes(settings());
         this.mixer.pump(6);
       } catch (err: unknown) {
@@ -160,6 +176,21 @@ export class AudioEngine {
     this.music.update(intensity);
   }
 
+  /** Situation event for the score; ignored (with a warning) when the kind is unknown. */
+  musicEvent(kind: MusicEventKind): void {
+    if (!isMusicEvent(kind)) {
+      console.warn('[audio] unknown music event:', kind);
+      return;
+    }
+    this.music?.event(kind);
+  }
+
+  /** Doctrine colour of the score; unknown / null ids select the default score. */
+  setDoctrineTheme(id: string | null): void {
+    this.doctrine = id;
+    this.music?.setDoctrine(id);
+  }
+
   setPaused(p: boolean): void {
     this.paused = p;
     this.applyVolumes(settings());
@@ -175,6 +206,8 @@ export class AudioEngine {
     m.musicBus.gain.setTargetAtTime(sq(s.volMusic) * 0.9 * (this.paused ? 0.35 : 1), t, 0.25);
     m.sfxBus.gain.setTargetAtTime(sq(s.volSfx) * SFX_TRIM, t, 0.05);
     m.uiBus.gain.setTargetAtTime(sq(s.volSfx) * 0.9, t, 0.05);
+    this.sfxLevel = s.muted ? 0 : Math.min(1, sq(s.volSfx) * 1.25);
+    this.music?.setAudible(!s.muted && s.volMaster > 0.001 && s.volMusic > 0.001);
   }
 
   /** Subtle switch click for buttons and toggles. */
@@ -216,6 +249,7 @@ export class AudioEngine {
       zoomGain: L ? Math.round(L.zoomGain * 100) / 100 : 0,
       musicMode: this.music?.modeNow ?? null,
       musicLevel: this.music?.level ?? 0,
+      musicSituation: this.music?.situation ?? null,
       musicSamples: this.music?.samplesReady ?? 0,
       musicNotesPerSec: this.music ? Math.round(this.music.notesPerSec * 10) / 10 : 0,
       paused: this.paused,
