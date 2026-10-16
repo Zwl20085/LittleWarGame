@@ -5,10 +5,16 @@
  * hall reverb) is approximated in plain JS. Levels are the music stem at full music
  * volume, before the mixer's master glue compressor / limiter (not emulated).
  *
- *   npx vite-node scripts/music-preview.ts [seconds=80] [seed=7]
+ * 3.0 scenarios (v30-*) also exercise the director (situation events at given times) and
+ * the doctrine colours; the hall approximation includes the IR's early reflections.
+ *
+ *   npx vite-node scripts/music-preview.ts [seconds=80] [seed=7] [only=name,name|v30]
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import type { MusicEventKind, Situation } from '../src/audio/director';
+import type { DoctrineId } from '../src/audio/doctrines';
+import { EARLY, PRE_DELAY } from '../src/audio/hall';
 import { renderSample, sampleId, sampleKeys, sampleRoot, type MusicSample } from '../src/audio/orchestra';
 import { brightness, Conductor, LAYER_BUS, LAYERS, layerTargets, type Layer, type MusicMode, type NoteEv, type Outcome, type Stinger } from '../src/audio/score';
 
@@ -16,7 +22,7 @@ const SR = 44100;
 const FPS = 60;
 const LOOKAHEAD = 0.35;
 const SCORE_TRIM = 0.8;
-const MAX_NOTES = 48;
+const MAX_NOTES = 64;
 const QUIET_VEL = 0.12;
 /** Music bus gain at full slider (engine.applyVolumes: vol² · 0.9). */
 const MUSIC_BUS = 0.9;
@@ -35,6 +41,15 @@ interface Scenario {
   readonly name: string;
   readonly seconds: number;
   at(t: number): Frame;
+  /** Situation events: [seconds, kind]. */
+  readonly events?: readonly (readonly [number, MusicEventKind])[];
+  readonly doctrine?: DoctrineId;
+}
+
+/** Per-frame view of the conductor the layer mix follows (situation colours the buses). */
+interface Mix {
+  readonly sit: Situation;
+  readonly sombre: boolean;
 }
 
 interface Placed {
@@ -64,6 +79,35 @@ function scenarios(secs: number): Scenario[] {
         return frame('battle', x, t >= 115 && t < 150, null, t >= 95 && t < 95 + 1 / FPS ? 'capital' : null);
       },
     },
+    ...v30(),
+  ];
+}
+
+/** 3.0 renders: the title theme, each doctrine theme, each situation cue and the war arc. */
+function v30(): Scenario[] {
+  const doctrine = (d: DoctrineId): Scenario => ({
+    name: `v30-${d}`, seconds: 75, doctrine: d, at: (t) => frame('battle', t < 30 ? 0.38 : 0.86),
+  });
+  return [
+    { name: 'v30-title', seconds: 64, at: () => frame('title', 0.12) },
+    doctrine('builder'),
+    doctrine('blitz'),
+    doctrine('attrition'),
+    doctrine('maneuver'),
+    { name: 'v30-threat', seconds: 40, events: [[8, 'homeThreatened']], at: (t) => frame('battle', t < 8 ? 0.06 : 0.3) },
+    { name: 'v30-offensive', seconds: 40, events: [[8, 'offensiveLaunched']], at: (t) => frame('battle', t < 10 ? 0.4 : 0.75) },
+    { name: 'v30-capital-lost', seconds: 45, events: [[8, 'capitalLost']], at: () => frame('battle', 0.6) },
+    { name: 'v30-capital-taken', seconds: 36, events: [[8, 'capitalTaken']], at: () => frame('battle', 0.7) },
+    { name: 'v30-victory', seconds: 45, events: [[10, 'victory']], at: () => frame('battle', 0.8) },
+    { name: 'v30-defeat', seconds: 45, events: [[10, 'defeat']], at: () => frame('battle', 0.55, true) },
+    {
+      // Quiet -> contact -> offensive -> the enemy capital falls -> victory (90 s).
+      name: 'v30-war-arc',
+      seconds: 90,
+      doctrine: 'blitz',
+      events: [[34, 'offensiveLaunched'], [58, 'capitalTaken'], [72, 'victory']],
+      at: (t) => frame('battle', t < 14 ? 0.05 : t < 34 ? 0.42 : t < 72 ? 0.85 : 0.5),
+    },
   ];
 }
 
@@ -72,9 +116,11 @@ const ONE_SHOT: Partial<Record<string, number>> = { spic: 0.4, timp: 2.4, snare:
 const estLen = (e: NoteEv, spb: number): number => ONE_SHOT[e.inst] ?? e.dur * spb + e.rel * 1.25;
 
 /** Drive the Conductor exactly like Music.update() does, at 60 fps. */
-function schedule(sc: Scenario, seed: number): { notes: Placed[]; xs: Float32Array; frames: Frame[]; form: string } {
+function schedule(sc: Scenario, seed: number): { notes: Placed[]; xs: Float32Array; frames: Frame[]; mix: Mix[]; form: string } {
   const form: string[] = [];
   const cond = new Conductor(seed);
+  cond.setDoctrine(sc.doctrine ?? null);
+  const mix: Mix[] = [];
   const notes: Placed[] = [];
   const nFrames = Math.ceil(sc.seconds * FPS);
   const xs = new Float32Array(nFrames);
@@ -89,13 +135,16 @@ function schedule(sc: Scenario, seed: number): { notes: Placed[]; xs: Float32Arr
     frames.push(fr);
     // engine.ts smoothing: quick to rise (1.5 s), slow to settle (6 s).
     smoothI += (fr.intensity - smoothI) * Math.min(1, 1 / FPS / (fr.intensity > smoothI ? 1.5 : 6));
-    x += (smoothI - x) * 0.02;
+    for (const [at, kind] of sc.events ?? []) if (at >= now && at < now + 1 / FPS) cond.event(kind);
+    // Same as Music.update(): the layers follow the intensity raised to the situation floor.
+    x += (cond.effectiveIntensity(smoothI) - x) * 0.02;
     xs[f] = x;
+    mix.push({ sit: cond.situation, sombre: cond.sombre(fr.retreat) });
     if (fr.stinger) cond.stinger(fr.stinger);
     while (nextBar < now + LOOKAHEAD) {
       const plan = cond.nextBar({ mode: fr.mode, intensity: smoothI, retreat: fr.retreat, outcome: fr.outcome });
       const spb = 60 / plan.bpm;
-      if (plan.bar === 0 && nextBar < sc.seconds) form.push(`${Math.round(nextBar)}s ${plan.theme}/t${plan.tier}@${Math.round(plan.bpm)}`);
+      if (plan.bar === 0 && nextBar < sc.seconds) form.push(`${Math.round(nextBar)}s ${plan.theme}/t${plan.tier}@${Math.round(plan.bpm)}${plan.situation === 'normal' ? '' : `[${plan.situation}]`}`);
       for (const e of plan.events) {
         const t = nextBar + e.beat * spb;
         if (e.vel < QUIET_VEL && ends.filter((x) => x > t).length >= MAX_NOTES) continue;
@@ -106,7 +155,7 @@ function schedule(sc: Scenario, seed: number): { notes: Placed[]; xs: Float32Arr
       nextBar += plan.beats * spb;
     }
   }
-  return { notes, xs, frames, form: form.join(' > ') };
+  return { notes, xs, frames, mix, form: form.join(' > ') };
 }
 
 /** Mix one note into a mono layer buffer (sample playback + the same gain envelope). */
@@ -179,7 +228,24 @@ function reverb(inL: Float32Array, inR: Float32Array): [Float32Array, Float32Arr
     }
     return out;
   };
-  return [run(inL, 0), run(inR, 23)];
+  // Early reflections of the IR (hall.ts) in front of the diffuse tail.
+  const early = (input: Float32Array, right: boolean): Float32Array => {
+    const out = new Float32Array(input.length);
+    for (const [t, g] of EARLY) {
+      const d = Math.floor((PRE_DELAY + t * (right ? 1.07 : 1)) * SR);
+      for (let i = d; i < input.length; i++) out[i] += input[i - d] * g * 0.35;
+    }
+    return out;
+  };
+  const tl = run(inL, 0);
+  const tr = run(inR, 23);
+  const el = early(inL, false);
+  const er = early(inR, true);
+  for (let i = 0; i < tl.length; i++) {
+    tl[i] += el[i];
+    tr[i] += er[i];
+  }
+  return [tl, tr];
 }
 
 function writeWav(path: string, l: Float32Array, r: Float32Array): void {
@@ -223,7 +289,7 @@ function concurrency(spans: [number, number][]): [max: number, mean: number] {
 const db = (x: number): string => (x > 0 ? (20 * Math.log10(x)).toFixed(1) : '-inf');
 
 function renderScenario(sc: Scenario, bank: Map<string, MusicSample>, seed: number): void {
-  const { notes, xs, frames, form } = schedule(sc, seed);
+  const { notes, xs, frames, mix, form } = schedule(sc, seed);
   const n = Math.ceil(sc.seconds * SR);
   const dryL = new Float32Array(n);
   const dryR = new Float32Array(n);
@@ -254,7 +320,7 @@ function renderScenario(sc: Scenario, bank: Map<string, MusicSample>, seed: numb
       const f = Math.min(xs.length - 1, Math.floor((i / SR) * FPS));
       const fr = frames[f];
       if (i % 64 === 0) {
-        const target = layerTargets(xs[f], fr.mode, fr.retreat)[layer];
+        const target = layerTargets(xs[f], fr.mode, mix[f].sombre, mix[f].sit)[layer];
         g += (target - g) * (1 - Math.pow(1 - tauGain, 64));
         fc += (brightness(xs[f]) - fc) * (1 - Math.pow(1 - tauBright, 64));
       }
@@ -309,7 +375,8 @@ function main(): void {
   }
   console.log(`orchestra: ${bank.size} samples, ${(bytes / 1048576).toFixed(1)} MB, rendered in ${Math.round(performance.now() - t0)} ms`);
   const only = process.argv[4];
-  for (const sc of scenarios(secs)) if (!only || only.split(',').includes(sc.name)) renderScenario(sc, bank, seed);
+  const want = (name: string): boolean => !only || only.split(',').some((o) => o === name || (o === 'v30' && name.startsWith('v30-')));
+  for (const sc of scenarios(secs)) if (want(sc.name)) renderScenario(sc, bank, seed);
 }
 
 main();
