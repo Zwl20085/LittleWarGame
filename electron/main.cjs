@@ -1,10 +1,15 @@
 // Standalone desktop shell: serves the built game (dist/) over a privileged app:// scheme so
 // module scripts and the simulation Web Worker load exactly as they do on a web server.
-const { app, BrowserWindow, Menu, net, protocol, session, shell } = require('electron');
+const { app, BrowserWindow, Menu, ipcMain, net, protocol, session, shell } = require('electron');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 
-const ROOT = path.join(__dirname, '..', 'dist');
+const { createUpdater } = require('./updater.cjs');
+
+const BUILTIN_ROOT = path.join(__dirname, '..', 'dist');
+// Dev-only: a throwaway profile for the updater end-to-end test (scripts/release/updater-e2e.mjs).
+if (!app.isPackaged && process.env.LITTLEWAR_USER_DATA) app.setPath('userData', process.env.LITTLEWAR_USER_DATA);
+const updater = createUpdater({ app, net, shell, ipcMain, builtinRoot: BUILTIN_ROOT });
 // Only the bundled game plus Google Fonts (the UI typefaces); no remote scripts at all. The one
 // remote request is the update check against the GitHub releases API (src/ui/updateCheck.ts).
 const CSP = [
@@ -25,16 +30,18 @@ protocol.registerSchemesAsPrivileged([
   { scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true } },
 ]);
 
-function serveDist() {
+/** Serves the built-in dist/ or, after a verified hot update, userData/bundles/<ver>/. */
+function serveGame() {
   protocol.handle('app', (req) => {
+    const root = updater.root();
     let file;
     try {
-      file = path.normalize(path.join(ROOT, decodeURIComponent(new URL(req.url).pathname)));
+      file = path.normalize(path.join(root, decodeURIComponent(new URL(req.url).pathname)));
     } catch {
       return new Response('Bad request', { status: 400 });
     }
     // Never serve anything outside the game bundle.
-    const rel = path.relative(ROOT, file);
+    const rel = path.relative(root, file);
     if (rel.startsWith('..') || path.isAbsolute(rel)) return new Response('Forbidden', { status: 403 });
     return net.fetch(pathToFileURL(file).toString()).catch(() => new Response('Not found', { status: 404 })).then((res) => {
       if (!file.endsWith('.html')) return res;
@@ -65,7 +72,13 @@ function createWindow() {
     backgroundColor: '#1b1a17',
     autoHideMenuBar: true,
     show: false,
-    webPreferences: { contextIsolation: true, sandbox: true, nodeIntegration: false, backgroundThrottling: false },
+    webPreferences: {
+      contextIsolation: true,
+      sandbox: true,
+      nodeIntegration: false,
+      backgroundThrottling: false,
+      preload: path.join(__dirname, 'preload.cjs'),
+    },
   });
   win.once('ready-to-show', () => {
     win.maximize();
@@ -89,6 +102,7 @@ function createWindow() {
   };
   win.webContents.on('will-navigate', stayHome);
   win.webContents.on('will-redirect', stayHome);
+  updater.attach(win);
   win.loadURL('app://game/index.html');
 }
 
@@ -96,7 +110,9 @@ Menu.setApplicationMenu(null);
 app.whenReady().then(() => {
   // No camera, microphone, geolocation, notifications etc. are ever needed.
   session.defaultSession.setPermissionRequestHandler((_wc, _perm, cb) => cb(false));
-  serveDist();
+  updater.init();
+  updater.registerIpc();
+  serveGame();
   createWindow();
 });
 app.on('window-all-closed', () => app.quit());
