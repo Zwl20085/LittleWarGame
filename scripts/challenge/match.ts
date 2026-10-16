@@ -12,6 +12,7 @@ import { ROUND7_AB } from '../../src/sim/homeguard';
 const r7off = (process.env.R7_OFF ?? '').split(',').filter(Boolean);
 for (const k of Object.keys(ROUND7_AB) as (keyof typeof ROUND7_AB)[]) if (r7off.includes(k) || r7off.includes('all')) ROUND7_AB[k] = false;
 for (const k of (process.env.R7_ON ?? '').split(',').filter(Boolean)) if (k in ROUND7_AB) ROUND7_AB[k as keyof typeof ROUND7_AB] = true;
+import { createExpCollector } from './expLog';
 import { createSampler } from './metrics';
 import { strategyById } from './strategies';
 import type { ChallengeParams, ChallengeReport, StrategyCtx } from './types';
@@ -25,10 +26,11 @@ export interface ChallengeOptions {
   readonly mapId?: 'generated';
   /** 'fog': the AI factions only know what they see (the challenger stays omniscient: it reads the world). */
   readonly infoMode?: 'open' | 'fog';
+  readonly mapSize?: 'medium' | 'large';
   readonly data?: GameData;
 }
 
-export const DEFAULT_PARAMS: ChallengeParams = { rushAt: 300 };
+export const DEFAULT_PARAMS: ChallengeParams = { rushAt: 300, variant: '' };
 
 export function loadDataFromDisk(): GameData {
   return buildGameData(readFileSync('docs/data/units.csv', 'utf8'), readFileSync('docs/data/weapons.csv', 'utf8'), readFileSync('docs/data/rules.json', 'utf8'));
@@ -39,10 +41,10 @@ export function runChallengeMatch(opt: ChallengeOptions): ChallengeReport {
   const params: ChallengeParams = { ...DEFAULT_PARAMS, ...opt.params };
   const strategy = strategyById(opt.strategy);
   const match = createMatch(opt.data ?? loadDataFromDisk(), {
-    mapId: opt.mapId ?? 'generated', factions: 4, infoMode: opt.infoMode ?? 'open', seed: opt.seed, difficulty: 'normal', playerSlot: me, spectate: false,
+    mapId: opt.mapId ?? 'generated', mapSize: opt.mapSize ?? 'medium', factions: 4, infoMode: opt.infoMode ?? 'open', seed: opt.seed, difficulty: 'normal', playerSlot: me, spectate: !!strategy.aiOnly,
   });
   const w = match.world;
-  if (!w.factions[me]?.isPlayer) throw new Error(`challenger slot ${me} is not a player faction`);
+  if (!strategy.aiOnly && !w.factions[me]?.isPlayer) throw new Error(`challenger slot ${me} is not a player faction`);
   const bus = new CommandBus();
   let issued = 0;
   const failed: Record<string, number> = {};
@@ -66,13 +68,15 @@ export function runChallengeMatch(opt: ChallengeOptions): ChallengeReport {
     },
   };
   const sampler = createSampler(w, me);
+  const exp = createExpCollector(w);
   const t0 = performance.now();
   strategy.setup(ctx);
   const ticks = Math.round(opt.minutes * 60 * w.tickHz);
   for (let i = 0; i < ticks && !w.result; i++) {
     if (w.tick % w.tickHz === 0) {
-      if (w.factions[me].alive) strategy.tick(ctx);
+      if (!strategy.aiOnly && w.factions[me].alive) strategy.tick(ctx);
       sampler.second(attackS);
+      exp.second();
     }
     bus.flush(match);
     step(match);
@@ -90,7 +94,7 @@ export function runChallengeMatch(opt: ChallengeOptions): ChallengeReport {
   }
   const own = sampler.falls.find((x) => x.capital === me);
   return {
-    strategy: strategy.id, infoMode: opt.infoMode ?? 'open', r7off: r7off.join(','), seed: opt.seed, challenger: me, minutes: Math.round((w.time / 60) * 10) / 10,
+    strategy: strategy.id, infoMode: opt.infoMode ?? 'open', mapSize: opt.mapSize ?? 'medium', variant: params.variant, experience: exp.finish(!!w.result), r7off: r7off.join(','), seed: opt.seed, challenger: me, minutes: Math.round((w.time / 60) * 10) / 10,
     wallS: Math.round((performance.now() - t0) / 100) / 10,
     attackS, attackTarget, nearestAi,
     captures: sampler.falls.filter((x) => x.by === me),
