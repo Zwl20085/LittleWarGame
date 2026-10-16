@@ -1,0 +1,4 @@
+{
+  "minShell": "3.0.0",
+  "_minShell": "Oldest Electron shell (package.json version of the installer) that can run game bundles built from this tree. Bump it whenever electron/ or the preload API changes in a way the game depends on; older shells then download the full installer instead of the bundle."
+}

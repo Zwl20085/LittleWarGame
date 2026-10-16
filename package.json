@@ -10,7 +10,10 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "app": "npm run build && electron .",
-    "dist:win": "npm run build && electron-builder --win portable nsis"
+    "dist:win": "npm run build && electron-builder --win portable nsis",
+    "pack:game": "node scripts/release/pack.mjs",
+    "release:keygen": "node scripts/release/keygen.mjs",
+    "updater:e2e": "node scripts/release/updater-e2e.mjs"
   },
   "dependencies": {
     "three": "^0.169.0"
