@@ -40,6 +40,8 @@ export class AlertWatcher {
   /** Audio time until which music intensity is held high (HQ under attack). */
   dangerUntil = 0;
   cues = 0;
+  /** Count of "HQ under attack" cues played (read by the score's homeThreatened hook). */
+  threats = 0;
 
   constructor(private readonly mix: Mixer, private readonly playerId: number, private readonly spectator: boolean, private readonly enabled: boolean, w: World) {
     // Do not replay history that existed before this session started.
@@ -87,6 +89,7 @@ export class AlertWatcher {
     this.play(c.sound, gain, danger ? PRIO.danger : PRIO.own, CAT_ALERT, 0, 0);
     if (c.then) this.play(c.then, gain * 0.6, PRIO.own, CAT_ALERT, 0.7, 0.2);
     if (danger) {
+      if (l.key === 'log.hqUnderAttack') this.threats++;
       this.dangerUntil = now + 20;
       // Priority: pull the battle down so the warning reads clearly.
       const p = this.mix.sfxDuck.gain;
