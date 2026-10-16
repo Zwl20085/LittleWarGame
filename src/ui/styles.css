@@ -528,6 +528,8 @@ svg.brass-gauge .needle { transform-origin: 30px 31px; transition: transform 400
 .ts-update-k { font-family: var(--font-stencil); font-weight: 800; color: var(--danger); letter-spacing: 0.08em; text-transform: uppercase; font-size: var(--fs-s); }
 .ts-update-name { font-family: var(--font-title); font-size: var(--fs-m); margin: 4px 0 9px; overflow-wrap: anywhere; }
 .ts-update-btn { width: 100%; }
+.ts-update-bar { height: 6px; margin: 8px 0 2px; background: rgba(0, 0, 0, 0.18); border: 1px solid var(--brass); }
+.ts-update-bar > span { display: block; height: 100%; background: var(--brass); transition: width 300ms linear; }
 
 /* ---------- keyframes ---------- */
 @keyframes title-in { from { opacity: 0; transform: translateY(28%) scaleY(1.08); filter: blur(6px); } to { opacity: 1; transform: none; filter: none; } }

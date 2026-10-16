@@ -333,6 +333,7 @@ export function showTitle(root: HTMLElement, data: GameData, onStart: (cfg: Matc
     clearTimeout(focusTimer);
     clearTimeout(introTimer);
     offLang();
+    upd.dispose();
     battle.dispose();
     el.remove();
   };
