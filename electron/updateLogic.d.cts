@@ -42,6 +42,8 @@ export function sha256(buf: Uint8Array | string): string;
 export function checkManifest(args: { manifestBytes: Uint8Array; sigText: string; publicKey: string; shellVersion: string; feedVersion?: string }): ManifestCheck;
 export function checkPayload(expected: { size?: number; sha256: string }, actual: { size: number; sha256: string }): { ok: true } | { ok: false; stage: 'size' | 'sha256'; error: string };
 export function decide(args: { manifest: Manifest; kind: 'bundle' | 'installer'; servingVersion: string; installed?: readonly string[]; bad?: readonly string[] }): Decision;
+export function shellCompatible(manifestText: string, shellVersion: string): boolean;
+export function portableRelaunchPath(file: unknown, exists: (f: string) => boolean): string | null;
 export function pickInstaller(manifest: Manifest, isPortable: boolean): FileRef | null;
 export function normalizeState(raw: unknown): BundleState;
 export function pickServed(state: BundleState, installed: readonly string[], builtinVersion: string): string | null;

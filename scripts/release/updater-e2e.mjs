@@ -96,6 +96,23 @@ function killTree(child) {
   else child.kill('SIGKILL');
 }
 
+/**
+ * The shell takes a single-instance lock in its profile (Chromium's lockfile). After a hard kill
+ * the lockfile can stay held for a moment; wait until it is gone so the next launch is not
+ * mistaken for a second instance.
+ */
+async function releaseProfileLock(userData) {
+  const lock = join(userData, 'lockfile');
+  for (let i = 0; i < 40 && existsSync(lock); i++) {
+    try {
+      rmSync(lock, { force: true });
+    } catch {
+      // still held by a dying process
+    }
+    if (existsSync(lock)) await sleep(250);
+  }
+}
+
 /** Launch the shell on a profile and wait until `until(events)` is true (or time out). */
 async function runShell(profile, feedUrl, pubKey, until) {
   const log = join(profile, 'updater-log.jsonl');
@@ -125,6 +142,7 @@ async function runShell(profile, feedUrl, pubKey, until) {
   } finally {
     killTree(child);
     await sleep(800);
+    await releaseProfileLock(join(profile, 'userData'));
   }
 }
 
