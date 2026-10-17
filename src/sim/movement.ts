@@ -1,6 +1,6 @@
 import { COMBAT } from './config';
 import type { NavGrid } from './nav';
-import { groundMul, moveClassOf, transportRules } from './transport';
+import { groundMul, moveClassOf, transportRules, wheeledNav } from './transport';
 import { aboard, railLeg } from './rail';
 import { hostileMask } from './spatial';
 import type { Unit } from './types';
@@ -33,7 +33,8 @@ export function moveTo(world: World, u: Unit, dest: V2, force = false): void {
   const nav = world.navFor(u);
   // Long routes: vehicles share the most conservative vehicle grid (a route legal for a heavy
   // tank is legal for every vehicle) so all vehicle classes reuse the same cached flow fields.
-  const longNav = u.def.kind === 'vehicle' ? world.nav(true, 15) : nav;
+  // 3.0: wheeled vehicles (trucks) keep their own road-hugging grid (transport.ts wheeledNav).
+  const longNav = u.def.kind === 'vehicle' && !wheeledNav(world.data.rules, u.def) ? world.nav(true, 15) : nav;
   let res = dist(u.pos, dest) > 120 ? longNav.pathByField(u.pos, dest, PATH_HORIZON_CELLS) : nav.findPath(u.pos, dest, 4000);
   // The shared conservative grid can call a slope-side start or goal unreachable that this
   // unit's own class can climb (a light tank on an 18° bank): fall back to its own grid.

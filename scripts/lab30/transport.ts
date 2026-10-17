@@ -14,6 +14,7 @@
 //            convoy delivery time (truck leaves its stock → starts handing over), rail trips, cuts,
 //            engineer roads / repairs, sim ms per tick.
 // Output: media/stats/lab30/transport-<ts>.{json,md}.
+import { pointAlong, stationOwner } from '../../src/sim/rail';
 import { Ground } from '../../src/sim/terrain';
 import type { Match } from '../../src/sim/sim';
 import type { Unit } from '../../src/sim/types';
@@ -41,6 +42,22 @@ interface WarResult {
 const CROSS_CAP_S = 2400;
 const FORCE: [string, number][] = [['infantry', 8], ['motor_inf', 4], ['medium_tank', 4], ['at_gun', 2], ['supply_truck', 2]];
 
+/**
+ * Could faction f run trains on line `id` (both stations held, no hostile ground across)? The same
+ * test as rail.ts, computed here so every variant (rail off too) aims at the same destination.
+ */
+function runnable(m: Match, id: number, f: number): boolean {
+  const w = m.world;
+  const st = w.transport!;
+  const l = st.lines[id];
+  if (stationOwner(w, st.stations[l.a]) !== f || stationOwner(w, st.stations[l.b]) !== f) return false;
+  for (let s = 50; s < l.len; s += 100) {
+    const o = m.front.ownerAt(pointAlong(l.pts, l.cum, s));
+    if (o >= 0 && o !== f && w.isHostile(f, o)) return false;
+  }
+  return true;
+}
+
 /** The farthest station reachable over the map rail net from a faction's capital station, and its route stations. */
 function farthestStation(m: Match, fid: number, usableOnly = false): { dest: V2; stations: number[]; routeM: number } | null {
   const w = m.world;
@@ -58,7 +75,7 @@ function farthestStation(m: Match, fid: number, usableOnly = false): { dest: V2;
       const l = st.lines[lid];
       const o = l.a === cur ? l.b : l.a;
       // Never through another capital (its station is never ours).
-      if (st.stations[o].placeIdx < 0 || (usableOnly && l.owner !== fid)) continue;
+      if (st.stations[o].placeIdx < 0 || (usableOnly && !runnable(m, l.id, fid))) continue;
       const nd = d.get(cur)! + l.len;
       if (nd < (d.get(o) ?? Infinity)) { d.set(o, nd); via.set(o, cur); queue.push(o); }
     }
@@ -85,6 +102,13 @@ function runCross(t: Task): CrossResult {
     if (p && (!plan || p.routeM > plan.routeM)) { plan = p; fid = g.id; }
   }
   if (!plan) return { arrivedS: null, medianS: null, rode: 0, routeM: 0, straightM: 0, simMsPerTick: 0 };
+  // A pure movement test: the other factions leave the map (no fire, no front lines across the route).
+  for (const g of w.factions) {
+    if (g.id === fid) continue;
+    g.alive = false;
+    for (const u of w.aliveUnits) if (u.owner === g.id) u.hp = 0;
+  }
+  w.removeDead();
   for (const sid of plan.stations) {
     const pi = w.transport!.stations[sid].placeIdx;
     if (pi >= 0) w.objectives[pi].owner = fid;
@@ -118,6 +142,11 @@ function runCross(t: Task): CrossResult {
   const t0 = w.time;
   const s = runFor(m, CROSS_CAP_S, (sec) => {
     for (const u of force) if (u.rail?.stage === 'aboard') rode.add(u.id);
+    if (process.env.XDBG && (sec - t0) % 60 === 0) {
+      const u = force[0];
+      const near = w.spatial.query(u.pos.x, u.pos.z, 30).length;
+      console.log('TRACE', sec - t0, Math.round(u.pos.x), Math.round(u.pos.z), u.speedNow.toFixed(2), u.terrainMul.toFixed(2), u.moraleState, u.status, 'crowd', near, 'path', u.path.length, u.pathIdx, u.path[u.pathIdx] ? `${Math.round(u.path[u.pathIdx].x)},${Math.round(u.path[u.pathIdx].z)}` : '');
+    }
     if (process.env.XDBG && sec - t0 < 30 && sec % 5 === 0) console.log('DBG', sec, plan.stations.join('>'), w.transport!.lines.map((l) => l.owner).join(','), force.map((u) => u.rail?.stage ?? '-').join(','));
     for (const u of force) if (!arrivedAt.has(u.id) && u.hp > 0 && dist(u.pos, plan.dest) < 150) arrivedAt.set(u.id, sec - t0);
     const there = arrivedAt.size;

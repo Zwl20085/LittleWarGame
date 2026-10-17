@@ -45,15 +45,21 @@ export function groundMul(t: TransportRules | null, g: Ground, cls: MoveClass): 
 }
 
 /** Nav grid class → movement class used for its travel costs (vehicle grids: tracked, foot grids: infantry). */
-export const navMoveClass = (vehicle: boolean): MoveClass => (vehicle ? 'tracked' : 'infantry');
+export const navMoveClass = (vehicle: boolean, wheeled = false): MoveClass => (wheeled ? 'wheeled' : vehicle ? 'tracked' : 'infantry');
+
+/** Does this unit type route on the wheeled nav grid (transport on and class wheeled)? */
+export function wheeledNav(rules: Rules, def: UnitDef): boolean {
+  const t = transportRules(rules);
+  return !!t && moveClassOf(t, def) === 'wheeled';
+}
 
 /**
  * Travel-cost factor of ground `g` on a nav grid (1 / speed multiplier), with the ford penalty.
  * `hMul` is the A* heuristic factor: the cheapest cost per metre any cell can have.
  */
-export function navCostFns(rules: Rules, vehicle: boolean): { mul: (g: Ground) => number; ford: number; hMul: number } {
+export function navCostFns(rules: Rules, vehicle: boolean, wheeled = false): { mul: (g: Ground) => number; ford: number; hMul: number } {
   const t = transportRules(rules);
-  const cls = navMoveClass(vehicle);
+  const cls = navMoveClass(vehicle, wheeled);
   const ford = t?.ford_nav_cost ?? 1;
   let best = 0;
   for (const g of [Ground.Open, Ground.Road, Ground.Forest, Ground.Town, Ground.Mud]) best = Math.max(best, groundMul(t, g, cls));

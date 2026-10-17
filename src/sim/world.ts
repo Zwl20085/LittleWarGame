@@ -1,6 +1,6 @@
 import type { GameData } from '../data/types';
 import { NavGrid } from './nav';
-import { navCostFns } from './transport';
+import { navCostFns, wheeledNav } from './transport';
 import type { TransportState } from './transportstate';
 import { Rng } from './rng';
 import { SpatialHash } from './spatial';
@@ -138,19 +138,20 @@ export class World {
     return a !== b && (this.hostile[a]?.[b] ?? false);
   }
 
-  nav(vehicle: boolean, maxSlopeDeg: number): NavGrid {
+  /** `wheeled` (3.0): same walkability as the vehicle grid, wheeled off-road travel costs (trucks keep to roads). */
+  nav(vehicle: boolean, maxSlopeDeg: number, wheeled = false): NavGrid {
     // Numeric key: this is called several times per unit per tick (no string building).
-    const key = maxSlopeDeg * 2 + (vehicle ? 1 : 0);
+    const key = maxSlopeDeg * 2 + (vehicle ? 1 : 0) + (wheeled ? 1000 : 0);
     let g = this.navCache.get(key);
     if (!g) {
-      g = new NavGrid(this.terrain, { vehicle, maxSlopeDeg, ...navCostFns(this.data.rules, vehicle) });
+      g = new NavGrid(this.terrain, { vehicle, maxSlopeDeg, ...navCostFns(this.data.rules, vehicle, wheeled) });
       this.navCache.set(key, g);
     }
     return g;
   }
 
   navFor(u: Unit): NavGrid {
-    return this.nav(u.def.kind === 'vehicle', u.def.maxSlopeDeg);
+    return this.nav(u.def.kind === 'vehicle', u.def.maxSlopeDeg, u.def.kind === 'vehicle' && wheeledNav(this.data.rules, u.def));
   }
 
   emit(e: FxEvent): void {
