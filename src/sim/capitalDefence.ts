@@ -110,6 +110,15 @@ export function capitalDefenceSecond(world: World): void {
     if (!f?.alive) continue;
     const fort = p.fortId >= 0 ? world.fortById(p.fortId) : undefined;
     const crew = world.unitAlive(p.crewId);
+    // A beaten side's ring stands down (its crews leave): the attackers' storm planning must not
+    // read a lost war's capital as impregnable (soak: wars stalled with beaten capitals ringed).
+    if (crew && !ringSupported(world, p.owner)) {
+      if (crew.behavior !== 'evacuate') {
+        crew.behavior = 'evacuate';
+        crew.evacuateAt = world.time;
+      }
+      continue;
+    }
     if (crew) {
       // Thrown out by a collapse: back in once the concrete is repaired.
       if (fort && crew.fortId === null && fort.hp >= fort.maxHp * r.crew_min_hp_ratio) bindOccupant(world, crew, fort);

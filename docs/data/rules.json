@@ -206,7 +206,7 @@
     "captured_hp_ratio": 0.6,
     "rebuild_cost_ratio": 0.6,
     "max_per_faction": 6,
-    "beaten_output": 0.25,
+    "beaten_output": 0,
     "builders": 2
   },
   "capital_defence": {
