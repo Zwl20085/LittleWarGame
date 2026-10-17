@@ -539,6 +539,28 @@ contribution = sourceWeight * sqrt(HP_ratio) * moraleFactor
 - 驻防（2.1）：不推进的前线——守备 / 筑垒态势，或谨慎态势但指挥官正在守线（`mode = hold`）——的步兵进入战线 300 m 内或本前线筑垒地域线 80 m 内的完工建筑；进攻中的前线只留在战线 150 m 内的建筑。首都常备警卫驻首都 280 m 内建筑。`structures.zoneSlots / structureSlots` 给前线规划提供驻守点（每个建筑空位一个、每段战壕两个）。
 - 被压迫的城镇在已有接近壕时，M ≥ 3× 炮楼造价则在壕后加一座炮楼。
 
+### 10.2 单位升级（3.0，rules.json `upgrades`，docs/UPGRADES.md）
+
+最高统帅部以 P/M 购买，首都研究所一次研究一项（`seconds`），完成后经 src/sim/upgradestats.ts 的
+变体 UnitDef / WeaponDef 生效。价格 `p_k` / `m_k` 按 army_scale × army_scale_income_factor = 1 标定
+（默认 10 倍规模 ×2.5），每拥有一项，下一项贵 `escalation`（6 %）。取消研究返还 `cancel_refund_ratio`（80 %）。
+
+| 项 | 效果（`effects`） | 生效 |
+|---|---|---|
+| inf_guns 配属步兵炮 | 每班一门步兵炮：射程 260 m、10 s 一发、110 伤害 / 6 m 爆半径的曲射榴弹，只打工事、建筑、隐蔽之敌 | 城镇换装 |
+| ap_grenades 反坦克手雷 | 35 m 内对车辆：240 伤害、穿深 85，9 s 一枚 | 立即 |
+| motorization 全面摩托化 | 新步兵班乘卡车（同摩托化步兵的乘车规则）；老部队城镇换装 | 城镇换装 |
+| armour_1–3 坦克装甲 | 每级装甲 ×1.12、耐久 ×1.05、速度 ×0.97 | 城镇换装 |
+| gun_1–3 坦克火炮 | 每级穿深 +12、伤害 ×1.1、射程 ×1.04 | 城镇换装 |
+| arty_range 炮兵射程 | 迫击炮 / 榴弹炮射程 ×1.2 | 立即 |
+| truck_capacity 卡车载量 | 补给卡车载量 ×1.4 | 立即 |
+| eng_speed 工兵效率 | 工兵施工速度 ×1.5（工事、碉堡、浮桥、道路、铁路、工事升级、雷场） | 立即 |
+| staff 参谋部扩编 | 方面军编制门槛 ×0.8 | 立即 |
+
+AI（`ai`）：开局 `start_s` 后、首都无威胁、收入 ≥ `income_floor_k` 且 `trend_window_s` 内下降不超过
+`trend_drop` 时，按优先表（`upgradePriority(doctrine, personality)`）把收入的 `fund_share` 存入升级基金，
+基金加上储备以上的库存够付时开始研究。实验见 `scripts/lab30/upgrade.ts`。
+
 ## 11. 平衡推导与实验
 
 ### 11.1 经济尺度示例
