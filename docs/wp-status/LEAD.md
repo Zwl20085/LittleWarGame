@@ -27,13 +27,14 @@ its own note in this folder (`WP-*.md`) on its worktree branch `worktree-agent-<
 
 - WP-A doctrines (worktree-agent-ac07b57b1ae15b872) — merge 40ca104. Win matrix inside 25–75 %, fingerprints 71–77 % identifiable; pacing 0.89 elim/h on the merged tree (same with doctrines off; 2.2 was 1.33–1.78) → tuning pass. Open: backdoor 67 % (attrition seed 11) → WP-Y. Security review: no CRITICAL/HIGH; follow-ups not done: L3 per-file bundle re-verification, L6 Electron fuses, L9 key passphrase.
 
+- WP-SEC (worktree-agent-af59da2c7d0e452ce) — merged. WP-H upgrades (worktree-agent-a355e4433af39a02b) — merge 2bafd54. Open: value/cost lab too noisy to tune costs; rich-vs-poor ahead 12/12 but only 2/12 wars end in 60 min (1v1 pace); SPEAR_MOBILE ignores motorized squads; tank skirts/barrel unverified visually.
+- Code review (worktree-agent-a1d3da2905d495183): 0 CRITICAL, 3 HIGH, 10 MED → WP-REV; finding 13 (fronts.ts 938 lines, commands.apply 150 lines, updater.cjs closure) deferred to the perf/refactor round.
+
 ## Wave 2 running
 | WP | branch | status |
 |---|---|---|
-| H unit upgrades | worktree-agent-a355e4433af39a02b | running |
-| Y doctrine seams (rail raids, picket gap) + backdoor regression fix | (launched after A merge) | running |
-| SEC security-review fixes (M1–M4, L1,L2,L4,L5,L7,L8,L10–L12) | worktree-agent-af59da2c7d0e452ce | running (Sonnet) |
-| code review (read-only) of merged packages | worktree-agent-a1d3da2905d495183 | running |
+| Y doctrine seams (rail raids, picket gap, upgrade priority rows) + backdoor fix | worktree-agent-a64b488ed4b0a6047 | running |
+| REV code-review fixes (HIGH 1–3, MED 4–12) | worktree-agent-a454729feb76eab03 | running |
 
 ## Wave 1 agents still running (merge each when reported; typecheck + tests after every merge)
 | WP | branch | status |
