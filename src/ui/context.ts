@@ -14,7 +14,9 @@ export type InputMode =
   | { kind: 'directive'; directive: DirectiveKind }
   /** 3.0 engineering map picks: a road a -> b (a = first point), or a station then a town for a rail extension. */
   | { kind: 'engineer'; tool: 'road'; a: V2 | null }
-  | { kind: 'engineer'; tool: 'extend'; station: number | null };
+  | { kind: 'engineer'; tool: 'extend'; station: number | null }
+  /** 3.0: siting an economic zone (click on the map; econZones.ts). */
+  | { kind: 'placeZone' };
 
 /** Shared state between the loop, input handling and HUD panels. */
 export interface GameContext {

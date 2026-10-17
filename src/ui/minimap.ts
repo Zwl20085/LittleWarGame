@@ -1,6 +1,7 @@
 import { frontOrderShape, ORDER_COLOR, ZONE_COLOR } from '../render/orderLines';
 import { CONTESTED, NEUTRAL, type FrontlineField } from '../sim/frontline';
 import { Ground } from '../sim/terrain';
+import { observationRadius } from '../sim/capitalDefence';
 import type { GameContext } from './context';
 import { h, setText } from './dom';
 import { t } from './i18n';
@@ -257,6 +258,35 @@ export class MinimapPanel {
       g.fillStyle = f.alive ? f.color : '#555';
       g.fillRect(c.x * this.scale - 5, c.z * this.scale - 5, 10, 10);
       g.strokeRect(c.x * this.scale - 5, c.z * this.scale - 5, 10, 10);
+    }
+    // 3.0: the capital observation ring (fog mode) and the economic zones.
+    const ring = observationRadius(w);
+    const me = w.factions[this.ctx.playerId];
+    if (ring > 0 && me?.alive && !this.ctx.spectator) {
+      const c = w.hqPos(me.id);
+      g.save();
+      g.strokeStyle = me.color;
+      g.globalAlpha = 0.7;
+      g.setLineDash([4, 3]);
+      g.lineWidth = 1.2;
+      g.beginPath();
+      g.arc(c.x * this.scale, c.z * this.scale, ring * this.scale, 0, Math.PI * 2);
+      g.stroke();
+      g.restore();
+    }
+    for (const z of w.econZones) {
+      const x = z.pos.x * this.scale;
+      const y = z.pos.z * this.scale;
+      g.fillStyle = z.ruined ? '#555' : w.factions[z.owner]?.color ?? '#888';
+      g.strokeStyle = '#1f231e';
+      g.beginPath();
+      g.moveTo(x, y - 4);
+      g.lineTo(x + 4, y);
+      g.lineTo(x, y + 4);
+      g.lineTo(x - 4, y);
+      g.closePath();
+      g.fill();
+      g.stroke();
     }
     const fog = w.config.infoMode === 'fog' && !this.ctx.spectator;
     for (const u of w.units.values()) {

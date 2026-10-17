@@ -6,6 +6,7 @@ import type { Match } from './sim';
 import { DIRECTIVE_KINDS, DIRECTIVE_LINE_MIN_M, setDirective } from './directive';
 import { insisted } from './compliance';
 import { releaseFund } from './econai';
+import { applyWorks } from './worksCommands';
 import { applyDirectiveNow } from './theatre';
 import type { DirectiveKind, Unit } from './types';
 import { startRailExtension, startRailRepair, startRoadJob, type JobResult } from './transportjobs';
@@ -41,6 +42,11 @@ export type Command =
   | { type: 'setDirective'; kind: DirectiveKind; axis?: V2; line?: { a: V2; b: V2 }; force?: boolean }
   /** 2.1: stop a fortified-zone project (works already standing remain). */
   | { type: 'cancelZone'; zoneId: number }
+  /** 3.0: found an economic zone at a point / raise or rebuild one (econZones.ts); upgrade a work or lay a minefield (worksTiers.ts). */
+  | { type: 'buildZone'; pos: V2 }
+  | { type: 'upgradeZone'; zoneId: number }
+  | { type: 'upgradeWork'; fortId: number }
+  | { type: 'layMines'; pos: V2; facing: number }
   | { type: 'unitOrder'; unitIds: number[]; order: 'move' | 'moveHold' | 'attackMove' | 'retreat' | 'hold' | 'resume'; pos?: V2; queue?: boolean }
   | { type: 'focus'; unitIds: number[]; targetId: number }
   /** 3.0 engineers: lay a road a -> b (<= road_job.max_len_m; bridges short gaps). */
@@ -53,7 +59,7 @@ export type Command =
 export type CommandFail =
   | 'FACTION_DEAD' | 'NOT_OWNER' | 'STALE_TARGET' | 'UNREACHABLE' | 'BAD_VALUE' | 'ROUTING'
   | 'LOCKED' | 'INSUFFICIENT_M' | 'INSUFFICIENT_P' | 'OUT_OF_BOUNDS' | 'NO_ORDER' | 'NO_FRONT' | 'NO_SLOT' | 'CONTESTED'
-  | 'LINE_SHORT' | 'LINE_ONLY_FORTIFY'
+  | 'LINE_SHORT' | 'LINE_ONLY_FORTIFY' | 'BAD_SITE' | 'MAX_LEVEL' | 'BUSY'
   | 'TOO_LONG' | 'BAD_TERRAIN' | 'NOT_CUT' | 'JOB_BUSY' | 'NOT_HELD' | 'HAS_STATION' | 'TRANSPORT_OFF';
 
 export interface CommandEnvelope {
@@ -141,6 +147,11 @@ function apply(match: Match, env: CommandEnvelope): CommandOutcome {
       if (typeof r !== 'string') return OK;
       return fail(r === 'INSUFFICIENT_P' || r === 'INSUFFICIENT_M' || r === 'NOT_OWNER' || r === 'NO_SLOT' ? r : r === 'CONTESTED' ? 'CONTESTED' : 'BAD_VALUE');
     }
+    case 'buildZone':
+    case 'upgradeZone':
+    case 'upgradeWork':
+    case 'layMines':
+      return applyWorks(match, f, c);
     case 'cancelOrder':
       return cancelOrder(w, f, c.orderId) ? OK : fail('NO_ORDER');
     case 'setAlloc': {

@@ -105,6 +105,7 @@ export function buildGameData(unitsCsv: string, weaponsCsv: string, rulesJson: s
   validateDefensive(rules.construction?.defensive, units, weapons);
   validateLogistics(rules);
   validateFrontRules(rules.fronts, rules.command.compliance_threshold, rules.command.compliance);
+  validateZones(rules, units);
   // 2.2 endurance (V22_SPEC §3.1): one documented lever, every weapon's ammo cost × multiplier.
   const ammoMul = rules.logistics?.ammo_cost_multiplier ?? 1;
   const effWeapons = ammoMul === 1 ? weapons : new Map([...weapons].map(([id, w]) => [id, { ...w, ammoCost: w.ammoCost * ammoMul }]));
@@ -138,18 +139,54 @@ function validateDefensive(d: DefensiveRules | undefined, units: Map<string, Uni
   if (!d || !Array.isArray(d.structures)) throw new Error('rules.json: construction.defensive.structures is required');
   const seen = new Set<string>();
   for (const s of d.structures) {
-    if (s.id !== 'pillbox' && s.id !== 'bunker') throw new Error(`rules.json: unknown defensive structure "${s.id}"`);
+    if (!STRUCTURE_IDS.includes(s.id)) throw new Error(`rules.json: unknown defensive structure "${s.id}"`);
     if (seen.has(s.id)) throw new Error(`rules.json: duplicate defensive structure "${s.id}"`);
     seen.add(s.id);
     if (!(s.max_hp > 0) || !(s.work_seconds > 0)) throw new Error(`rules.json: ${s.id} needs max_hp > 0 and work_seconds > 0`);
     if (s.cost_p < 0 || s.cost_m < 0) throw new Error(`rules.json: ${s.id} has a negative cost`);
     if (!(s.capacity >= 1) || s.max_crews < 0 || s.max_crews > s.capacity) throw new Error(`rules.json: ${s.id} capacity / max_crews invalid`);
     if (s.weapon !== null && !weapons.has(s.weapon)) throw new Error(`rules.json: ${s.id} references unknown weapon "${s.weapon}"`);
-    if (s.fire_mul && !(s.fire_mul.damage > 0 && s.fire_mul.range > 0)) throw new Error(`rules.json: ${s.id} fire_mul needs damage > 0 and range > 0`);
+    if (s.fire_mul && !(s.fire_mul.damage > 0 && s.fire_mul.range > 0 && (s.fire_mul.accuracy ?? 1) > 0)) throw new Error(`rules.json: ${s.id} fire_mul needs damage, range (and accuracy) > 0`);
+    if (s.absorb_share !== undefined && !(s.absorb_share >= 0 && s.absorb_share <= 1)) throw new Error(`rules.json: ${s.id} absorb_share must be in [0, 1]`);
     for (const id of s.accepts) if (!units.has(id)) throw new Error(`rules.json: ${s.id} accepts unknown unit "${id}"`);
   }
+  validateTiers(d, seen);
   const g = d.garrison;
   if (!g || !(g.enter_radius_m > 0) || !(g.leave_radius_m >= g.enter_radius_m) || g.absorb_share < 0 || g.absorb_share > 1) {
     throw new Error('rules.json: construction.defensive.garrison invalid');
+  }
+}
+
+const STRUCTURE_IDS: readonly string[] = ['pillbox', 'bunker', 'fortress', 'at_emplacement', 'strongpoint'];
+
+/** rules.json `construction.defensive.tiers` (3.0): upgrades between known kinds, a sane minefield. */
+function validateTiers(d: DefensiveRules, kinds: ReadonlySet<string>): void {
+  const t = d.tiers;
+  if (!t) return;
+  for (const u of t.upgrades ?? []) {
+    const known = (k: string): boolean => kinds.has(k) || k === 'trench';
+    if (!known(u.from) || !known(u.to)) throw new Error(`rules.json: tiers upgrade ${u.from} → ${u.to} names an unknown work`);
+    if (!(u.work_seconds > 0) || u.cost_p < 0 || u.cost_m < 0) throw new Error(`rules.json: tiers upgrade ${u.from} → ${u.to} invalid cost / work`);
+  }
+  const m = t.minefield;
+  if (!m || !(m.max_hp > 0) || !(m.charge_hp > 0) || !(m.length_m > 0) || !(m.depth_m > 0) || !(m.work_seconds > 0)) throw new Error('rules.json: tiers.minefield invalid');
+  if (!(m.vehicle_speed_mul > 0 && m.vehicle_speed_mul <= 1) || !(m.trigger_chance_per_second >= 0 && m.trigger_chance_per_second <= 1)) throw new Error('rules.json: tiers.minefield speed / chance out of range');
+}
+
+/** rules.json `econ_zones` and `capital_defence` (3.0). */
+function validateZones(rules: Rules, units: Map<string, UnitDef>): void {
+  const z = rules.econ_zones;
+  if (z) {
+    if (!Array.isArray(z.levels) || z.levels.length < 1) throw new Error('rules.json: econ_zones.levels must list at least one level');
+    for (const [i, l] of z.levels.entries()) {
+      if (!(l.max_hp > 0) || !(l.work_seconds > 0) || l.cost_p < 0 || l.cost_m < 0) throw new Error(`rules.json: econ_zones.levels[${i}] invalid`);
+    }
+    if (!(z.unlinked_output >= 0 && z.unlinked_output <= 1)) throw new Error('rules.json: econ_zones.unlinked_output must be in [0, 1]');
+    if (!(z.captured_hp_ratio > 0 && z.captured_hp_ratio <= 1)) throw new Error('rules.json: econ_zones.captured_hp_ratio must be in (0, 1]');
+  }
+  const c = rules.capital_defence;
+  if (c) {
+    if (!units.has(c.crew_unit) || !units.has(c.artillery_unit)) throw new Error('rules.json: capital_defence crew_unit / artillery_unit must name units in units.csv');
+    if (!(c.radius_m > 0) || c.strongpoints < 0 || !(c.observation?.radius_m > 0)) throw new Error('rules.json: capital_defence radius / strongpoints / observation invalid');
   }
 }

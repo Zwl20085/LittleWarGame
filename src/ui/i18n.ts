@@ -1,4 +1,5 @@
 import { COMMAND_EN, COMMAND_ZH } from './i18n-command';
+import { WORKS_EN, WORKS_ZH } from './i18n-works';
 
 export type Lang = 'zh' | 'en';
 
@@ -401,7 +402,7 @@ export function t(key: string, params: Record<string, string | number> = {}): st
   const dict = current === 'zh' ? zh : en;
   // 2.2 command strings first (they also replace the 2.1 per-front order texts).
   const cmd = current === 'zh' ? COMMAND_ZH : COMMAND_EN;
-  const raw = cmd[key] ?? dict[key] ?? COMMAND_EN[key] ?? en[key] ?? key;
+  const raw = cmd[key] ?? dict[key] ?? (current === 'zh' ? WORKS_ZH : WORKS_EN)[key] ?? COMMAND_EN[key] ?? en[key] ?? WORKS_EN[key] ?? key;
   return raw.replace(/\{(\w+)\}/g, (_, k: string) => String(params[k] ?? `{${k}}`));
 }
 

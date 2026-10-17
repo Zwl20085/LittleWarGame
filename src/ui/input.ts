@@ -99,6 +99,12 @@ export class InputController {
     const m = this.ctx.mode;
     this.ctx.mode = { kind: 'normal' };
     if (!p) return;
+    if (m.kind === 'placeZone') {
+      this.ctx.issue({ type: 'buildZone', pos: p });
+      this.ctx.renderer.orderMarker(p, '#d8b45a');
+      if (e.shiftKey) this.ctx.mode = { kind: 'placeZone' };
+      return;
+    }
     if (m.kind === 'attackMove') {
       const ids = [...this.ctx.renderer.units.selected];
       this.ctx.issue({ type: 'unitOrder', unitIds: ids, order: 'attackMove', pos: p, queue: e.shiftKey });
@@ -293,7 +299,10 @@ export class InputController {
     }
     const u = this.ctx.renderer.units.pick(this.ndc(e), cam, 20, this.viewport(), () => true);
     // 2.2 (logistics): a click on empty ground opens the town panel of the place under it (or closes it).
-    this.hud.town.pickAt(u ? null : this.ctx.renderer.groundAt(this.ndc(e)));
+    // 3.0: an economic zone under the click opens its panel instead.
+    const ground = u ? null : this.ctx.renderer.groundAt(this.ndc(e));
+    if (this.hud.zone.pickAt(ground)) this.hud.town.pickAt(null);
+    else this.hud.town.pickAt(ground);
     if (!u) return;
     if (this.mine(u)) {
       if (additive && sel.has(u.id)) sel.delete(u.id);

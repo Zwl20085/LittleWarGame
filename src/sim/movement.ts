@@ -9,6 +9,7 @@ import type { World } from './world';
 import { updateWorksCover } from './works';
 import { isStructure, updateStructureGarrison } from './structures';
 import { pocketExit } from './pocket';
+import { mineSpeedMul } from './minefields';
 
 /** Set a movement destination; path is (re)computed lazily and rate-limited. */
 export function moveTo(world: World, u: Unit, dest: V2, force = false): void {
@@ -192,6 +193,8 @@ export function speedOf(world: World, u: Unit, heading: number): number {
   s *= status;
   if (veh && u.hp < u.def.maxHp * 0.25) s *= COMBAT.lowHpVehicleSpeedMul;
   if (veh && u.ammo <= 0) s *= world.data.rules.supply.empty_vehicle_speed_multiplier;
+  // 3.0: minefields slow hostile vehicles (minefields.ts).
+  if (veh) s *= mineSpeedMul(world, u);
   return s;
 }
 
