@@ -72,8 +72,8 @@ export class GameRenderer {
   /** 3.0: time-of-day drift (dawn → noon → dusk) and the high-tier tilt-shift at low angles. */
   readonly day: DayCycle;
   private readonly tilt = new TiltShift();
-  /** Player setting: light depth blur at low close-in angles (high tier only). */
-  depthBlur = true;
+  /** Player setting: light depth blur at low close-in angles (high tier only; off by default). */
+  depthBlur = false;
   private readonly objectiveMarkers: ObjectiveMarkers;
   private readonly fortViews = new Map<number, THREE.Group>();
   private readonly pontoonViews = new Map<number, PontoonView>();

@@ -97,6 +97,11 @@ export interface CameraModesOptions {
   readonly still?: boolean;
   /** Fallback battle spot when no fight is hot (e.g. where hostile units mix). */
   readonly fallback?: () => Hotspot | null;
+  /**
+   * Fog of war: what the player can see now (null = everything, e.g. spectating). Battle cam
+   * only counts and films fights at seen places, so it never reveals hidden enemies.
+   */
+  readonly seen?: () => ((x: number, z: number) => boolean) | null;
 }
 
 export class CameraModes {
@@ -144,7 +149,7 @@ export class CameraModes {
 
   /** Feed the frame's fx events (before the renderer consumes them). */
   ingest(events: readonly FxEvent[]): void {
-    this.heat.ingest(events);
+    this.heat.ingest(events, this.opts.seen?.() ?? null);
   }
 
   setMode(mode: CameraMode, follow?: FollowRef): boolean {
@@ -348,7 +353,7 @@ export class CameraModes {
   private cut(hard: boolean): void {
     const B = CAM.battle;
     const prev = this.shot?.spot ?? null;
-    const spot = this.heat.hottest(prev) ?? this.opts.fallback?.() ?? null;
+    const spot = this.heat.hottest(prev, undefined, undefined, this.opts.seen?.() ?? null) ?? this.opts.fallback?.() ?? null;
     if (!spot) {
       this.shot = null;
       this.retryIn = B.retry;

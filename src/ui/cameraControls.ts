@@ -1,4 +1,4 @@
-import type { Hotspot } from '../render/battleHeat';
+import { SeenMask, type Hotspot } from '../render/battleHeat';
 import { CAMERA_MODES, CameraModes, type CameraMode } from '../render/cameraModes';
 import type { GameContext } from './context';
 import { h } from './dom';
@@ -13,6 +13,8 @@ export const CAMERA_KEYS = { orbit: 'o', battle: 'k', follow: 'f', overview: 'ta
 const TILT_STEP = 5;
 /** Battle-cam fallback when nothing is firing: where hostile units mix (cell size, m). */
 const MIX_CELL = 120;
+/** Fog of war: the battle cam's seen-places mask is rebuilt this often (real s). */
+const SEEN_REFRESH = 0.4;
 
 /**
  * Camera-mode keys, the HUD mode strip and the dip-to-black for battle-cam cuts. One instance
@@ -25,6 +27,9 @@ export class CameraControls {
   private readonly buttons = new Map<CameraMode, HTMLButtonElement>();
   private readonly label: HTMLElement;
   private readonly offLang: () => void;
+  /** Fog of war: where the player can see (battle cam never films anywhere else). */
+  private readonly seenMask: SeenMask;
+  private seenTimer = 0;
 
   constructor(private readonly ctx: GameContext, private readonly expandedFront: () => number | null) {
     this.dip = h('div', { class: 'cam-dip', 'aria-hidden': 'true' });
@@ -35,7 +40,9 @@ export class CameraControls {
       onDip: (on) => this.dip.classList.toggle('dip', on),
       still: prefersReducedMotion(),
       fallback: () => this.mixSpot(),
+      seen: () => (this.fogOn() ? this.seenMask.has : null),
     });
+    this.seenMask = new SeenMask(w.terrain.width, w.terrain.depth);
     this.label = h('span', { class: 'lbl' });
     for (const m of CAMERA_MODES) {
       this.buttons.set(m, h('button', { class: 'key cam-key', onclick: () => this.pick(m) }));
@@ -105,8 +112,30 @@ export class CameraControls {
 
   /** Per frame (real seconds), before the renderer consumes this frame's fx. */
   update(dt: number): void {
+    if (this.fogOn()) {
+      this.seenTimer -= dt;
+      if (this.seenTimer <= 0) {
+        this.seenTimer = SEEN_REFRESH;
+        this.seenMask.rebuild(this.seenPoints());
+      }
+    }
     this.modes.ingest(this.ctx.match.world.fx);
     this.modes.update(dt);
+  }
+
+  /** Fog applies (playing in fog mode, alive; spectators and the defeated see everything). */
+  private fogOn(): boolean {
+    return this.ctx.renderer.fog && !this.ctx.spectator;
+  }
+
+  /** Can the player see this unit (own, or an enemy currently observed)? */
+  private seesUnit(u: { readonly id: number; readonly owner: number }): boolean {
+    const pid = this.ctx.playerId;
+    return !this.fogOn() || u.owner === pid || !!this.ctx.match.world.visibleTo[pid]?.has(u.id);
+  }
+
+  private *seenPoints(): Iterable<{ x: number; z: number }> {
+    for (const u of this.ctx.match.world.units.values()) if (u.hp > 0 && this.seesUnit(u)) yield u.pos;
   }
 
   /** Where hostile units are mixing (used only when no fight produced fx heat). */
@@ -115,7 +144,7 @@ export class CameraControls {
     const cols = Math.max(1, Math.ceil(w.terrain.width / MIX_CELL));
     const cells = new Map<number, Map<number, number>>();
     for (const u of w.units.values()) {
-      if (u.hp <= 0 || u.fixed) continue;
+      if (u.hp <= 0 || u.fixed || !this.seesUnit(u)) continue;
       const key = Math.floor(u.pos.z / MIX_CELL) * cols + Math.floor(u.pos.x / MIX_CELL);
       let c = cells.get(key);
       if (!c) cells.set(key, (c = new Map()));

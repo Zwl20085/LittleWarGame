@@ -86,10 +86,11 @@ export class HeatGrid {
     this.sz[k] += z * w;
   }
 
-  ingest(events: readonly FxEvent[]): void {
+  /** `seen` (fog of war): only events at places the player can see add heat. */
+  ingest(events: readonly FxEvent[], seen: ((x: number, z: number) => boolean) | null = null): void {
     for (const e of events) {
       const h = fxHeat(e);
-      if (h) this.add(h.x, h.z, h.w);
+      if (h && (!seen || seen(h.x, h.z))) this.add(h.x, h.z, h.w);
     }
   }
 
@@ -139,14 +140,14 @@ export class HeatGrid {
    * consecutive cuts show different places; falls back to the hottest overall. Null when nothing
    * scores `minScore`.
    */
-  hottest(avoid: { x: number; z: number } | null = null, avoidRadius: number = HEAT.avoidRadius, minScore: number = HEAT.minScore): Hotspot | null {
+  hottest(avoid: { x: number; z: number } | null = null, avoidRadius: number = HEAT.avoidRadius, minScore: number = HEAT.minScore, seen: ((x: number, z: number) => boolean) | null = null): Hotspot | null {
     let best: Hotspot | null = null;
     let bestFar: Hotspot | null = null;
     const r2 = avoidRadius * avoidRadius;
     for (let k = 0; k < this.heat.length; k++) {
       if (this.heat[k] === 0) continue;
       const b = this.block(k);
-      if (b.score < minScore) continue;
+      if (b.score < minScore || (seen && !seen(b.x, b.z))) continue;
       if (!best || b.score > best.score) best = b;
       const far = !avoid || (b.x - avoid.x) ** 2 + (b.z - avoid.z) ** 2 > r2;
       if (far && (!bestFar || b.score > bestFar.score)) bestFar = b;
@@ -159,4 +160,45 @@ export class HeatGrid {
     this.sx.fill(0);
     this.sz.fill(0);
   }
+}
+
+/**
+ * Fog of war for the battle cam: the cells (and their neighbours, ~1–2 cells) around the
+ * player's own units and the enemy units the player currently sees. A fight elsewhere is never
+ * filmed, so the camera cannot reveal hidden enemies. Rebuilt a few times a second.
+ */
+export class SeenMask {
+  readonly cols: number;
+  readonly rows: number;
+  private readonly cells: Uint8Array;
+
+  constructor(width: number, depth: number, readonly cell: number = HEAT.cell) {
+    this.cols = Math.max(1, Math.ceil(width / cell));
+    this.rows = Math.max(1, Math.ceil(depth / cell));
+    this.cells = new Uint8Array(this.cols * this.rows);
+  }
+
+  private ij(v: number, n: number): number {
+    return Math.min(n - 1, Math.max(0, Math.floor(v / this.cell)));
+  }
+
+  /** Rebuild from the positions the player can see (own units and visible enemies). */
+  rebuild(points: Iterable<{ readonly x: number; readonly z: number }>): void {
+    this.cells.fill(0);
+    for (const p of points) {
+      if (!Number.isFinite(p.x) || !Number.isFinite(p.z)) continue;
+      const i = this.ij(p.x, this.cols);
+      const j = this.ij(p.z, this.rows);
+      for (let dj = -1; dj <= 1; dj++) {
+        const jj = j + dj;
+        if (jj < 0 || jj >= this.rows) continue;
+        for (let di = -1; di <= 1; di++) {
+          const ii = i + di;
+          if (ii >= 0 && ii < this.cols) this.cells[jj * this.cols + ii] = 1;
+        }
+      }
+    }
+  }
+
+  readonly has = (x: number, z: number): boolean => this.cells[this.ij(z, this.rows) * this.cols + this.ij(x, this.cols)] === 1;
 }

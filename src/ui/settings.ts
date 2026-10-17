@@ -14,12 +14,12 @@ export interface Settings {
   readonly checkUpdates: boolean;
   /** 3.0: time-of-day drift over the war (off = the fixed 2.x late-afternoon light). */
   readonly dayCycle: boolean;
-  /** 3.0: light tilt-shift at low close-in angles (high quality tier only). */
+  /** 3.0: light tilt-shift at low close-in angles (high quality tier only; off by default — ~0.6 ms). */
   readonly depthBlur: boolean;
 }
 
 const KEY = 'lwg.settings';
-const DEFAULTS: Settings = { uiScale: 1, smoke: 1, shake: true, volMaster: 0.8, volMusic: 0.55, volSfx: 0.8, muted: false, quality: 'auto', checkUpdates: true, dayCycle: true, depthBlur: true };
+const DEFAULTS: Settings = { uiScale: 1, smoke: 1, shake: true, volMaster: 0.8, volMusic: 0.55, volSfx: 0.8, muted: false, quality: 'auto', checkUpdates: true, dayCycle: true, depthBlur: false };
 const QUALITIES: readonly Settings['quality'][] = ['auto', 'high', 'medium', 'low'];
 
 const clamp = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v));

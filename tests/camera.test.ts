@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { HeatGrid, HEAT } from '../src/render/battleHeat';
+import { HeatGrid, HEAT, SeenMask } from '../src/render/battleHeat';
 import { CAM, CameraModes, nearestTurn, type CamRig, type CamWorld } from '../src/render/cameraModes';
 import { LIGHT } from '../src/render/atmosphere';
 import { DAY, dayPhase, daylightAt } from '../src/render/timeOfDay';
@@ -223,6 +223,42 @@ describe('camera mode state machine', () => {
     expect(m.lastMode).toBe('battle');
     m.toggleRemembered();
     expect(m.mode).toBe('battle');
+  });
+});
+
+describe('battle cam under fog of war', () => {
+  it('only counts fights near units the player can see', () => {
+    const mask = new SeenMask(4000, 3000);
+    // Own unit at (1000, 1000); a seen enemy at (3500, 500). The big fight at (3000, 2500) is hidden.
+    mask.rebuild([{ x: 1000, z: 1000 }, { x: 3500, z: 500 }]);
+    expect(mask.has(1050, 1080)).toBe(true);
+    expect(mask.has(3000, 2500)).toBe(false);
+    const g = new HeatGrid(4000, 3000);
+    g.ingest(boom(3000, 2500, 30), mask.has);
+    expect(g.hottest()).toBeNull();
+    g.ingest(boom(1000, 1000, 3), mask.has);
+    expect(g.hottest()!.x).toBeCloseTo(1000);
+  });
+
+  it('never cuts to a hidden fight; spectators (no mask) see everything', () => {
+    const mask = new SeenMask(4000, 3000);
+    mask.rebuild([{ x: 1000, z: 1000 }]);
+    let fog = true;
+    const rig = new FakeRig();
+    const m = new CameraModes(rig, world(), { rng: () => 0.5, seen: () => (fog ? mask.has : null) });
+    m.ingest(boom(3000, 2500, 30));
+    m.ingest(boom(1000, 1000, 4));
+    m.setMode('battle');
+    expect(m.battleSpot!.x).toBeCloseTo(1000);
+    // Stale heat from before the fog check is also refused at pick time.
+    const g = new HeatGrid(4000, 3000);
+    g.ingest(boom(3000, 2500, 30));
+    expect(g.hottest(null, undefined, undefined, mask.has)).toBeNull();
+    fog = false;
+    m.exit();
+    m.ingest(boom(3000, 2500, 30));
+    m.setMode('battle');
+    expect(m.battleSpot!.x).toBeCloseTo(3000);
   });
 });
 
