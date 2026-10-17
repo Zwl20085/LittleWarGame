@@ -291,6 +291,10 @@ export class InputController {
       case 'u':
         this.ctx.hudHidden = !this.ctx.hudHidden;
         break;
+      case 'y':
+        // 3.0 Upgrades panel.
+        if (!this.ctx.spectator) this.hud.upgrades.toggle();
+        break;
       case 'z': case 'x': case 'c': case 'v': case 'b':
         if (!this.ctx.spectator) {
           this.clearPreview();

@@ -5,6 +5,7 @@ import type {
 } from './types';
 import type { V2 } from './vec';
 import { applyTransport, mirrorRide, packTransport, type TransportSnap } from './transportsnap';
+import { refit } from './upgradestats';
 
 /**
  * Worker → main-thread state transfer. The worker owns the authoritative simulation; the main
@@ -22,9 +23,9 @@ const F = {
   id: 0, owner: 1, def: 2, x: 3, z: 4, px: 5, pz: 6, y: 7, heading: 8, turret: 9, hp: 10, morale: 11, supp: 12,
   ammo: 13, supplyRatio: 14, setup: 15, flags: 16, moraleState: 17, behavior: 18, target: 19, front: 20, cargo: 21,
   truck: 22, fort: 23, cover: 24, vseed: 25, lastDamaged: 26, lastFired: 27, status: 28, speed: 29, lastSupplied: 30,
-  setupTimer: 31, fixedFacing: 32,
+  setupTimer: 31, fixedFacing: 32, upg: 33,
 } as const;
-const STRIDE = 33;
+const STRIDE = 34;
 
 export interface Snapshot {
   readonly tick: number;
@@ -129,7 +130,7 @@ export function makeSnapshot(match: Match, cur: SnapshotCursor, observer: number
     buf[o + F.truck] = TRUCK.indexOf(u.truckState); buf[o + F.fort] = u.fortId ?? -1; buf[o + F.cover] = u.cover;
     buf[o + F.vseed] = u.vseed; buf[o + F.lastDamaged] = u.lastDamagedAt; buf[o + F.lastFired] = u.lastFiredAt;
     buf[o + F.status] = st; buf[o + F.speed] = u.speedNow; buf[o + F.lastSupplied] = u.lastSuppliedAt;
-    buf[o + F.setupTimer] = u.setupTimer; buf[o + F.fixedFacing] = u.fixedFacing;
+    buf[o + F.setupTimer] = u.setupTimer; buf[o + F.fixedFacing] = u.fixedFacing; buf[o + F.upg] = u.upg;
     if (u.manual || u.queue.length) manual.push([u.id, u.manual, u.queue.length]);
   });
   // The status table is tiny (a few dozen keys); send it whole.
@@ -194,6 +195,8 @@ export function applySnapshot(match: Match, snap: Snapshot, observer: number): v
       const fixed = (buf[o + F.flags] & 16) !== 0;
       u = w.spawnUnit(buf[o + F.owner], def.id, { x: buf[o + F.x], z: buf[o + F.z] }, buf[o + F.front], { fixed, mirrorId: id });
     }
+    // 3.0 upgrades: the mirror swaps in the same variant def (unit card, render) before the hp is copied.
+    if (u.upg !== buf[o + F.upg]) refit(w, u, buf[o + F.upg]);
     u.pos.x = buf[o + F.x]; u.pos.z = buf[o + F.z]; u.prev.x = buf[o + F.px]; u.prev.z = buf[o + F.pz]; u.y = buf[o + F.y];
     u.heading = buf[o + F.heading]; u.turret = buf[o + F.turret]; u.hp = buf[o + F.hp]; u.morale = buf[o + F.morale];
     u.suppression = buf[o + F.supp]; u.ammo = buf[o + F.ammo]; u.supplyRatio = buf[o + F.supplyRatio];

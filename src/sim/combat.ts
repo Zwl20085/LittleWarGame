@@ -14,6 +14,7 @@ import { hostileMask } from './spatial';
 import { barrageBonus, barrageFocus, frontAccuracyMul } from './frontTiers';
 import { angleDiff, DEG, dist, headingTo, turnToward, type V2 } from './vec';
 import type { World } from './world';
+import { kitFire } from './upgradekit';
 
 /**
  * Reusable result arrays for the spatial queries below (no per-call allocation). Each call site
@@ -245,6 +246,8 @@ export function updateWeapons(world: World, u: Unit): void {
     if (t2 && fire(world, u, w2, t2)) u.cooldown2 = w2.interval * intervalMul(world, u);
     else u.cooldown2 = COMBAT.secondaryRetrySeconds; // nothing in range: don't rescan every tick
   }
+  // 3.0 squad kit upgrades: attached gun team, AP grenades (upgradekit.ts).
+  kitFire(world, u);
 }
 
 function pickSecondaryTarget(world: World, u: Unit, w: WeaponDef): Unit | null {

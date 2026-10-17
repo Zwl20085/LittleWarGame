@@ -9,6 +9,7 @@ import type { TransportJob, TransportJobKind } from './transportstate';
 import type { Unit } from './types';
 import { dist, type V2 } from './vec';
 import type { World } from './world';
+import { workMul } from './upgradestats';
 
 /**
  * 3.0 engineer transport jobs (V30_SPEC §10): lay a road segment (cheap; ≤ road_job.max_len_m;
@@ -143,7 +144,7 @@ export function transportDuty(world: World, u: Unit): boolean {
   else {
     stop(u);
     if (u.moraleState === 'normal') {
-      job.progress = Math.min(1, job.progress + THINK_S / Math.max(1, job.workSeconds));
+      job.progress = Math.min(1, job.progress + (THINK_S * workMul(u)) / Math.max(1, job.workSeconds));
       job.workedAt = world.time;
       if (job.progress >= 1) completeJob(world, job);
     }

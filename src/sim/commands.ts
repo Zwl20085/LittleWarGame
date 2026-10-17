@@ -8,6 +8,7 @@ import { insisted } from './compliance';
 import { releaseFund } from './econai';
 import { applyDirectiveNow } from './theatre';
 import type { DirectiveKind, Unit } from './types';
+import { cancelResearch, startResearch } from './upgrades';
 import { dist, type V2 } from './vec';
 
 /**
@@ -41,12 +42,15 @@ export type Command =
   /** 2.1: stop a fortified-zone project (works already standing remain). */
   | { type: 'cancelZone'; zoneId: number }
   | { type: 'unitOrder'; unitIds: number[]; order: 'move' | 'moveHold' | 'attackMove' | 'retreat' | 'hold' | 'resume'; pos?: V2; queue?: boolean }
-  | { type: 'focus'; unitIds: number[]; targetId: number };
+  | { type: 'focus'; unitIds: number[]; targetId: number }
+  /** 3.0 unit upgrades: pay for and start researching an item at the capital; cancel the research under way. */
+  | { type: 'research'; upgradeId: string }
+  | { type: 'cancelResearch' };
 
 export type CommandFail =
   | 'FACTION_DEAD' | 'NOT_OWNER' | 'STALE_TARGET' | 'UNREACHABLE' | 'BAD_VALUE' | 'ROUTING'
   | 'LOCKED' | 'INSUFFICIENT_M' | 'INSUFFICIENT_P' | 'OUT_OF_BOUNDS' | 'NO_ORDER' | 'NO_FRONT' | 'NO_SLOT' | 'CONTESTED'
-  | 'LINE_SHORT' | 'LINE_ONLY_FORTIFY';
+  | 'LINE_SHORT' | 'LINE_ONLY_FORTIFY' | 'DISABLED' | 'OWNED' | 'BUSY' | 'NO_RESEARCH';
 
 export interface CommandEnvelope {
   readonly commandId: number;
@@ -135,6 +139,12 @@ function apply(match: Match, env: CommandEnvelope): CommandOutcome {
     }
     case 'cancelOrder':
       return cancelOrder(w, f, c.orderId) ? OK : fail('NO_ORDER');
+    case 'research': {
+      const r = startResearch(w, f, c.upgradeId);
+      return r === null ? OK : fail(r);
+    }
+    case 'cancelResearch':
+      return cancelResearch(w, f) ? OK : fail('NO_RESEARCH');
     case 'setAlloc': {
       const sum = c.alloc[0] + c.alloc[1] + c.alloc[2];
       if (c.alloc.some((v) => !Number.isFinite(v) || v < 0) || !(sum > 0)) return fail('BAD_VALUE');

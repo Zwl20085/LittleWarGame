@@ -8,6 +8,7 @@ import type { RailLine, RailStation, Train, TransportState } from './transportst
 import type { Place, Unit } from './types';
 import { dist, type V2 } from './vec';
 import type { World } from './world';
+import { isMotorized } from './upgradestats';
 
 /**
  * 3.0 railways (V30_SPEC §10). Lines link stations at settlements (railgen.ts). A line runs trains
@@ -184,8 +185,8 @@ function trainSpeed(world: World): number {
 function travelSpeed(world: World, u: Unit): number {
   const t = transportRules(world.data.rules);
   const tempo = world.data.rules.proposed_defaults.tempo_move_multiplier ?? 1;
-  const base = u.def.id === 'motor_inf' ? MOTOR.speed : u.def.speed;
-  const cls = u.def.id === 'motor_inf' ? 'wheeled' : moveClassOf(t, u.def);
+  const base = isMotorized(u) ? MOTOR.speed : u.def.speed;
+  const cls = isMotorized(u) ? 'wheeled' : moveClassOf(t, u.def);
   const mul = t ? (t.on_road + t.off_road[cls]) / 2 : 1;
   return Math.max(0.1, base * tempo * mul);
 }

@@ -12,6 +12,7 @@ import { dig, openWork } from './works';
 import type { Faction, Fort, FortKind, Front, Unit, Zone } from './types';
 import { angleDiff, DEG, dist, headingTo, type V2 } from './vec';
 import type { World } from './world';
+import { workMul } from './upgradestats';
 
 /**
  * 2.0 defensive buildings (user: "工兵可以建设筑垒区域、炮楼、堡垒，其可作为防御建筑，需要步兵/侦察/…
@@ -392,7 +393,7 @@ export function buildStep(world: World, u: Unit, fort: Fort): boolean {
   } else {
     stop(u);
     if (u.moraleState === 'normal') {
-      fort.progress = Math.min(1, fort.progress + 0.4 / def.work_seconds);
+      fort.progress = Math.min(1, fort.progress + (0.4 * workMul(u)) / def.work_seconds);
       if (fort.progress >= 1) completeStructure(world, fort);
     }
   }

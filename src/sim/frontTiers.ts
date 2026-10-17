@@ -5,6 +5,7 @@ import { hostileMask } from './spatial';
 import type { Faction, Front, Unit } from './types';
 import { dist, type V2 } from './vec';
 import type { World } from './world';
+import { staffThresholdMul } from './upgradestats';
 
 /**
  * 3.0 front scale (docs/V30_SPEC.md §5, WP-B): why the supreme HQ wants more and larger fronts.
@@ -79,7 +80,8 @@ export function updateFrontTier(world: World, f: Faction, s: Front, units: reado
     return;
   }
   const n = combatCount(units);
-  const tier = tierFor(rules, n, s.tier);
+  // 3.0 staff upgrade: thresholds × staff_threshold_mul (the same as counting n / mul units).
+  const tier = tierFor(rules, n / staffThresholdMul(world, f.id), s.tier);
   if (tier > s.tier && tier >= 2) world.note(f.id, 'log.frontTierUp', { point: s.name, tier }, 'info');
   s.tier = tier;
   const len = lineLength(s);

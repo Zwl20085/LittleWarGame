@@ -1,4 +1,5 @@
 import type { ComplianceRules, FrontRules } from './frontRules';
+import type { UpgradeRules } from './upgradeRules';
 export type UnitKind = 'infantry' | 'crew' | 'vehicle';
 export type Facility = 'barracks' | 'vehicle' | 'support';
 export type FireMode = 'hitscan' | 'direct_projectile' | 'ballistic';
@@ -317,6 +318,8 @@ export interface Rules {
   readonly econ?: EconRules;
   /** 3.0 roads and railways (V30_SPEC §10; optional for old rule sets = 2.2 movement). */
   readonly transport?: TransportRules;
+  /** 3.0 unit upgrades (V30_SPEC §9, upgrades.ts; optional for old rule sets = no upgrades). */
+  readonly upgrades?: UpgradeRules;
   readonly morale: {
     readonly suppression_enter: number;
     readonly suppression_exit: number;
