@@ -268,13 +268,23 @@ export function nearestStock(world: World, f: number, from: V2, need: number, ma
   return best;
 }
 
-/** Nearest own truck carrying cargo within r (handing over or able to), else null. */
-function truckNear(world: World, u: Unit, r: number): Unit | null {
+const SC_TRUCK: Unit[] = [];
+
+const truckLists = new WeakMap<World, { tick: number; byFaction: Unit[][] }>();
+/** Nearest own loaded truck out to the front or handing over within r (per-second truck list: no wide spatial query). */
+function convoyToward(world: World, u: Unit, r: number): Unit | null {
+  if (!(r > 0)) return null;
+  let c = truckLists.get(world);
+  if (!c || world.tick - c.tick >= world.tickHz) {
+    const byFaction: Unit[][] = world.factions.map(() => []);
+    for (const t of world.aliveUnits) if (t.def.id === 'supply_truck' && t.hp > 0) byFaction[t.owner]?.push(t);
+    c = { tick: world.tick, byFaction };
+    truckLists.set(world, c);
+  }
   let best: Unit | null = null;
   let bd = r;
-  for (const t of world.spatial.query(u.pos.x, u.pos.z, r)) {
-    if (t.owner !== u.owner || t.def.id !== 'supply_truck' || t.hp <= 0 || t.cargo < 2) continue;
-    if (t.truckState !== 'unload' && t.truckState !== 'out') continue;
+  for (const t of c.byFaction[u.owner] ?? []) {
+    if (t.hp <= 0 || t.cargo < 2 || (t.truckState !== 'out' && t.truckState !== 'unload')) continue;
     const d = dist(t.pos, u.pos);
     if (d < bd) {
       bd = d;
@@ -282,6 +292,38 @@ function truckNear(world: World, u: Unit, r: number): Unit | null {
     }
   }
   return best;
+}
+
+/** Nearest own truck carrying cargo within r (handing over or able to), else null. */
+function truckNear(world: World, u: Unit, r: number, unloading = false): Unit | null {
+  let best: Unit | null = null;
+  let bd = r;
+  for (const t of world.spatial.query(u.pos.x, u.pos.z, r, SC_TRUCK)) {
+    if (t.owner !== u.owner || t.def.id !== 'supply_truck' || t.hp <= 0 || t.cargo < 2) continue;
+    if (t.truckState !== 'unload' && (unloading || t.truckState !== 'out')) continue;
+    const d = dist(t.pos, u.pos);
+    if (d < bd) {
+      bd = d;
+      best = t;
+    }
+  }
+  return best;
+}
+
+/**
+ * 3.0 top-up (docs/DEBUG_LAB.md): a unit out of the fight below truck_meet_below walks to a truck
+ * that is handing over within truck_seek_radius_m — trucks parked behind the line used to drive
+ * home full because only near-empty units ever came to them. Checked at most every TOPUP_RECHECK_S.
+ */
+const TOPUP_RECHECK_S = 5;
+/** Units rearming for a top-up (truck only). */
+const TOPPING = new WeakSet<Unit>();
+function topUp(world: World, u: Unit, l: LogisticsRules): boolean {
+  const below = l.truck_meet_below ?? 0;
+  if (u.ammo >= below || u.targetId !== null || inContact(world, u)) return false;
+  if (truckNear(world, u, l.truck_seek_radius_m, true)) return true;
+  u.rearmAt = world.time + TOPUP_RECHECK_S;
+  return false;
 }
 
 /**
@@ -296,26 +338,45 @@ export function rearmDuty(world: World, u: Unit, moveTo: (w: World, u: Unit, d: 
   }
   const l = logisticsRules(world);
   if (!u.rearming) {
-    if (u.ammo >= l.rearm_below || world.time < u.rearmAt) return false;
+    if (world.time < u.rearmAt) return false;
+    // 3.0: a unit that cannot fire one round of its main weapon is empty, whatever rearm_below says
+    // (a heavy tank's shell costs more than rearm_below: it sat at 0.09 forever, unable to fire).
+    const empty = u.ammo < l.rearm_below || (u.primary !== null && u.ammo + 1e-9 < u.primary.ammoCost);
+    if (!empty && !topUp(world, u, l)) return false;
     // In a fight with a few rounds left: keep shooting until nearly dry.
-    if (u.targetId !== null && u.ammo > 0.03) return false;
+    if (empty && u.targetId !== null && u.ammo > 0.03 && u.primary !== null && u.ammo + 1e-9 >= u.primary.ammoCost) return false;
     u.rearming = true;
+    if (empty) TOPPING.delete(u);
+    else TOPPING.add(u);
   }
   if (u.ammo >= l.rearm_until) {
     u.rearming = false;
+    TOPPING.delete(u);
     return false;
   }
   const need = (l.rearm_until - u.ammo) * u.def.supplyDemand;
   const truck = truckNear(world, u, l.truck_seek_radius_m);
-  const place = truck ? null : nearestStock(world, u.owner, u.pos, need, l.stock_seek_radius_m);
-  if (!truck && !place) {
+  // A top-up (started above empty) is only worth a short walk to a truck, never a trip to a far stock.
+  if (!truck && TOPPING.has(u)) {
+    TOPPING.delete(u);
+    u.rearming = false;
+    u.rearmAt = world.time + TOPUP_RECHECK_S;
+    return false;
+  }
+  let place = truck ? null : nearestStock(world, u.owner, u.pos, need, l.stock_seek_radius_m);
+  // 3.0: a loaded convoy on its way (closer than the stock) beats a long walk back to a stock — the
+  // truck heads for the front's units that are short (convoy.supplyPoint) and stops where it meets them.
+  const meet = truck ? null : convoyToward(world, u, Math.min(l.truck_meet_seek_m ?? 0, place ? dist(u.pos, place.pos) * 0.7 : Infinity));
+  if (meet) place = null;
+  const via = truck ?? meet;
+  if (!via && !place) {
     // Nothing to draw from: fight with what is left, look again later.
     u.rearming = false;
     u.rearmAt = world.time + 15;
     return false;
   }
-  const at = truck ? truck.pos : place!.pos;
-  const arrive = truck ? Math.min(90, (l.truck_handover_radius_m ?? 190) * 0.7) : Math.min(drawRadius(world, place!) * 0.6, 120);
+  const at = via ? via.pos : place!.pos;
+  const arrive = via ? Math.min(90, (l.truck_handover_radius_m ?? 190) * 0.7) : Math.min(drawRadius(world, place!) * 0.6, 120);
   if (dist(u.pos, at) > arrive) moveTo(world, u, at);
   else stop(u);
   u.status = 'status.rearming';
