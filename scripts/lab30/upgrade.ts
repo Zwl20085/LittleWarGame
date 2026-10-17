@@ -1,8 +1,11 @@
 // 3.0 lab suite `upgrade` (V30_SPEC §9, docs/UPGRADES.md): unit upgrades.
 //
-//   npx tsx scripts/lab30/upgrade.ts [--parts value,rich,motor] [--seeds 7,11,13] [--minutes 30]
-//        [--items inf_guns,gun_1,...] [--rich-seeds 7,11,13,17,19,23] [--rich-minutes 60] [--jobs 6] [--set path=value ...]
+//   npx tsx scripts/lab30/upgrade.ts [--parts value,rich,motor,engage] [--seeds 7,11,13] [--minutes 30]
+//        [--items inf_guns,gun_1,...] [--rich-seeds 7,11,13,17,19,23] [--rich-minutes 60] [--trials 10] [--jobs 6] [--set path=value ...]
 //
+// engage — low-noise single engagements (upgradeEngage.ts): fixed armies on an open corridor, side A
+//         with the item, side B without, paired with a no-item control per trial; value/cost =
+//         Δ(A value left − B value left) / item cost. Combat items only (not run by default).
 // value — 1v1 at equal resources, AI research off: side A is granted the item (and its
 //         prerequisites) at t = 0, side B banks the same P/M into its stock (spent on units by the
 //         AI). Both sides take each role (seed × side). Score for A = kill-value traded + 400 per
@@ -16,12 +19,14 @@
 import type { Match } from '../../src/sim/sim';
 import { grantUpgrade, upgradeCost, UPGRADE_IDS, type UpgradeId } from '../../src/sim/upgrades';
 import { dist, type V2 } from '../../src/sim/vec';
+import { engageRows, engageTasks, runEngage, type EngageResult, type EngageTask } from './upgradeEngage';
 import { argList, argNum, argSets, argStr, isWorker, labMatch, loadData, mdTable, mean, parseArgs, runFor, runParallel, workerLoop, writeReport } from './common';
 
 type Task =
   | { kind: 'value'; seed: number; item: UpgradeId | 'control'; side: number; minutes: number; sets: string[] }
   | { kind: 'rich'; seed: number; rich: number; minutes: number; sets: string[] }
-  | { kind: 'motor'; seed: number; motor: boolean; sets: string[] };
+  | { kind: 'motor'; seed: number; motor: boolean; sets: string[] }
+  | EngageTask;
 
 interface ValueResult { score: number; cost: number; winner: number | null }
 interface RichResult { winner: number | null; endS: number | null; upgradesRich: number; upgradesPoor: number; heldRich: number; heldPoor: number; armyRich: number; armyPoor: number }
@@ -150,8 +155,8 @@ function runMotor(t: Extract<Task, { kind: 'motor' }>): MotorResult {
   return { t4, t6, routeM: Math.round(dist(exit, dest)) };
 }
 
-function runTask(t: Task): ValueResult | RichResult | MotorResult {
-  return t.kind === 'value' ? runValue(t) : t.kind === 'rich' ? runRich(t) : runMotor(t);
+function runTask(t: Task): ValueResult | RichResult | MotorResult | EngageResult {
+  return t.kind === 'value' ? runValue(t) : t.kind === 'rich' ? runRich(t) : t.kind === 'engage' ? runEngage(t) : runMotor(t);
 }
 
 const median = (xs: readonly number[]): number => {
@@ -176,8 +181,9 @@ async function main(): Promise<void> {
   }
   if (parts.includes('rich')) for (const seed of richSeeds) for (const rich of [0, 1]) tasks.push({ kind: 'rich', seed, rich, minutes: richMinutes, sets });
   if (parts.includes('motor')) for (const seed of seeds) for (const motor of [false, true]) tasks.push({ kind: 'motor', seed, motor, sets });
+  if (parts.includes('engage')) tasks.push(...engageTasks(items, argNum(args, 'trials', 10), sets));
   const t0 = Date.now();
-  const res = await runParallel<Task, ValueResult | RichResult | MotorResult>(import.meta.url, tasks, jobs);
+  const res = await runParallel<Task, ValueResult | RichResult | MotorResult | EngageResult>(import.meta.url, tasks, jobs);
   const md: string[] = [`# Lab 3.0 — upgrade (${new Date().toISOString().slice(0, 16)})`, '', `sets: ${sets.join(' ') || '(shipped rules)'} · ${Math.round((Date.now() - t0) / 1000)} s wall`, ''];
   const json: Record<string, unknown> = { tasks, res };
 
@@ -220,6 +226,15 @@ async function main(): Promise<void> {
     md.push(mdTable(['seed', 'motorized', 'route (m)', '4 of 6 (s)', '6 of 6 (s)'], mr.map(([t, r]) => [t.seed, t.motor ? 'yes' : 'no', r.routeM, r.t4 ?? '—', r.t6 ?? '—'])), '');
     const avg = (mot: boolean): number => mean(mr.filter(([t, r]) => t.motor === mot && r.t4 !== null).map(([, r]) => r.t4!));
     md.push(`Mean time to 4 of 6: foot ${Math.round(avg(false))} s, motorized ${Math.round(avg(true))} s.`, '');
+  }
+  if (parts.includes('engage')) {
+    const et = tasks.map((t, i) => [t, res[i]] as const).filter(([t]) => t.kind === 'engage') as [EngageTask, EngageResult][];
+    const rows = engageRows(et.map(([t]) => t), et.map(([, r]) => r));
+    const med = median(rows.map((r) => r.ratio));
+    const ctrl = et.filter(([t, r]) => t.item === 'control' && r.ok);
+    md.push('## (d) single engagements (fixed armies, paired with a no-item control)', '', `${argNum(args, 'trials', 10)} trials per item; valid controls ${ctrl.length}. Median value/cost ${med.toFixed(2)}; band 0.6–1.6 × median = ${(0.6 * med).toFixed(2)}–${(1.6 * med).toFixed(2)}. "kit uses" = attached-gun shots + AP grenades thrown (side A, all trials).`, '');
+    md.push(mdTable(['item', 'scenario', 'cost P+M', 'mean Δnet', '± s.e.', 'value/cost', '÷ median', 'in band', 'kit uses', 'n'], rows.map((r) => [r.item, r.scenario, r.cost, Math.round(r.delta), Math.round(r.se), r.ratio, r.ratio / med, r.ratio >= 0.6 * med && r.ratio <= 1.6 * med ? 'yes' : 'NO', r.kit, r.n])), '');
+    json.engage = { median: med, rows };
   }
   const base = writeReport('upgrade', json, md.join('\n'));
   console.log(md.join('\n'));

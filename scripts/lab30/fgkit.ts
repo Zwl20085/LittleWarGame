@@ -3,6 +3,10 @@
 // and the report writer are common.ts's.
 import { spawn } from 'node:child_process';
 import type { GameData } from '../../src/data/types';
+import { createMatch } from '../../src/sim/sim';
+import { Ground } from '../../src/sim/terrain';
+import { dist, type V2 } from '../../src/sim/vec';
+import type { World } from '../../src/sim/world';
 import { loadData, writeReport as commonWriteReport } from './common';
 
 export const labData = (overrides: readonly string[] = []): GameData => loadData(overrides);
@@ -60,3 +64,41 @@ export function reply<R>(r: R): void {
 
 /** Argument order of the WP-F/G suites (name, markdown, json) over common.writeReport. */
 export const writeReport = (name: string, md: string, json: unknown): string => commonWriteReport(name, json, md);
+
+/** An open, gentle corridor `len` m long (no water, forest, town, buildings), at least 300 m from any capital. */
+export function findSite(w: World, rand: () => number, len: number): { def: V2; dir: V2 } | null {
+  const t = w.terrain;
+  for (let tries = 0; tries < 4000; tries++) {
+    const p = { x: 300 + rand() * (t.width - 600), z: 300 + rand() * (t.depth - 600) };
+    if (w.factions.some((f) => dist(w.hqPos(f.id), p) < 350)) continue;
+    const a = rand() * Math.PI * 2;
+    const dir = { x: Math.cos(a), z: Math.sin(a) };
+    let ok = true;
+    let steep = 0;
+    let n = 0;
+    for (let s = -60; s <= len + 40 && ok; s += 20) {
+      for (let l = -60; l <= 60 && ok; l += 20) {
+        const x = p.x + dir.x * s - dir.z * l;
+        const z = p.z + dir.z * s + dir.x * l;
+        if (!t.inBounds(x, z)) { ok = false; break; }
+        const g = t.groundAt(x, z);
+        if (g === Ground.Water || g === Ground.Ford || g === Ground.Forest || g === Ground.Town || t.buildingH(x, z) !== 0) ok = false;
+        n++;
+        if (t.slopeAt(x, z) > 14) steep++;
+      }
+    }
+    if (ok && steep <= n * 0.1) return { def: p, dir };
+  }
+  return null;
+}
+
+/** A 2-faction map with a test corridor: the seed's map, else the next few seeds' (same trial → same map). */
+export function siteMatch(data: GameData, seed: number, len: number): { m: ReturnType<typeof createMatch>; site: { def: V2; dir: V2 } } | null {
+  for (let k = 0; k < 6; k++) {
+    const s = seed + k * 53;
+    const m = createMatch(data, { mapId: 'generated', factions: 2, infoMode: 'open', seed: s, difficulty: 'normal', playerSlot: 0, spectate: false });
+    const site = findSite(m.world, mulberry(s * 977 + 13), len);
+    if (site) return { m, site };
+  }
+  return null;
+}
