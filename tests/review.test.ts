@@ -12,6 +12,7 @@ import { jobFront, needRoadLinks, roadSegmentOk, startRoadJob, thinkTransport, t
 import type { TransportJob } from '../src/sim/transportstate';
 import type { ManualTask } from '../src/sim/types';
 import { selectTarget } from '../src/sim/combat';
+import { rearDeep, rearDepth } from '../src/sim/infiltration';
 import { picketGap, picketSlots } from '../src/sim/pickets';
 import { holdsLine } from '../src/sim/zoc';
 import { dist, headingTo, type V2 } from '../src/sim/vec';
@@ -241,6 +242,24 @@ describe('review MED 8: loader validates transport / econ_zones / capital_defenc
     expect(() => load((r) => { r.capital_defence.crew_respawn_seconds = 0; })).toThrow(/capital_defence\.crew_respawn_seconds/);
     expect(() => load((r) => { r.capital_defence.quiet_m = -5; })).toThrow(/capital_defence\.quiet_m/);
   });
+});
+
+describe('review MED 10: cached anchor grid gives the exact rear-depth answer', () => {
+  it('rearDeep matches rearDepth >= depth everywhere, also after a settlement changes hands', () => {
+    const match = createMatch(data, { mapId: 'generated', factions: 4, infoMode: 'fog', seed: 7, difficulty: 'normal', playerSlot: 0, spectate: true });
+    const w = match.world;
+    const depth = w.data.rules.infiltration.report_depth_m;
+    const check = (): void => {
+      for (let x = 13; x < w.terrain.width; x += 37) for (let z = 7; z < w.terrain.depth; z += 41) {
+        const p = { x, z };
+        for (const f of w.factions) expect(rearDeep(w, f.id, p, depth)).toBe(rearDepth(w, f, p) >= depth);
+      }
+    };
+    check();
+    const o = w.objectives.find((x) => x.owner === 1)!;
+    o.owner = 2;
+    check();
+  }, 120_000);
 });
 
 /** Issue one command as `actor` and return its outcome. */

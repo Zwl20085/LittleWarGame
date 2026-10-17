@@ -162,11 +162,79 @@ function depthFrom(world: World, f: number, near: Float64Array): number {
 }
 
 const NEAR = new Float64Array(32);
+const EXACT = new Float64Array(32);
+
+/**
+ * Anchor distances per coarse cell (review MEDIUM 10): faction g's nearest capital / held settlement
+ * from each cell centre, rebuilt every ANCHOR_REFRESH_S or as soon as a settlement changes hands or a
+ * faction falls. A unit's true distance is within |unit − cell centre| of the cell value, so the grid
+ * decides "deep / not deep" exactly whenever the margin allows (gridDeep), else the caller scans.
+ */
+const ANCHOR_CELL_M = 100;
+const ANCHOR_REFRESH_S = 10;
+interface AnchorGrid { readonly at: number; readonly owners: Int16Array; readonly nx: number; readonly nz: number; readonly nf: number; readonly d: Float64Array }
+const anchorGrids = new WeakMap<World, AnchorGrid>();
+
+function anchorOwners(world: World): Int16Array {
+  const nf = world.factions.length;
+  const out = new Int16Array(nf + world.objectives.length);
+  world.factions.forEach((f, i) => { out[i] = f.alive ? 1 : 0; });
+  world.objectives.forEach((o, i) => { out[nf + i] = o.owner; });
+  return out;
+}
+
+function anchorGrid(world: World): AnchorGrid {
+  const g = anchorGrids.get(world);
+  const owners = anchorOwners(world);
+  if (g && world.time - g.at < ANCHOR_REFRESH_S && g.owners.length === owners.length && g.owners.every((v, i) => v === owners[i])) return g;
+  const nx = Math.max(1, Math.ceil(world.terrain.width / ANCHOR_CELL_M));
+  const nz = Math.max(1, Math.ceil(world.terrain.depth / ANCHOR_CELL_M));
+  const nf = world.factions.length;
+  const d = new Float64Array(nx * nz * nf);
+  const tmp = new Float64Array(32);
+  for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) {
+    anchorDistances(world, { x: (i + 0.5) * ANCHOR_CELL_M, z: (j + 0.5) * ANCHOR_CELL_M }, tmp);
+    d.set(tmp.subarray(0, nf), (j * nx + i) * nf);
+  }
+  const grid: AnchorGrid = { at: world.time, owners, nx, nz, nf, d };
+  anchorGrids.set(world, grid);
+  return grid;
+}
+
+/** Cell values for `p` into `near`; returns the error bound (m from p to the cell centre). */
+function approxAnchors(world: World, p: V2, near: Float64Array): number {
+  const g = anchorGrid(world);
+  const i = Math.min(g.nx - 1, Math.max(0, Math.floor(p.x / ANCHOR_CELL_M)));
+  const j = Math.min(g.nz - 1, Math.max(0, Math.floor(p.z / ANCHOR_CELL_M)));
+  near.fill(Infinity);
+  near.set(g.d.subarray((j * g.nx + i) * g.nf, (j * g.nx + i + 1) * g.nf));
+  return Math.hypot(p.x - (i + 0.5) * ANCHOR_CELL_M, p.z - (j + 0.5) * ANCHOR_CELL_M);
+}
+
+/** depthFrom(…) ≥ depth decided from approximate distances (each within ±err), or null when it cannot be. */
+function gridDeep(world: World, f: number, near: Float64Array, err: number, depth: number): boolean | null {
+  let hostile = Infinity;
+  for (const g of world.factions) if (g.alive && g.id !== f && world.isHostile(f, g.id)) hostile = Math.min(hostile, near[g.id]);
+  if (!Number.isFinite(hostile)) return false;
+  const raw = (hostile - near[f]) / 2;
+  if (raw - err >= depth) return true;
+  if (raw + err < depth) return false;
+  return null;
+}
 
 /** How deep `p` lies inside faction `f`'s ground (m to the bisector with the nearest hostile settlement), 0 off it. */
 export function rearDepth(world: World, f: Faction, p: V2): number {
   anchorDistances(world, p, NEAR);
   return depthFrom(world, f.id, NEAR);
+}
+
+/** rearDepth(world, f, p) >= depth, decided from the cached anchor grid when it can be (same answer, cheaper). */
+export function rearDeep(world: World, f: number, p: V2, depth: number): boolean {
+  const err = approxAnchors(world, p, NEAR);
+  const quick = gridDeep(world, f, NEAR, err, depth);
+  if (quick !== null) return quick;
+  anchorDistances(world, p, EXACT);
+  return depthFrom(world, f, EXACT) >= depth;
 }
 
 /** Is `p` behind faction `f`'s line (report_depth_m inside its ground), or where a report already tracks infiltrators? */
@@ -184,11 +252,23 @@ export function reportInfiltrators(world: World): void {
   const seen: Unit[][] = world.factions.map(() => []);
   for (const m of world.aliveUnits) {
     if (!infiltratorKind(m)) continue;
-    anchorDistances(world, m.pos, NEAR);
+    // Review MEDIUM 10: the anchor scan (every capital and settlement) only for units some hostile
+    // faction knows about — most units are unseen by every enemy in fog, or deep in their own lines.
+    let watched = false;
+    for (const f of world.factions) if (f.alive && f.id !== m.owner && world.isHostile(f.id, m.owner) && world.knows(f.id, m)) { watched = true; break; }
+    if (!watched) continue;
+    // …and from a coarse cached grid first; the exact scan only when the grid cannot decide.
+    const err = approxAnchors(world, m.pos, NEAR);
+    let exact = false;
     let isolated: boolean | null = null;
     for (const f of world.factions) {
       if (!f.alive || f.id === m.owner || !world.isHostile(f.id, m.owner) || !world.knows(f.id, m)) continue;
-      const deep = depthFrom(world, f.id, NEAR) >= r.report_depth_m || bookOf(f).list.some((rep) => dist(rep.pos, m.pos) < r.report_match_m);
+      let deepGround = gridDeep(world, f.id, NEAR, err, r.report_depth_m);
+      if (deepGround === null) {
+        if (!exact) { anchorDistances(world, m.pos, EXACT); exact = true; }
+        deepGround = depthFrom(world, f.id, EXACT) >= r.report_depth_m;
+      }
+      const deep = deepGround || bookOf(f).list.some((rep) => dist(rep.pos, m.pos) < r.report_match_m);
       if (!deep) continue;
       isolated ??= !world.spatial.findOwner(m.pos.x, m.pos.z, r.report_isolated_m, 1 << m.owner, holdsLine);
       if (isolated) seen[f.id].push(m);
