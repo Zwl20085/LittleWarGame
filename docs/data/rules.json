@@ -406,7 +406,7 @@
         "raid_rate": 0.6, "raid_targets": {"econ": 1, "convoy": 0.5, "rail": 0, "zone": 1}, "raid_on_defence": false,
         "front_density": 1.0, "picket_gap": 1.0, "temperament": 0, "main_share": 1.0, "armour_main_share": 0.6,
         "offensive": {"mode": "late", "after_s": 1500, "min_fullness": 0.8, "max_s": 900, "break_share": 0.6, "cooldown_s": 240, "force_after_s": 0, "force_ratio": 0, "between": "advance"},
-        "upgrades": ["truck_capacity", "eng_speed", "staff", "motorization", "armour_1", "ap_grenades", "inf_guns", "gun_1", "arty_range", "armour_2", "gun_2", "armour_3", "gun_3"]
+        "upgrades": ["truck_capacity", "eng_speed", "staff", "motorization", "armour_1", "ap_grenades", "gun_1", "arty_range", "armour_2", "gun_2", "armour_3", "gun_3"]
       },
       "blitz": {
         "personality": "balanced",
@@ -418,7 +418,7 @@
         "raid_rate": 0.5, "raid_targets": {"econ": 1, "convoy": 0.5, "rail": 0, "zone": 0}, "raid_on_defence": false,
         "front_density": 1.15, "picket_gap": 1.0, "temperament": 0.2, "main_share": 1.4, "armour_main_share": 0.8,
         "offensive": {"mode": "strike", "after_s": 540, "min_fullness": 0.7, "max_s": 720, "break_share": 0.6, "cooldown_s": 150, "force_after_s": 480, "force_ratio": 1.15, "between": "advance"},
-        "upgrades": ["gun_1", "armour_1", "motorization", "truck_capacity", "gun_2", "armour_2", "staff", "gun_3", "armour_3", "ap_grenades", "inf_guns", "arty_range", "eng_speed"]
+        "upgrades": ["gun_1", "armour_1", "motorization", "truck_capacity", "gun_2", "armour_2", "staff", "gun_3", "armour_3", "ap_grenades", "arty_range", "eng_speed"]
       },
       "attrition": {
         "personality": "infantry",
@@ -430,7 +430,7 @@
         "raid_rate": 2.0, "raid_targets": {"econ": 1, "convoy": 1, "rail": 1, "zone": 1}, "raid_on_defence": true,
         "front_density": 1.5, "picket_gap": 0.7, "temperament": -0.1, "main_share": 1.0, "armour_main_share": 0.6,
         "offensive": {"mode": "late", "after_s": 1800, "min_fullness": 0.8, "max_s": 900, "break_share": 0.65, "cooldown_s": 300, "force_after_s": 0, "force_ratio": 0, "between": "advance"},
-        "upgrades": ["inf_guns", "arty_range", "ap_grenades", "staff", "eng_speed", "truck_capacity", "armour_1", "gun_1", "motorization", "armour_2", "gun_2", "armour_3", "gun_3"]
+        "upgrades": ["arty_range", "ap_grenades", "staff", "eng_speed", "truck_capacity", "armour_1", "gun_1", "motorization", "armour_2", "gun_2", "armour_3", "gun_3"]
       },
       "maneuver": {
         "personality": "mechanized",
@@ -442,7 +442,7 @@
         "raid_rate": 0.7, "raid_targets": {"econ": 1, "convoy": 1, "rail": 0, "zone": 0}, "raid_on_defence": false,
         "front_density": 1.3, "picket_gap": 1.35, "temperament": -0.05, "main_share": 1.5, "armour_main_share": 0.9,
         "offensive": {"mode": "battle", "after_s": 600, "min_fullness": 0.7, "max_s": 420, "break_share": 0.6, "cooldown_s": 180, "force_after_s": 0, "force_ratio": 0, "between": "advance"},
-        "upgrades": ["motorization", "gun_1", "arty_range", "truck_capacity", "armour_1", "staff", "gun_2", "armour_2", "ap_grenades", "inf_guns", "gun_3", "armour_3", "eng_speed"]
+        "upgrades": ["motorization", "gun_1", "arty_range", "truck_capacity", "armour_1", "staff", "gun_2", "armour_2", "ap_grenades", "gun_3", "armour_3", "eng_speed"]
       }
     }
   },
@@ -490,12 +490,11 @@
     "ai": {"enabled": true, "think_seconds": 30, "link_max_m": 600, "max_open_jobs": 1}
   },
   "upgrades": {
-    "comment": "3.0 unit upgrades (V30_SPEC §9, docs/UPGRADES.md, src/sim/upgrades.ts). Bought with P/M by the supreme HQ, researched one at a time at the capital (seconds). Prices p_k / m_k are per army_scale x army_scale_income_factor = 1 (x2.5 at the default scale 10) and every owned item makes the next one `escalation` dearer. Armour, gun, attached guns and motorization reach existing units as a refit at a town rearm; the others at once.",
+    "comment": "3.0 unit upgrades (V30_SPEC §9, docs/UPGRADES.md, src/sim/upgrades.ts). Bought with P/M by the supreme HQ, researched one at a time at the capital (seconds). Prices p_k / m_k are per army_scale x army_scale_income_factor = 1 (x2.5 at the default scale 10) and every owned item makes the next one `escalation` dearer. Armour, gun and motorization reach existing units as a refit at a town rearm; the others at once.",
     "enabled": true,
     "escalation": 0.06,
     "cancel_refund_ratio": 0.8,
     "items": {
-      "inf_guns": {"p_k": 175, "m_k": 385, "seconds": 120},
       "ap_grenades": {"p_k": 300, "m_k": 680, "seconds": 90},
       "motorization": {"p_k": 220, "m_k": 440, "seconds": 150},
       "armour_1": {"p_k": 160, "m_k": 300, "seconds": 120},
@@ -510,7 +509,6 @@
       "staff": {"p_k": 120, "m_k": 260, "seconds": 120}
     },
     "effects": {
-      "inf_gun": {"range_m": 260, "interval_s": 10, "damage": 110, "blast_m": 6, "suppression": 22, "muzzle_mps": 75, "sigma_m": 7, "ammo_cost": 0.006},
       "ap_grenade": {"range_m": 35, "interval_s": 12, "damage": 140, "penetration": 85, "ammo_cost": 0.01},
       "armour_per_level": {"armour": 0.12, "hp": 0.05, "speed": -0.03},
       "gun_per_level": {"pen": 12, "damage": 0.1, "range": 0.04},

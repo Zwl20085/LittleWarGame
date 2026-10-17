@@ -129,11 +129,12 @@ describe('3.0 unit upgrades', () => {
     expect(isMotorized(old)).toBe(true);
   });
 
-  it('AP grenades hurt a close enemy tank; the gun team fires shells at enemy works', () => {
+  it('AP grenades hurt a close enemy tank (3.0.1: no attached gun team any more)', () => {
     const m = makeMatch();
     const w = m.world;
     const sq = w.spawnUnit(0, 'infantry', { x: 400, z: 400 }, 0);
-    refit(w, sq, UPG.ap_grenades | UPG.inf_guns);
+    expect((UPG as Record<string, number>).inf_guns).toBeUndefined();
+    refit(w, sq, UPG.ap_grenades);
     sq.ammo = 1;
     const tank = w.spawnUnit(1, 'light_tank', { x: 420, z: 400 }, 0);
     w.spatial.rebuild(w.aliveUnits);
@@ -141,21 +142,18 @@ describe('3.0 unit upgrades', () => {
     let hit = false;
     for (let i = 0; i < 40 && !hit; i++) {
       sq.upgNadeAt = 0;
-      sq.upgGunAt = 1e9;
       kitFire(w, sq);
       for (const f of w.deferred) f();
       w.deferred.length = 0;
       hit = tank.hp < hp0;
     }
     expect(hit).toBe(true);
-    // Gun team: an enemy work within range draws a shell.
+    // No shell from the squad: the kit is grenades only.
     w.forts.push({ ...(w.forts.find((x) => x.owner === 1) ?? w.forts[0]), id: w.newId(), owner: 1, pos: { x: 560, z: 400 }, hp: 500, progress: 1 });
-    sq.upgGunAt = 0;
-    sq.upgNadeAt = 1e9;
+    sq.upgNadeAt = 0;
     const n = w.projectiles.length;
     kitFire(w, sq);
-    expect(w.projectiles.length).toBe(n + 1);
-    expect(w.projectiles[n].kind).toBe('shell');
+    expect(w.projectiles.length).toBe(n);
   });
 
   it('AI buyer saves a share of income and follows its priority table', () => {

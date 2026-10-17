@@ -9,8 +9,7 @@ import { InstanceBatch, soldierMaterial, tintedMaterial } from './instancing';
 import { PAL } from './palette';
 import { choosePattern, crewSlot, slot, vhash, type Situation } from './formations';
 import { modelSpec, SOLDIER_SCALE, TRUCK_FOOT, unitGeometry, VEHICLE_SCALE, type ModelSpec } from './unitModels';
-import { UPG } from '../sim/upgradestats';
-import { drawGunTeam, drawTankUpgrades } from './upgradeModels';
+import { drawTankUpgrades } from './upgradeModels';
 import { SC, snapSoldier, SOL_STRIDE, sortSlots, SS, step, stepSoldier, STRIDE_AMP, SV, SX, SZ, Trail, walkCap, wrapAngle } from './soldierMotion';
 
 /** Per-unit render state (no Three.js objects — everything is drawn through shared batches). */
@@ -686,7 +685,6 @@ export class UnitViews {
       else {
         if (v.mounted) this.dismount(v);
         this.drawSquad(v, u, dt, draw && this.showSoldiers);
-        if ((u.upg & UPG.inf_guns) !== 0 && draw && this.showSoldiers) drawGunTeam(this.batchOf, v.x, v.z, v.heading, this.ground, v.color);
       }
       if (draw && this.selected.has(u.id)) {
         const r = v.spec.vehicle ? RING_VEHICLE : RING_SQUAD;

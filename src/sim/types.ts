@@ -36,8 +36,7 @@ export interface Unit {
   secondary: WeaponDef | null;
   /** 3.0 upgrade bits this unit carries (upgradestats.ts); 0 = stock unit. */
   upg: number;
-  /** 3.0 next time the attached gun team / AP grenades may fire (upgradekit.ts). */
-  upgGunAt: number;
+  /** 3.0 next time the AP grenades may be thrown (upgradekit.ts). */
   upgNadeAt: number;
   pos: V2;
   prev: V2;

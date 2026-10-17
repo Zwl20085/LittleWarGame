@@ -5,11 +5,12 @@ live in `docs/data/rules.json` → `upgrades` (table in BALANCE_SPEC §10.2). Of
 `upgrades.enabled=false` (lab: `--set upgrades.enabled=false`; AI buying only:
 `upgrades.ai.enabled=false`).
 
-## The tree (13 items)
+## The tree (12 items)
+
+3.0.1: the infantry attached-gun team (`inf_guns`) was removed; AP grenades are the squads' only kit.
 
 | id | effect | reaches existing units |
 |---|---|---|
-| `inf_guns` | an infantry gun / mortar team per rifle squad: lobbed HE at works, buildings, garrisons and dug-in targets | at a town rearm |
 | `ap_grenades` | squads hit vehicles within 35 m | at once |
 | `motorization` | new rifle squads ride trucks (motor_inf rules); old squads get trucks at a town rearm | at a town rearm |
 | `armour_1..3` | tank armour, hit points up, speed slightly down (side skirts) | at a town rearm |
@@ -32,11 +33,11 @@ Cancelling a research returns `cancel_refund_ratio` of the price.
 - `src/sim/upgrades.ts` — prices, `startResearch` / `cancelResearch` / `grantUpgrade`,
   `upgradeSecond` (timer + AI), `UPGRADE_PRIORITY` and `upgradePriority(doctrineId?, personality?)`.
   WP-A fills doctrine rows; `Faction.doctrine` may be an id string or an object with `id`.
-- `src/sim/upgradekit.ts` — attached gun team and AP grenades (combat.updateWeapons → `kitFire`).
+- `src/sim/upgradekit.ts` — AP grenades (combat.updateWeapons → `kitFire`).
 - Commands: `{ type: 'research', upgradeId }`, `{ type: 'cancelResearch' }`.
 - UI: `src/ui/upgrades.ts` (panel, HUD button, Y), unit card line, strings in `src/ui/i18n-upgrades.ts`.
 - Render: `src/render/upgradeModels.ts` — side skirts and a barrel extension (one instanced mesh
-  each for every tank class), the gun team drawn with the anti-tank gun model; motorized squads use
+  each for every tank class); motorized squads use
   the existing truck column of mounted infantry.
 
 ## AI
@@ -45,6 +46,10 @@ After `ai.start_s`, with no threat to the capital, income ≥ `income_floor_k` a
 than `trend_drop` over `trend_window_s`, the AI sets aside `fund_share` of its income for the
 first item of its priority table it does not own, and starts it when the fund (plus stock above
 `reserve_*_k`) covers the price. The fund goes back to the stock when it stops being eligible.
+
+3.0.1: the player's HQ staff buy the same way, in the order of the player's doctrine, while
+**Auto-research** (`Faction.autoResearch`, Upgrades panel and economy panel; command
+`setAutoResearch`) is on — the default. A manual purchase leaves it on; switching it off returns the fund.
 
 ## Lab
 
@@ -59,7 +64,6 @@ same seed/side with no item and no bank; value/cost = 1 + Δ / cost.
 
 | item | cost P+M | Δscore ± s.e. | value/cost ± s.e. |
 |---|---|---|---|
-| inf_guns | 1200 | −4958 ± 1441 | −3.13 ± 1.20 |
 | ap_grenades | 900 | +31 ± 1816 | 1.03 ± 2.02 |
 | motorization | 1650 | +267 ± 1876 | 1.16 ± 1.14 |
 | armour_1 | 1150 | −2405 ± 1589 | −1.09 ± 1.38 |
