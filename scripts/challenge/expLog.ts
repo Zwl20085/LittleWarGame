@@ -52,6 +52,7 @@ export function createExpCollector(w: World): ExpCollector {
       if (!combatUnit(u)) continue;
       const v = valueOf(u);
       army[u.owner] += v;
+      if (alive[u.owner] && dist(u.pos, hq[u.owner]) <= RING_M) near[u.owner][u.owner] += v;
       for (let d = 0; d < n; d++) if (d !== u.owner && alive[d] && dist(u.pos, hq[d]) <= RING_M) near[u.owner][d] += v;
     }
     // Sightings of attackers near each defender's capital.

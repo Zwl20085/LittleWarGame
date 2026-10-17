@@ -184,3 +184,76 @@ directive (docs/V22_SPEC.md §1): the scripted supreme HQ picks `offensive` / `a
 decide their own orders, exactly as for a human player. `worldq.directive` does not re-send a
 directive that already stands. The challenger now also gets the theatre's front management and the
 AI's posture / reserve rules (cityai) — it is a stronger opponent than the 2.1 challenger.
+
+## 3.0: diversity suite and player-experience metrics (WP-I)
+
+```
+npx tsx scripts/challenge.ts --suite diversity --seeds 7,11,13 --minutes 40 --jobs 9 --experience
+npx tsx scripts/challenge.ts --strategy armour_raid --variant 15-flank,25-direct --seeds 7
+npx tsx scripts/challenge.ts --suite diversity --seeds 7,11 --map-size large --variant 15-flank --experience
+npx tsx scripts/challenge.ts --suite diversity --experience-out docs/lab/base-2.2.1-experience.json   # baseline file
+```
+
+- `--suite diversity` runs every registered strategy: the old seven (rush / rush_micro at `--rushAt`),
+  `armour_raid` in its four variants, `shadow_strike` in open and fog mode, and the rest once.
+  `--all` still runs every strategy with its default variant. `--variant a,b` picks variants,
+  `--map-size large` runs on the large generated map, `--experience` writes
+  `media/stats/lab30/experience-<ts>.{md,json}` (and `--experience-out f` copies the JSON to `f`).
+- The unit-level orders the new strategies give (`unitOrder move / moveHold / attackMove`, queued)
+  go through the same `CommandBus` validation as a player's; nothing writes to the world.
+
+| id | variants | production | orders |
+|---|---|---|---|
+| `armour_raid` | `15-direct`, `15-flank`, `25-direct`, `25-flank` (default `15-direct`) | medium / heavy / light tanks + motor inf | saves up under `defend`; at 15 / 25 min, with 20+ tanks and 10+ motor inf (or 5 min later with what it has), the whole column marches to a staging point 1 000 m from the nearest enemy capital (`flank`: via a waypoint half-way, 900 m or more off the road, on the side with less hostile value), attack-moves once 70 % of it has closed up. |
+| `shadow_strike` | run it with and without `--fog` (`--suite` does both) | infantry, recon, motor inf, light / medium tanks, support | main army `advance`; from 10 min a detachment of 4-10 foot squads + up to 2 light tanks takes a coarse A* route (50 m cells, seen cells cost 9x) over ground outside every defender unit's vision radius (`route.ts`: units, owned observation points), stages 650 m from the capital and attack-moves in. Relaunched 4 min after it dies. |
+| `backdoor` | | balanced, tank leaning | main army `offensive` on the nearest enemy settlement (loud); from 10 min a detachment of capturing infantry worth at most 15 % of the army value takes the shadow route (against all hostile vision) to that enemy's capital. |
+| `feint` | | armour heavy | `advance` to 7 min, a loud `offensive` on the nearest enemy's nearest settlement for 3 min, then a general `offensive` on the second nearest enemy's capital. |
+| `econ_war` | | motor inf, light tanks, recon | home `defend`; from 7 min raiding groups of 6 (up to 5) attack-move onto the nearest enemy economic building (outside 450 m of its capital) or supply truck, re-tasked every 30 s. |
+| `siege` | | howitzers, mortars, infantry, engineers, MG, AT | `fortify` on a 400 m line 45 % of the way to the nearest capital; at 8 howitzers (6-15 min) a general `offensive` on that capital (the front commanders run it as a siege). |
+| `ai_only` | | none | no scripted player: all four factions are the AI (spectate). Pacing / one-sidedness baseline. |
+
+Scenario-only hooks: none. Every force is built from normal production and ordered through the command
+API, so a strategy that cannot field its force (the `armour_raid` 20+10 column needs population) launches
+after 5 min with what it has and reports it that way.
+
+### Metric definitions (`scripts/challenge/experience.ts`, collector `expLog.ts`)
+
+All of it is computed from logged series, never from the match result: army value and territory
+(held objectives) per faction every 30 s; sightings, arrivals, capital snapshots every second.
+Army value = P + M cost x hp share of combat units (no fixed strongpoints, trucks, commanders).
+
+- **One-sidedness**: share of samples in which one side holds more than 70 % of the total army value;
+  lead changes (the leader changes only when the new one has 1.1x the old one's army); largest deficit
+  later overturned (share of total army value by which a side trailed the leader before it led itself);
+  territory Gini at 15 / 30 / 45 min.
+- **Cheap-win index**: for each capital fall, the capturing faction's combat value within 600 m of the
+  capital one second before (the *force*), its share of that faction's army, and defender army over force.
+  Flagged when the force is under 20 % of the attacker's army or the defender's army is at least 3x the force.
+- **Warning time**: an *arrival* is the first time a faction has 400 value within 600 m of an enemy
+  capital (or capture progress). First sighting = the earliest time the defender's visibility set held any
+  unit of that arriving force within 2 500 m of its capital (a unit unseen for 60 s starts a new sighting).
+  Warning = sighting to arrival; reaction = sighting to the defender's `homeThreat.active`;
+  defenders in strength = sighting to the defender having half the force's value inside the ring.
+  Never seen (in either mode: the sighting is real line of sight, not the AI's information mode) counts as 0 s.
+- **Pacing**: first contact (first hostile unit seen by anyone), first non-capital settlement taken,
+  first capital lost, eliminations per hour, whether the match was undecided at the end of the run.
+- **Engagement health** (share of combat-unit samples every 30 s): idle far from every own front and HQ
+  (700 m, no order, no target), stuck (an order or path, no target, moved under 2 m in 30 s),
+  supply-starved (`supplyRatio` < 0.5).
+- **Score**: each metric gets pass / warn / fail from the bands below, the match score is the weighted
+  share of passes (warn counts half) from 0 to 100: PASS at 75 or more, WARN at 50 or more, else FAIL.
+  A scenario's score is the mean over its seeds.
+
+| metric | pass | warn | weight |
+|---|---|---|---|
+| dominated share of time | <= 40 % | <= 60 % | 2 |
+| territory Gini at 30 min | <= 0.45 | <= 0.60 | 1 |
+| cheap-win capital losses | none | - | 3 |
+| warning before a capital loss | >= 90 s | >= 45 s | 3 |
+| first contact | 3-15 min | up to 25 min (under 2 min fails) | 1 |
+| first capital lost | >= 15 min | >= 10 min | 2 |
+| eliminations per hour | <= 3 | <= 5 | 1 |
+| idle far / stuck / starved | <= 15 % / 3 % / 25 % | <= 30 % / 8 % / 45 % | 1 each |
+
+<!--BASELINE-->
+
