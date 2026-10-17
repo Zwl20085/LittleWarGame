@@ -22,12 +22,13 @@ its own note in this folder (`WP-*.md`) on its worktree branch `worktree-agent-<
 - WP-D2 transport wiring (worktree-agent-a25254c4706d82957) — merged. Engineering popover key I.
 - WP-F/G zones + works (worktree-agent-a7cde76b4ad393c3f) — merge e025155. OPEN: eliminations/hour 1.78→0.89 with all flags on (3 seeds, noisy); bunkers/fortress 0 % attacker wins at equal cost (maybe too strong); zones-vs-army not behind at 20 min. → tuning pass must run a 6-seed × 60-min soak and tune `capital_defence`, `construction.defensive.tiers`, `econ_zones` before release.
 
+- WP-X seams (worktree-agent-a8abcce555234e8cf) — merged.
+- WP-E infiltration (worktree-agent-aa578224f6cc603a0) — merged. 0 % undetected crossings, challenge 42/42, cost +5–10 %. Open: pickets rarely trigger (hollow AI fronts) → theatre picket quota is a follow-up; fog: more raiders reach the 700 m ring with system on (40 % vs 21 %) → tuning pass.
+
 ## Wave 2 running
 | WP | branch | status |
 |---|---|---|
 | H unit upgrades | worktree-agent-a355e4433af39a02b | running |
-| X integration seams (zones↔roadnet, zone sites→AI roads) | (launched after F/G merge) | running (Sonnet) |
-| E infiltration/ZOC/pickets | worktree-agent-aa578224f6cc603a0 | running |
 | A doctrines + music wiring + doctrine_* strategies | worktree-agent-ac07b57b1ae15b872 | running |
 
 ## Wave 1 agents still running (merge each when reported; typecheck + tests after every merge)
