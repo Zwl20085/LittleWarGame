@@ -72,6 +72,9 @@ function fireGun(world: World, u: Unit, fx: UpgradeEffectRules): boolean {
   if (u.moving || u.ammo + 1e-9 < w.ammoCost) return false;
   const at = gunAim(world, u, w);
   if (!at) return false;
+  // No shell where our own troops stand (the lob scatters by sigma_m).
+  const safeR = w.blastRadius + 2 * fx.inf_gun.sigma_m;
+  if (world.spatial.findOwner(at.x, at.z, safeR, 1 << u.owner, (o) => o.hp > 0 && o.owner === u.owner)) return false;
   const sigma = fx.inf_gun.sigma_m;
   const land = { x: at.x + world.rngScatter.normal() * sigma, z: at.z + world.rngScatter.normal() * sigma };
   const m: V3 = { x: u.pos.x, y: u.y + 1.2, z: u.pos.z };

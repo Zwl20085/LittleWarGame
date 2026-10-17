@@ -24,7 +24,7 @@ type Task =
   | { kind: 'motor'; seed: number; motor: boolean; sets: string[] };
 
 interface ValueResult { score: number; cost: number; winner: number | null }
-interface RichResult { winner: number | null; endS: number | null; upgradesRich: number; upgradesPoor: number }
+interface RichResult { winner: number | null; endS: number | null; upgradesRich: number; upgradesPoor: number; heldRich: number; heldPoor: number; armyRich: number; armyPoor: number }
 interface MotorResult { t4: number | null; t6: number | null; routeM: number }
 
 const WIN_BONUS = 20000;
@@ -38,6 +38,18 @@ function killValue(m: Match, f: number): number {
 }
 
 const held = (m: Match, f: number): number => m.world.objectives.filter((o) => o.owner === f).length;
+
+function armyValue(m: Match, f: number): number {
+  let v = 0;
+  for (const u of m.world.aliveUnits) if (u.owner === f && u.hp > 0 && !u.fixed) v += u.def.costP + u.def.costM;
+  return v;
+}
+
+const stdErr = (xs: readonly number[]): number => {
+  if (xs.length < 2) return NaN;
+  const mu = mean(xs);
+  return Math.sqrt(xs.reduce((a, x) => a + (x - mu) ** 2, 0) / (xs.length - 1) / xs.length);
+};
 
 /** Item plus its prerequisites, in order. */
 function chain(id: UpgradeId, items: Record<string, { requires?: readonly string[] }>): UpgradeId[] {
@@ -91,6 +103,10 @@ function runRich(t: Extract<Task, { kind: 'rich' }>): RichResult {
     endS: w.result ? w.result.tick / w.tickHz : null,
     upgradesRich: bits(f.upgrades.owned),
     upgradesPoor: bits(w.factions[1 - t.rich].upgrades.owned),
+    heldRich: held(m, t.rich),
+    heldPoor: held(m, 1 - t.rich),
+    armyRich: armyValue(m, t.rich),
+    armyPoor: armyValue(m, 1 - t.rich),
   };
 }
 
@@ -184,7 +200,7 @@ async function main(): Promise<void> {
     }
     const med = median(rows.map((r) => r.ratio));
     md.push('## (a) value per cost, 1v1 equal resources', '', `${seeds.join(',')} × both sides, ${minutes} min. Control score is the same seed/side with no item and no bank. Median value/cost ${med.toFixed(2)}; band 0.6–1.6 × median = ${(0.6 * med).toFixed(2)}–${(1.6 * med).toFixed(2)}.`, '');
-    md.push(mdTable(['item', 'cost P+M', 'mean Δscore', 'value/cost', '÷ median', 'in band', 'A wins'], rows.map((r) => [r.item, r.cost, Math.round(mean(r.deltas)), r.ratio, r.ratio / med, r.ratio >= 0.6 * med && r.ratio <= 1.6 * med ? 'yes' : 'NO', `${r.wins}/${r.n}`])), '');
+    md.push(mdTable(['item', 'cost P+M', 'mean Δscore', '± s.e.', 'value/cost', '± s.e.', '÷ median', 'in band', 'A wins'], rows.map((r) => [r.item, r.cost, Math.round(mean(r.deltas)), Math.round(stdErr(r.deltas)), r.ratio, stdErr(r.deltas) / Math.max(1, r.cost), r.ratio / med, r.ratio >= 0.6 * med && r.ratio <= 1.6 * med ? 'yes' : 'NO', `${r.wins}/${r.n}`])), '');
     json.value = { median: med, rows };
   }
   if (parts.includes('rich')) {
@@ -192,7 +208,9 @@ async function main(): Promise<void> {
     const wins = rr.filter(([t, r]) => r.winner === t.rich);
     const times = wins.map(([, r]) => r.endS!).filter((x) => x !== null);
     md.push('## (b) rich (1.5× income) vs poor, AI research on', '', `${richSeeds.join(',')} × both sides, up to ${richMinutes} min.`, '');
-    md.push(mdTable(['seed', 'rich side', 'winner', 'end (min)', 'upgrades rich', 'upgrades poor'], rr.map(([t, r]) => [t.seed, t.rich, r.winner ?? '—', r.endS === null ? '—' : r.endS / 60, r.upgradesRich, r.upgradesPoor])), '');
+    md.push(mdTable(['seed', 'rich side', 'winner', 'end (min)', 'upgrades rich', 'upgrades poor', 'held rich:poor', 'army rich:poor'], rr.map(([t, r]) => [t.seed, t.rich, r.winner ?? '—', r.endS === null ? '—' : r.endS / 60, r.upgradesRich, r.upgradesPoor, `${r.heldRich}:${r.heldPoor}`, `${r.armyRich}:${r.armyPoor}`])), '');
+    const ahead = rr.filter(([t, r]) => r.winner === t.rich || (r.winner === null && r.heldRich + r.armyRich / 1000 > r.heldPoor + r.armyPoor / 1000));
+    md.push(`Rich side ahead at the end (won, or more settlements + army value / 1000): ${ahead.length}/${rr.length}.`, '');
     md.push(`Rich side wins ${wins.length}/${rr.length} (${Math.round((100 * wins.length) / Math.max(1, rr.length))} %), poor side ${rr.filter(([t, r]) => r.winner !== null && r.winner !== t.rich).length}; median rich win time ${times.length ? (median(times) / 60).toFixed(1) : '—'} min.`, '');
     json.rich = { wins: wins.length, n: rr.length, medianWinS: median(times) };
   }

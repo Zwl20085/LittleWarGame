@@ -414,7 +414,7 @@
       "staff": {"p_k": 220, "m_k": 160, "seconds": 120}
     },
     "effects": {
-      "inf_gun": {"range_m": 260, "interval_s": 10, "damage": 110, "blast_m": 6, "suppression": 22, "muzzle_mps": 75, "sigma_m": 7, "ammo_cost": 0.02},
+      "inf_gun": {"range_m": 260, "interval_s": 10, "damage": 110, "blast_m": 6, "suppression": 22, "muzzle_mps": 75, "sigma_m": 7, "ammo_cost": 0.006},
       "ap_grenade": {"range_m": 35, "interval_s": 9, "damage": 240, "penetration": 85, "ammo_cost": 0.01},
       "armour_per_level": {"armour": 0.12, "hp": 0.05, "speed": -0.03},
       "gun_per_level": {"pen": 12, "damage": 0.1, "range": 0.04},
