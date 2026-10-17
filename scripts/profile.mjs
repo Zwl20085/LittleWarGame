@@ -1,6 +1,6 @@
 // One-command CPU profile of the headless simulation.
 //
-//   node scripts/profile.mjs [seconds=600] [seed=7] [--no-inline] [--callers <fn>] [--top 40]
+//   node scripts/profile.mjs [seconds=600] [seed=7] [--no-inline] [--callers <fn>] [--top 40] [--dir d [--reuse]]
 //
 // Bundles scripts/perf.ts with esbuild (tsx spawns a child process, so `node --cpu-prof` cannot
 // see it), runs it under V8's sampling profiler and prints the hottest functions by self time and
@@ -17,18 +17,24 @@ const flag = (name) => { const i = args.indexOf(name); if (i < 0) return null; c
 const noInline = args.includes('--no-inline') && (args.splice(args.indexOf('--no-inline'), 1), true);
 const callers = flag('--callers');
 const top = Number(flag('--top') ?? 40);
+const dirArg = flag('--dir');
+const reuse = args.includes('--reuse') && (args.splice(args.indexOf('--reuse'), 1), true);
 const [seconds = '600', seed = '7'] = args;
 
-const dir = join(tmpdir(), 'littlewar-profile');
-rmSync(dir, { recursive: true, force: true });
-mkdirSync(dir, { recursive: true });
+// `--dir d` keeps the bundle and profile in d; `--dir d --reuse` re-analyses that profile
+// (e.g. with another `--callers`) without running the war again. SIZE=large is passed through.
+const dir = dirArg ? resolve(dirArg) : join(tmpdir(), `littlewar-profile-${process.pid}`);
 const bundle = join(dir, 'perf.bundle.mjs');
-const esbuild = resolve('node_modules/.bin', process.platform === 'win32' ? 'esbuild.cmd' : 'esbuild');
-execFileSync(esbuild, ['scripts/perf.ts', '--bundle', '--platform=node', '--format=esm', '--target=node18', `--outfile=${bundle}`, '--log-level=warning'], { stdio: 'inherit', shell: process.platform === 'win32' });
-const nodeArgs = [...(noInline ? ['--no-turbo-inlining'] : []), '--cpu-prof', `--cpu-prof-dir=${dir}`, bundle, 'generated', seconds, seed];
-const run = spawnSync(process.execPath, nodeArgs, { encoding: 'utf8', maxBuffer: 1 << 26 });
-const lines = run.stdout.split('\n');
-console.log(lines.filter((l) => /perTick|tick ms|slowest|field cache|fieldBuilds/.test(l)).join('\n'));
+if (!reuse) {
+  rmSync(dir, { recursive: true, force: true });
+  mkdirSync(dir, { recursive: true });
+  const esbuild = resolve('node_modules/.bin', process.platform === 'win32' ? 'esbuild.cmd' : 'esbuild');
+  execFileSync(esbuild, ['scripts/perf.ts', '--bundle', '--platform=node', '--format=esm', '--target=node18', `--outfile=${bundle}`, '--log-level=warning'], { stdio: 'inherit', shell: process.platform === 'win32' });
+  const nodeArgs = [...(noInline ? ['--no-turbo-inlining'] : []), '--cpu-prof', `--cpu-prof-dir=${dir}`, bundle, 'generated', seconds, seed];
+  const run = spawnSync(process.execPath, nodeArgs, { encoding: 'utf8', maxBuffer: 1 << 26 });
+  const lines = run.stdout.split('\n');
+  console.log(lines.filter((l) => /perTick|tick ms|slowest|field cache|fieldBuilds/.test(l)).join('\n'));
+}
 
 const file = readdirSync(dir).filter((f) => f.endsWith('.cpuprofile')).sort().pop();
 const p = JSON.parse(readFileSync(join(dir, file), 'utf8'));
@@ -42,7 +48,12 @@ for (let i = 0; i < p.samples.length; i++) {
   total += d;
   selfById.set(p.samples[i], (selfById.get(p.samples[i]) ?? 0) + d);
 }
-const key = (n) => `${n.callFrame.functionName || '(anon)'}:${n.callFrame.lineNumber}`;
+// The bundle flattens every module into one file; esbuild marks each module with a
+// `// src/sim/x.ts` comment, so map the bundle line back to its module for the report.
+const starts = [];
+readFileSync(bundle, 'utf8').split('\n').forEach((l, i) => { const mm = /^\/\/ ((?:src|scripts)\/\S+\.ts)$/.exec(l); if (mm) starts.push([i, mm[1].replace(/^src\//, '')]); });
+const moduleAt = (line) => { let lo = 0, hi = starts.length - 1, at = '?'; while (lo <= hi) { const mid = (lo + hi) >> 1; if (starts[mid][0] <= line) { at = starts[mid][1]; lo = mid + 1; } else hi = mid - 1; } return at; };
+const key = (n) => n.callFrame.lineNumber < 0 ? (n.callFrame.functionName || '(anon)') : `${n.callFrame.functionName || '(anon)'} (${moduleAt(n.callFrame.lineNumber)})`;
 const self = new Map();
 const incl = new Map();
 for (const [id, d] of selfById) {
@@ -56,7 +67,7 @@ for (const [id, d] of selfById) {
   }
 }
 const fmt = (m, n) => [...m].sort((a, b) => b[1] - a[1]).slice(0, n).map(([k, v]) => `${(100 * v / total).toFixed(1).padStart(5)}%  ${k}`).join('\n');
-console.log(`\nprofile ${(total / 1e6).toFixed(1)} s CPU (${file})\n--- self time ---\n${fmt(self, top)}\n--- inclusive time ---\n${fmt(incl, Math.min(top, 25))}`);
+console.log(`\nprofile ${(total / 1e6).toFixed(1)} s CPU (${file})\n--- self time ---\n${fmt(self, top)}\n--- inclusive time ---\n${fmt(incl, top)}`);
 if (callers) {
   const m = new Map();
   for (const [id, d] of selfById) {

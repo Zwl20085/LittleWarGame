@@ -1,17 +1,17 @@
-import { cancelOrder, placeSlots } from './production';
-import { startBuilding, ECON_KINDS } from './econ';
-import { placeById, placeOwner } from './settlements';
 import type { EconKind } from '../data/types';
 import type { Match } from './sim';
-import { DIRECTIVE_KINDS, DIRECTIVE_LINE_MIN_M, setDirective } from './directive';
-import { insisted } from './compliance';
-import { releaseFund } from './econai';
 import { applyWorks } from './worksCommands';
-import { applyDirectiveNow } from './theatre';
-import type { DirectiveKind, Unit } from './types';
-import { startRailExtension, startRailRepair, startRoadJob, type JobResult } from './transportjobs';
-import { cancelResearch, startResearch } from './upgrades';
-import { dist, type V2 } from './vec';
+import type { DirectiveKind } from './types';
+import type { V2 } from './vec';
+import {
+  applyBuildEcon, applyCancelOrder, applyQueueUnit, applyResetAlloc, applySetAlloc, applySetAuto, applySetAutoInvest,
+  applySetCap, applySetLock, applySetWeight, applyTogglePause,
+} from './commands/production';
+import { applyCancelZone, applySetDirective } from './commands/directive';
+import { applyFocus, applyUnitOrder } from './commands/units';
+import { applyBuildRoad, applyExtendRail, applyRepairRail } from './commands/transport';
+import { applyCancelResearch, applyResearch } from './commands/upgrades';
+import { fail } from './commands/shared';
 
 /**
  * Player commands = the supreme HQ's job (2.2, docs/V22_SPEC.md §1): the war effort (production,
@@ -100,210 +100,37 @@ export class CommandBus {
   }
 }
 
-function ownedUnits(match: Match, actor: number, ids: number[]): Unit[] {
-  const out: Unit[] = [];
-  for (const id of ids) {
-    const u = match.world.unitAlive(id);
-    if (u && u.owner === actor && !u.fixed) out.push(u);
-  }
-  return out;
-}
-
-const fail = (reason: CommandFail): CommandOutcome => ({ ok: false, reason });
-const OK: CommandOutcome = { ok: true };
-
-const UNIT_ORDERS: readonly string[] = ['move', 'moveHold', 'attackMove', 'retreat', 'hold', 'resume'];
-/** Most units one order may name (a drag-select never needs more; bounds the work per command). */
-const MAX_ORDER_UNITS = 64;
-const validUnitIds = (ids: unknown): ids is number[] => Array.isArray(ids) && ids.length <= MAX_ORDER_UNITS && ids.every((i) => Number.isInteger(i));
-
-const finiteV2 = (p: V2 | undefined): p is V2 => !!p && Number.isFinite(p.x) && Number.isFinite(p.z);
-/** A unit the player may produce (review HIGH 3: not the train, not a front commander). */
-const producibleId = (w: Match['world'], id: string): boolean => !!w.data.units.get(id)?.producible && id !== w.data.rules.command.commander_unit;
-
+/** Validates and dispatches one command to its handler module (src/sim/commands/*.ts); validation order is per handler. */
 function apply(match: Match, env: CommandEnvelope): CommandOutcome {
-  const w = match.world;
-  const f = w.factions[env.actor];
+  const f = match.world.factions[env.actor];
   if (!f || !f.alive) return fail('FACTION_DEAD');
   const c = env.cmd;
+  const actor = env.actor;
   switch (c.type) {
-    case 'setWeight':
-      if (!Number.isFinite(c.weight) || c.weight < 0 || !producibleId(w, c.unitId)) return fail('BAD_VALUE');
-      f.weights = { ...f.weights, [c.unitId]: c.weight };
-      return OK;
-    case 'setCap':
-      if (!Number.isFinite(c.cap) || c.cap < 0 || !w.data.units.has(c.unitId) || !producibleId(w, c.unitId)) return fail('BAD_VALUE');
-      f.caps = { ...f.caps, [c.unitId]: Math.round(c.cap) };
-      return OK;
-    case 'togglePause':
-      if (!w.data.units.has(c.unitId) || !producibleId(w, c.unitId)) return fail('BAD_VALUE');
-      f.paused = { ...f.paused, [c.unitId]: !f.paused[c.unitId] };
-      return OK;
-    case 'queueUnit':
-      // Front commanders are appointed by the supreme HQ, never bought.
-      if (!w.data.units.get(c.unitId)?.producible || c.unitId === w.data.rules.command.commander_unit) return fail('BAD_VALUE');
-      if (c.frontId !== -1 && !f.fronts.some((x) => x.id === c.frontId)) return fail('NO_FRONT');
-      if (c.placeId !== undefined) {
-        // 2.2: queue at a chosen place, which must be ours and have a slot of the unit's facility.
-        const p = placeById(w, c.placeId);
-        if (!p) return fail('BAD_VALUE');
-        if (placeOwner(w, p) !== env.actor) return fail('NOT_OWNER');
-        if (placeSlots(w, p, w.data.units.get(c.unitId)!.facility) <= 0) return fail('NO_SLOT');
-        f.manualQueue = [...f.manualQueue, { unitId: c.unitId, frontId: c.frontId, placeId: c.placeId }];
-        return OK;
-      }
-      f.manualQueue = [...f.manualQueue, { unitId: c.unitId, frontId: c.frontId }];
-      return OK;
-    case 'buildEcon': {
-      if (!ECON_KINDS.includes(c.kind)) return fail('BAD_VALUE');
-      const r = startBuilding(w, f, c.placeId, c.kind);
-      if (typeof r !== 'string') return OK;
-      return fail(r === 'INSUFFICIENT_P' || r === 'INSUFFICIENT_M' || r === 'NOT_OWNER' || r === 'NO_SLOT' ? r : r === 'CONTESTED' ? 'CONTESTED' : 'BAD_VALUE');
-    }
+    case 'setWeight': return applySetWeight(match, f, c);
+    case 'setCap': return applySetCap(match, f, c);
+    case 'togglePause': return applyTogglePause(match, f, c);
+    case 'queueUnit': return applyQueueUnit(match, f, c, actor);
+    case 'buildEcon': return applyBuildEcon(match, f, c);
     case 'buildZone':
     case 'upgradeZone':
     case 'upgradeWork':
     case 'layMines':
       return applyWorks(match, f, c);
-    case 'cancelOrder':
-      return cancelOrder(w, f, c.orderId) ? OK : fail('NO_ORDER');
-    case 'research': {
-      const r = startResearch(w, f, c.upgradeId);
-      return r === null ? OK : fail(r);
-    }
-    case 'cancelResearch':
-      return cancelResearch(w, f) ? OK : fail('NO_RESEARCH');
-    case 'setAlloc': {
-      if (!Array.isArray(c.alloc) || c.alloc.length !== 3 || c.alloc.some((v) => typeof v !== 'number' || !Number.isFinite(v) || v < 0)) return fail('BAD_VALUE');
-      const sum = c.alloc[0] + c.alloc[1] + c.alloc[2];
-      if (!Number.isFinite(sum) || !(sum > 0)) return fail('BAD_VALUE');
-      f.alloc = [c.alloc[0] / sum, c.alloc[1] / sum, c.alloc[2] / sum];
-      return OK;
-    }
-    case 'setAutoInvest':
-      if (typeof c.on !== 'boolean') return fail('BAD_VALUE');
-      f.autoInvest = c.on;
-      if (!c.on) releaseFund(w, f);
-      return OK;
-    case 'setAuto':
-      if (typeof c.on !== 'boolean') return fail('BAD_VALUE');
-      f.autoEconomy = c.on;
-      return OK;
-    case 'setLock': {
-      if (![0, 1, 2].includes(c.index) || typeof c.locked !== 'boolean') return fail('BAD_VALUE');
-      const locks: [boolean, boolean, boolean] = [...f.locks];
-      locks[c.index] = c.locked;
-      f.locks = locks;
-      return OK;
-    }
-    case 'resetAlloc':
-      f.alloc = [...w.data.rules.economy.allocation_default] as [number, number, number];
-      return OK;
-    case 'setDirective': {
-      if (!DIRECTIVE_KINDS.includes(c.kind)) return fail('BAD_VALUE');
-      if (c.force !== undefined && typeof c.force !== 'boolean') return fail('BAD_VALUE');
-      if ((c.axis !== undefined && !finiteV2(c.axis)) || (c.line !== undefined && (!finiteV2(c.line?.a) || !finiteV2(c.line?.b)))) return fail('BAD_VALUE');
-      if (c.line && c.kind !== 'fortify') return fail('LINE_ONLY_FORTIFY');
-      const pts = [c.axis, c.line?.a, c.line?.b].filter((p): p is V2 => !!p);
-      if (pts.some((p) => !w.terrain.inBounds(p.x, p.z))) return fail('OUT_OF_BOUNDS');
-      // Infantry must be able to stand there (a point in a lake or on a cliff is no objective).
-      const nav = w.nav(false, 35);
-      const axis = c.axis ? nav.nearestPassable(c.axis, 80) : null;
-      const la = c.line ? nav.nearestPassable(c.line.a, 30) : null;
-      const lb = c.line ? nav.nearestPassable(c.line.b, 30) : null;
-      if ((c.axis && !axis) || (c.line && (!la || !lb))) return fail('UNREACHABLE');
-      if (la && lb && dist(la, lb) < DIRECTIVE_LINE_MIN_M) return fail('LINE_SHORT');
-      const line = la && lb ? { a: { ...la }, b: { ...lb } } : null;
-      const forced = insisted(w, f, { kind: c.kind, axis, line }, c.force);
-      setDirective(w, f, c.kind, axis ? { ...axis } : null, line, true, forced);
-      applyDirectiveNow(w, f);
-      return OK;
-    }
-    case 'cancelZone': {
-      const z = f.zones.find((x) => x.id === c.zoneId && !x.cancelled);
-      if (!z) return fail('NO_ORDER');
-      z.cancelled = true;
-      return OK;
-    }
-    case 'unitOrder': {
-      if (!validUnitIds(c.unitIds) || !UNIT_ORDERS.includes(c.order)) return fail('BAD_VALUE');
-      if (c.queue !== undefined && typeof c.queue !== 'boolean') return fail('BAD_VALUE');
-      if (c.pos !== undefined) {
-        if (!finiteV2(c.pos)) return fail('BAD_VALUE');
-        if (!w.terrain.inBounds(c.pos.x, c.pos.z)) return fail('OUT_OF_BOUNDS');
-      }
-      const units = ownedUnits(match, env.actor, c.unitIds);
-      if (units.length === 0) return fail('NOT_OWNER');
-      let any = false;
-      units.forEach((u, i) => {
-        if (c.order === 'resume') {
-          u.manual = null;
-          u.queue = [];
-          u.behavior = 'advance';
-          any = true;
-          return;
-        }
-        if (u.routing && c.order !== 'retreat') return;
-        // Formation offsets so a group does not converge on one point.
-        const off = c.pos ? formationOffset(i, units.length) : { x: 0, z: 0 };
-        const dest = c.pos ? { x: c.pos.x + off.x, z: c.pos.z + off.z } : u.pos;
-        const task =
-          c.order === 'move' ? { type: 'move' as const, dest, arrivedAt: null, hold: false }
-          : c.order === 'moveHold' ? { type: 'move' as const, dest, arrivedAt: null, hold: true }
-          : c.order === 'attackMove' ? { type: 'attackMove' as const, dest, clearSince: null }
-          : c.order === 'retreat' ? { type: 'retreat' as const }
-          : { type: 'hold' as const, pos: { ...u.pos } };
-        if (c.queue && u.manual && u.queue.length < w.data.rules.manual_control.max_queued_commands) u.queue.push(task);
-        else {
-          u.manual = task;
-          u.queue = [];
-          u.thinkAt = 0;
-          u.repathAt = 0;
-        }
-        any = true;
-      });
-      return any ? OK : fail('ROUTING');
-    }
-    case 'buildRoad': {
-      if (!finiteV2(c.a) || !finiteV2(c.b)) return fail('BAD_VALUE');
-      if (!w.terrain.inBounds(c.a.x, c.a.z) || !w.terrain.inBounds(c.b.x, c.b.z)) return fail('OUT_OF_BOUNDS');
-      return jobOutcome(startRoadJob(w, env.actor, { x: c.a.x, z: c.a.z }, { x: c.b.x, z: c.b.z }));
-    }
-    case 'repairRail':
-      if (!Number.isInteger(c.lineId) || c.lineId < 0) return fail('BAD_VALUE');
-      return jobOutcome(startRailRepair(w, env.actor, c.lineId));
-    case 'extendRail':
-      if (!Number.isInteger(c.stationIdx) || !Number.isInteger(c.to) || c.stationIdx < 0 || c.to < 0) return fail('BAD_VALUE');
-      return jobOutcome(startRailExtension(w, env.actor, c.stationIdx, c.to));
-    case 'focus': {
-      if (!validUnitIds(c.unitIds) || !Number.isInteger(c.targetId)) return fail('BAD_VALUE');
-      const t = w.unitAlive(c.targetId);
-      if (!t || !w.knows(env.actor, t)) return fail('STALE_TARGET');
-      const units = ownedUnits(match, env.actor, c.unitIds);
-      if (units.length === 0) return fail('NOT_OWNER');
-      for (const u of units) {
-        u.manual = { type: 'focus', targetId: t.id, startedAt: w.time };
-        u.thinkAt = 0;
-      }
-      return OK;
-    }
+    case 'cancelOrder': return applyCancelOrder(match, f, c);
+    case 'research': return applyResearch(match, f, c);
+    case 'cancelResearch': return applyCancelResearch(match, f);
+    case 'setAlloc': return applySetAlloc(f, c);
+    case 'setAutoInvest': return applySetAutoInvest(match, f, c);
+    case 'setAuto': return applySetAuto(f, c);
+    case 'setLock': return applySetLock(f, c);
+    case 'resetAlloc': return applyResetAlloc(match, f);
+    case 'setDirective': return applySetDirective(match, f, c);
+    case 'cancelZone': return applyCancelZone(f, c);
+    case 'unitOrder': return applyUnitOrder(match, c, actor);
+    case 'buildRoad': return applyBuildRoad(match, c, actor);
+    case 'repairRail': return applyRepairRail(match, c, actor);
+    case 'extendRail': return applyExtendRail(match, c, actor);
+    case 'focus': return applyFocus(match, c, actor);
   }
-}
-
-const JOB_FAIL: Record<string, CommandFail> = {
-  DISABLED: 'TRANSPORT_OFF', LENGTH: 'TOO_LONG', WATER: 'BAD_TERRAIN', SLOPE: 'BAD_TERRAIN', OUT_OF_BOUNDS: 'OUT_OF_BOUNDS',
-  NO_BUDGET: 'INSUFFICIENT_M', NOT_CUT: 'NOT_CUT', NOT_HELD: 'NOT_HELD', BUSY: 'JOB_BUSY', NO_SUCH: 'STALE_TARGET', HAS_STATION: 'HAS_STATION', BAD_TARGET: 'BAD_VALUE',
-};
-
-/** Map an engineer-job refusal (transportjobs.ts) to a structured command failure. */
-function jobOutcome(r: JobResult): CommandOutcome {
-  return r.ok ? OK : fail(JOB_FAIL[r.reason] ?? 'BAD_VALUE');
-}
-
-function formationOffset(i: number, n: number): V2 {
-  if (n <= 1) return { x: 0, z: 0 };
-  const ring = Math.floor(Math.sqrt(i));
-  const a = i * 2.399963; // golden angle
-  const r = 12 * Math.sqrt(i) + ring;
-  return { x: Math.cos(a) * r, z: Math.sin(a) * r };
 }
