@@ -308,7 +308,7 @@ svg.brass-gauge .needle { transform-origin: 30px 31px; transition: transform 400
 /* Right: selection dossier, tilted from the right edge */
 .right {
   position: absolute; top: calc(80px * var(--ui)); right: 14px; width: calc(284px * var(--ui)); padding: 12px 14px;
-  max-height: calc(100% - 100px * var(--ui) - var(--mini-h, 330px)); overflow: auto;
+  max-height: calc(100% - 100px * var(--ui) - var(--mini-h, 330px) - 36px * var(--ui)); overflow: auto;
   transform: perspective(1200px) rotateY(-5deg); transform-origin: right center;
   animation: dossier-in var(--t-panel) var(--ease);
 }
@@ -613,3 +613,10 @@ svg.brass-gauge .needle { transform-origin: 30px 31px; transition: transform 400
 .tbld { display: grid; grid-template-columns: 1fr auto auto; gap: 8px; align-items: center; font-size: var(--fs-s); padding: 2px 0; }
 .tbld.ruin { color: var(--ink-muted); text-decoration: line-through; }
 .tbld-k { font-weight: 600; }
+
+/* 3.0 camera modes (ui/cameraControls.ts): mode strip above the minimap, dip to black for battle-cam cuts */
+.cam-modes { position: absolute; right: 10px; bottom: calc(var(--mini-h, 330px) + 16px); display: flex; align-items: center; gap: 4px; padding: 4px 8px; }
+.cam-modes .lbl { font-family: var(--font-stencil); font-weight: 700; letter-spacing: 0.12em; font-size: var(--fs-s); margin-right: 4px; }
+.cam-modes .cam-key { min-width: 0; height: calc(24px * var(--ui)); padding: 0 6px; font-size: var(--fs-s); }
+.cam-dip { position: absolute; inset: 0; background: #070605; opacity: 0; pointer-events: none; transition: opacity 420ms ease; }
+.cam-dip.dip { opacity: 1; transition-duration: 400ms; }

@@ -26,4 +26,6 @@ export interface GameContext {
   issue(cmd: Command): void;
   toast(text: string, severity?: 'info' | 'warn' | 'alert'): void;
   openPanel: string | null;
+  /** 3.0 camera modes (ui/cameraControls.ts); absent in attract mode. */
+  camera?: { followFront(frontId: number): void };
 }
