@@ -87,7 +87,7 @@ describe('zone of control (zoc.ts)', () => {
     const m = intruder(world, 1, at(p, 100, 0));
     world.spatial.rebuild(world.aliveUnits);
     INFILTRATION_AB.on = false;
-    updateInfiltration(world, match.front);
+    updateInfiltration(world);
     expect(m.zocUntil).toBe(0);
   });
 
@@ -231,10 +231,10 @@ describe('pickets and the reaction group (pickets.ts)', () => {
     spawn(world, 0, 'infantry', at(q, 0, 100), s.id);
     const m = intruder(world, 1, at(q, -60, 0));
     world.spatial.rebuild(world.aliveUnits);
-    updateInfiltration(world, match.front);
+    updateInfiltration(world);
     m.pos = at(q, 60, 0);
     world.spatial.rebuild(world.aliveUnits);
-    updateInfiltration(world, match.front);
+    updateInfiltration(world);
     expect(infiltrationReports(f).some((rep) => rep.crossed)).toBe(true);
     for (const u of group) expect(u.opRole).toBe('hunt');
     const before = Math.min(...group.map((u) => dist(u.pos, m.pos)));
@@ -254,7 +254,7 @@ describe('rear screen and hunt (infiltration.ts)', () => {
       for (let k = 0; k < 24; k++) {
         const a = (k / 24) * Math.PI * 2;
         const p = { x: hq.x + Math.cos(a) * d, z: hq.z + Math.sin(a) * d };
-        if (world.terrain.inBounds(p.x, p.z) && nav.passable(p) && inRear(world, match.front, world.factions[0], p)) return p;
+        if (world.terrain.inBounds(p.x, p.z) && nav.passable(p) && inRear(world, world.factions[0], p)) return p;
       }
     }
     throw new Error('no own rear ground');
@@ -268,9 +268,9 @@ describe('rear screen and hunt (infiltration.ts)', () => {
     const p = ownRearSpot(match);
     const home = headingTo(p, world.hqPos(0));
     const squads = [0, 1, 2, 3].map((i) => intruder(world, 1, at(p, Math.cos(home) * i * 12, Math.sin(home) * i * 12)));
-    expect(squads.every((u) => inRear(world, match.front, f, u.pos))).toBe(true);
+    expect(squads.every((u) => inRear(world, f, u.pos))).toBe(true);
     world.spatial.rebuild(world.aliveUnits);
-    reportInfiltrators(world, match.front);
+    reportInfiltrators(world);
     const rep = infiltrationReports(f).find((x) => x.noted);
     expect(rep).toBeDefined();
     expect(rep!.value).toBeGreaterThanOrEqual(r.report_min_value);
@@ -315,9 +315,9 @@ describe('rear screen and hunt (infiltration.ts)', () => {
     const p = ownRearSpot(match);
     intruder(world, 0, p);
     world.spatial.rebuild(world.aliveUnits);
-    reportInfiltrators(world, match.front);
+    reportInfiltrators(world);
     expect(infiltrationReports(f).length).toBe(0);
     const enemyHq = world.hqPos(1);
-    expect(inRear(world, match.front, f, enemyHq)).toBe(false);
+    expect(inRear(world, f, enemyHq)).toBe(false);
   });
 });

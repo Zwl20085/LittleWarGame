@@ -1,8 +1,6 @@
 import type { InfiltrationRules } from '../data/infiltrationRules';
 import { selectTarget } from './combat';
 import { isCommander } from './formulas';
-import { enemyDistance } from './frontai';
-import { NEUTRAL, type FrontlineField } from './frontline';
 import { onBoundFront, frontById } from './frontref';
 import { moveTo, stop } from './movement';
 import { reactionGroup } from './pickets';
@@ -18,8 +16,8 @@ import { holdsLine, infilOn, infilRules, INFILTRATION_AB, updateZoc, type ZocCon
  * - **Contact** (zoc.ts, every 0.5 s): an intruder in a line unit's zone of control is chased by up to
  *   `engage_per_intruder` line units (leashed); one that *crossed* the line is reported at once and
  *   the front's reaction group (pickets.ts) intercepts it.
- * - **Rear reports** (every 1 s): a known enemy on the faction's own ground, `report_depth_m` from
- *   hostile-held ground and away from its own line units, is an infiltrator; nearby ones form a report.
+ * - **Rear reports** (every 1 s): a known enemy `report_depth_m` inside the faction's ground (by its nearest
+ *   capital / settlement, `rearDepth`) and away from its own line units is an infiltrator; nearby ones form a report.
  *   A report worth `report_min_value` is announced (log `log.infiltrator` + minimap blip).
  * - **Rear screen**: the own towns / cities / economic towns / capital nearest the report get 1–2
  *   squads posted toward it. **Hunt**: the nearest free units (not fighting, not on a binding order)
@@ -85,12 +83,12 @@ const infiltratorKind = (u: Unit): boolean =>
 const CONTACTS: ZocContact[] = [];
 
 /** Every 0.5 s right after the visibility pass (sim.ts): zone of control and contacts; rear reports every 1 s. */
-export function updateInfiltration(world: World, field: FrontlineField): void {
+export function updateInfiltration(world: World): void {
   if (!infilOn(world)) return;
   if (INFILTRATION_AB.zoc) updateZoc(world, CONTACTS);
   const perIntruder = new Map<number, number>();
   if (INFILTRATION_AB.engage) for (const c of CONTACTS) onContact(world, c, perIntruder);
-  if (INFILTRATION_AB.rear && world.tick % world.tickHz === 0) reportInfiltrators(world, field);
+  if (INFILTRATION_AB.rear && world.tick % world.tickHz === 0) reportInfiltrators(world);
 }
 
 function onContact(world: World, c: ZocContact, perIntruder: Map<number, number>): void {
@@ -141,40 +139,57 @@ function reportAt(world: World, f: Faction, p: V2, value: number, ids: number[])
 // ---------------------------------------------------------------- rear reports
 
 /**
- * Is `p` behind faction `f`'s line: own ground (`field`; unclaimed ground nearer its capital than any
- * other) at least report_depth_m from hostile-held ground, or where a report already tracks infiltrators?
+ * Ground by settlements: `p` belongs to the faction whose capital or held settlement is nearest, and lies
+ * (distance to the nearest hostile one − distance to the nearest own one) / 2 inside it — the distance
+ * to the bisector, a territory line that a moving detachment cannot drag along with it (the influence
+ * field follows units, so a raid deep in our ground stood on "its own" cells). `near[g]` = metres from
+ * `p` to faction g's nearest capital / held settlement.
  */
-export function inRear(world: World, field: FrontlineField, f: Faction, p: V2): boolean {
-  const r = infilRules(world);
-  const owner = field.ownerAt(p);
-  const ours = owner === f.id || (owner === NEUTRAL && nearestCapital(world, p) === f.id);
-  if (ours && enemyDistance(world, f.id, p) >= r.report_depth_m) return true;
-  // A detachment deep in our ground turns the cells around it contested: keep tracking it once reported.
-  return bookOf(f).list.some((rep) => dist(rep.pos, p) < r.report_match_m);
+function anchorDistances(world: World, p: V2, near: Float64Array): void {
+  near.fill(Infinity);
+  for (const f of world.factions) if (f.alive) near[f.id] = dist(world.hqPos(f.id), p);
+  for (const o of world.objectives) {
+    if (o.owner < 0 || !world.factions[o.owner]?.alive) continue;
+    const d = dist(o.pos, p);
+    if (d < near[o.owner]) near[o.owner] = d;
+  }
 }
 
-function nearestCapital(world: World, p: V2): number {
-  let best = -1;
-  let bd = Infinity;
-  for (const f of world.factions) {
-    if (!f.alive) continue;
-    const d = dist(world.hqPos(f.id), p);
-    if (d < bd) { bd = d; best = f.id; }
-  }
-  return best;
+function depthFrom(world: World, f: number, near: Float64Array): number {
+  let hostile = Infinity;
+  for (const g of world.factions) if (g.alive && g.id !== f && world.isHostile(f, g.id)) hostile = Math.min(hostile, near[g.id]);
+  return Number.isFinite(hostile) ? Math.max(0, (hostile - near[f]) / 2) : 0;
+}
+
+const NEAR = new Float64Array(32);
+
+/** How deep `p` lies inside faction `f`'s ground (m to the bisector with the nearest hostile settlement), 0 off it. */
+export function rearDepth(world: World, f: Faction, p: V2): number {
+  anchorDistances(world, p, NEAR);
+  return depthFrom(world, f.id, NEAR);
+}
+
+/** Is `p` behind faction `f`'s line (report_depth_m inside its ground), or where a report already tracks infiltrators? */
+export function inRear(world: World, f: Faction, p: V2): boolean {
+  const r = infilRules(world);
+  if (rearDepth(world, f, p) >= r.report_depth_m) return true;
+  return bookOf(f).list.some((rep) => dist(rep.pos, p) < r.report_match_m);
 }
 
 interface Cluster { seed: V2; sx: number; sz: number; v: number; ids: number[] }
 
 /** Rear reports (every 1 s): known enemies in each faction's rear, away from their own line units. */
-export function reportInfiltrators(world: World, field: FrontlineField): void {
+export function reportInfiltrators(world: World): void {
   const r = infilRules(world);
   const seen: Unit[][] = world.factions.map(() => []);
   for (const m of world.aliveUnits) {
     if (!infiltratorKind(m)) continue;
+    anchorDistances(world, m.pos, NEAR);
     let isolated: boolean | null = null;
     for (const f of world.factions) {
-      if (!f.alive || f.id === m.owner || !world.isHostile(f.id, m.owner) || !world.knows(f.id, m) || !inRear(world, field, f, m.pos)) continue;
+      if (!f.alive || f.id === m.owner || !world.isHostile(f.id, m.owner) || !world.knows(f.id, m)) continue;
+      const deep = depthFrom(world, f.id, NEAR) >= r.report_depth_m || bookOf(f).list.some((rep) => dist(rep.pos, m.pos) < r.report_match_m);
+      if (!deep) continue;
       isolated ??= !world.spatial.findOwner(m.pos.x, m.pos.z, r.report_isolated_m, 1 << m.owner, holdsLine);
       if (isolated) seen[f.id].push(m);
     }

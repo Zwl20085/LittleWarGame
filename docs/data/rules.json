@@ -351,7 +351,7 @@
     "fronts_per_think_tick": 8
   },
   "infiltration": {
-    "comment": "3.0 sparse fronts (V30_SPEC §11, zoc.ts / pickets.ts / infiltration.ts). Zone of control: an enemy within zoc_m of a front's line unit moves at zoc_speed_mul (refreshed every 0.5 s, held zoc_hold_s), is revealed to that faction, and up to engage_per_intruder line units chase it (engage_leash_m, engage_s); crossing the segment between two own line units closer than contact_gap_m is a line crossing and the front's reaction group intercepts (reaction_leash_m from its front). Pickets: a front spreads spare infantry (at most picket_max_share) along its stretch so no gap exceeds picket_gap_m x picket_tier_mul[tier], leaning picket_lean_m back; reaction group = reaction_share of its combat units (motorized first, then tanks; min/max units), reaction_back_m behind the line. Rear: a known enemy on own ground report_depth_m from hostile-held ground (or near a standing report) and report_isolated_m from its own line units is an infiltrator; clusters (report_cluster_m) with >= report_min_value are reported (log + minimap blip), matched over report_match_m, forgotten after report_forget_s. Response: up to screen_max_places own towns / cities / economic towns / the capital within screen_radius_m get screen_squads_town / _city squads (picked within screen_pick_m, posted screen_post_m out toward the report, held screen_hold_s after it ends); the nearest free units within hunt_radius_m hunt it until hunt_ratio x its value (hunt_max_units, hunt_max_s); hunters + screens never exceed response_max_share of the faction's combat units.",
+    "comment": "3.0 sparse fronts (V30_SPEC §11, zoc.ts / pickets.ts / infiltration.ts). Zone of control: an enemy within zoc_m of a front's line unit moves at zoc_speed_mul (refreshed every 0.5 s, held zoc_hold_s), is revealed to that faction, and up to engage_per_intruder line units chase it (engage_leash_m, engage_s); crossing the segment between two own line units closer than contact_gap_m is a line crossing and the front's reaction group intercepts (reaction_leash_m from its front). Pickets: a front spreads spare infantry (at most picket_max_share) along its stretch so no gap exceeds picket_gap_m x picket_tier_mul[tier], leaning picket_lean_m back; reaction group = reaction_share of its combat units (motorized first, then tanks; min/max units), reaction_back_m behind the line. Rear: a known enemy report_depth_m inside own ground (half the gap between the nearest hostile and the nearest own capital / held settlement; or near a standing report) and report_isolated_m from its own line units is an infiltrator; clusters (report_cluster_m) with >= report_min_value are reported (log + minimap blip), matched over report_match_m, forgotten after report_forget_s. Response: up to screen_max_places own towns / cities / economic towns / the capital within screen_radius_m get screen_squads_town / _city squads (picked within screen_pick_m, posted screen_post_m out toward the report, held screen_hold_s after it ends); the nearest free units within hunt_radius_m hunt it until hunt_ratio x its value (hunt_max_units, hunt_max_s); hunters + screens never exceed response_max_share of the faction's combat units.",
     "enabled": true,
     "zoc_m": 150,
     "zoc_speed_mul": 0.5,
@@ -369,7 +369,7 @@
     "reaction_max_units": 8,
     "reaction_back_m": 220,
     "reaction_leash_m": 900,
-    "report_depth_m": 200,
+    "report_depth_m": 150,
     "report_isolated_m": 300,
     "report_min_value": 150,
     "report_cluster_m": 350,

@@ -391,7 +391,7 @@ export function step(match: Match): void {
   railTick(world);
   if (world.tick % Math.round(hz / 2) === 0) {
     updateVisibility(world);
-    updateInfiltration(world, match.front); // 3.0 zone of control, contacts, rear reports (infiltration.ts)
+    updateInfiltration(world); // 3.0 zone of control, contacts, rear reports (infiltration.ts)
   }
   if (world.tick % (2 * hz) === 0) {
     match.supplyNodes = world.factions.map((f) => (f.alive ? convoyNodes(world, f.id) : []));
