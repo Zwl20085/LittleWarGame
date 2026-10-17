@@ -25,9 +25,6 @@ depot full and out again; units only came to trucks below 0.08 ammo and within 3
 walked up to 2.2 km to a stock (tank blocks / spearheads far from the line centre: 500-1200 m walks
 through enemy ground, slowed to 0.7 when empty). Heavy tank shell (0.1) > rearm_below (0.08): dead zone.
 
-## In progress / next
-1. Perf check: fix3 lab wall times looked slower (contention?). Compare tick ms base vs fix on
-   `npx tsx scripts/soak.ts 15 7` (src) vs a frozen base run.
-2. After runs: `npx tsx scripts/soak.ts 45 7,11,13` (base output: media/stats/lab30/soak-base.txt),
-   `npx tsx scripts/challenge.ts --all --seeds 7,11,13 --minutes 40 --jobs 6` (expect 21/21).
-3. docs/DEBUG_LAB.md, `npm test`, final report.
+## Status: complete
+- cea4a2d docs/DEBUG_LAB.md; soak 45 7,11,13 anomalies 2 -> 0; challenge 21/21 AI holds; npm test 160 passed; typecheck green.
+- Possible follow-ups: convoy_loop (trucks with no takers) and supply_chain (dry large-map city stocks) remain high; see DEBUG_LAB.md open items.

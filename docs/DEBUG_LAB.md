@@ -89,6 +89,9 @@ Fix (convoy.ts, settlements.ts; numbers in `rules.json` `logistics.truck_*`, 0 =
 
 war22 supply metrics (seeds 7/11/13, 45 min): main-effort units below 0.3 ammo 14 % → 11 %;
 firing units below 0.3 ammo 34 % → 33 %; supply trucks lost 205 → 136.
+`soak.ts 45 7,11,13`: soak anomalies 2 → 0 (no war ended in 45 min before or after), tick cost
+unchanged (seed 7, 20 min: 4.2–4.6 ms vs 4.1–5.3 ms). `challenge.ts --all --seeds 7,11,13
+--minutes 40`: AI holds 21/21 (same as 2.2). `determinism.test.ts` green.
 
 Open items:
 - `convoy_loop` is still high. Most trucks reach their point and find no takers, because most
