@@ -19,7 +19,7 @@ const { createServe } = require('./updateServe.cjs');
  * `node scripts/release/keygen.mjs`; paste it here once. While it is the placeholder the shell
  * never installs bundles and the title screen keeps the plain "new version" notice.
  */
-const UPDATE_PUBLIC_KEY = logic.PLACEHOLDER_KEY;
+const UPDATE_PUBLIC_KEY = 'MCowBQYDK2VwAyEABtzQVf6yjdoPuLitgXYfDivKuoRSmi+iuqtzg8PrPd8=';
 
 const DEFAULT_READY_MS = 30000;
 const RELEASE_PAGE = 'https://github.com/Zwl20085/LittleWarGame/releases/tag/v';
