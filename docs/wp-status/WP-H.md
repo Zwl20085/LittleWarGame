@@ -16,7 +16,16 @@ Spec `docs/V30_SPEC.md` §9; overview `docs/UPGRADES.md`; rules block BALANCE_SP
   swamps the item effects; 1v1 wars rarely end in 60 min (rich side won 1/12). Fixes: gun team
   friendly-fire guard, ammo 0.02 → 0.006; lab reports s.e. and end-state lead.
 
-## Running / next
-- Round 2: value with 6 seeds + rich (6 seeds × 2 sides, 60 min).
-- Then tune costs, challenge `--all --seeds 7,11,13 --minutes 40 --jobs 6` (21/21), soak `30 7,11`,
-  full npm test after the merge.
+## Verification (final)
+- Round 3 lab (repriced): tables in docs/UPGRADES.md. Challenge `--all --seeds 7,11,13 --minutes 40
+  --jobs 6`: 14 strategies × 3 seeds, AI holds everywhere (42/42). Soak `30 7,11`: upgrades on 0
+  anomalies, mean tick 6.7 ms; UPGRADES=0 2 anomalies (mg unreachable), 7.1 ms.
+- typecheck + full suite green after the feat/v3.0 merge (38 files, 294 tests).
+
+## Seams left
+- Value lab is noise-dominated (bank P/M mix); a per-engagement lab would measure items better.
+- 1v1 wars rarely end within 60 min, so the rich-wins-70 % criterion cannot be met by upgrades alone.
+- Doctrine rows in UPGRADE_PRIORITY (WP-A). fronts.ts SPEAR_MOBILE does not count motorized rifle
+  squads as mobile. Tank skirt / barrel visuals not seen in a screenshot yet.
+- Foot reinforcements failed to arrive in 40 min on seeds 7 and 11 (motor lab) — worth a look by
+  the pathing owner.
