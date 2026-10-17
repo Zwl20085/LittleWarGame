@@ -1,6 +1,7 @@
 import { h } from './dom';
 import { lang, setLang, t } from './i18n';
 import { settings, updateSettings } from './settings';
+import { lastShellStatus, setShellAutoDownload, shellBridge } from '../update/shell';
 
 /** Settings controls shared by the title screen and the pause menu. */
 export function settingsFields(onLang?: () => void): HTMLElement {
@@ -37,7 +38,27 @@ export function settingsFields(onLang?: () => void): HTMLElement {
     h('label', { class: 'field check' },
       h('input', { type: 'checkbox', checked: s.checkUpdates, onchange: (e: Event) => updateSettings({ checkUpdates: (e.target as HTMLInputElement).checked }) }),
       h('span', {}, t('set.checkUpdates'))),
+    checkField('set.dayCycle', 'dayCycle'),
+    checkField('set.depthBlur', 'depthBlur'),
+    autoDownloadField(),
   );
+}
+
+/** One on/off setting, applied live. */
+function checkField(label: string, key: 'dayCycle' | 'depthBlur'): HTMLElement {
+  return h('label', { class: 'field check' },
+    h('input', { type: 'checkbox', checked: settings()[key], onchange: (e: Event) => updateSettings({ [key]: (e.target as HTMLInputElement).checked }) }),
+    h('span', {}, t(label)));
+}
+
+/** Desktop app only: let the shell download verified updates in the background (default on). */
+function autoDownloadField(): HTMLElement | null {
+  const bridge = shellBridge();
+  if (!bridge) return null;
+  return h('label', { class: 'field check' },
+    h('input', { type: 'checkbox', checked: lastShellStatus()?.autoDownload ?? true,
+      onchange: (e: Event) => { void setShellAutoDownload(bridge, (e.target as HTMLInputElement).checked); } }),
+    h('span', {}, t('set.autoDownload')));
 }
 
 /** One audio volume slider (0–100%), applied live. */

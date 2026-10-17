@@ -212,3 +212,225 @@ code is being rewritten by the 2.2 sim agents, so no sim hot spot was touched in
 Remaining ideas: map labels and unit counters redraw the 2D overlay canvas every frame
 (0.3–0.6 ms at the overview); the standing order ribbons keep a 45 % minimum width at close
 zoom (a 60 px band at z6 — belongs with the command rework).
+
+## 3.0 round (WP-M)
+
+Dev machine as before, but **fully loaded** for the whole round: 100 % CPU, ~55 node processes from
+other agents' soaks and labs. Every comparison below was therefore run side by side (both trees at
+once, same seeds). Single numbers swing ±20–40 % between runs, so only the paired ratios carry much
+weight. Behaviour was held fixed with `scripts/simhash.ts` (a state hash every minute to 30 min,
+medium and large maps, seeds 7 and 11). Every change had to keep it identical.
+
+### New tools
+
+| Command | What it does |
+|---|---|
+| `SIZE=large npx tsx scripts/perf.ts generated 2400 7` | as before, plus the large map, a window mean from the tick sums and µs per unit-tick |
+| `node scripts/profile.mjs 1800 7 --no-inline --dir d`, then `--dir d --reuse --callers fn` | module names in the report; keeps the profile so it can be re-analysed without running the war again |
+| `SIZE=large npx tsx scripts/spike.ts 7 10060,26907` | replays the deterministic war and profiles only the listed slow ticks (`SPIKE_MS=60` lists them) |
+| `SIZE=large npx tsx scripts/snapsize.ts 2400 7 600` | structured-clone size of the worker snapshot per field, plus make / serialize ms |
+| `SIZE=large npx tsx scripts/simhash.ts 1800 7` | per-minute state hash (the behaviour check for perf work) |
+| `SIZE=large GOVERNOR=6 node scripts/perf-browser.mjs …` | large map; the quality tier in every line; GOVERNOR runs auto quality under a CDP CPU throttle; the 3.0 render parts (rails, day, orderLines, …) are timed |
+
+### Simulation: 2.2.1 vs 3.0 (4 AI, 8 runs at once per round)
+
+Window mean ms/tick (and µs per unit-tick) at 10 / 20 / 30 / 40 game-minutes.
+
+Round 1: `feat/v3.0` fd3a892 (before this round) vs `main` 2.2.1.
+
+| map, seed | 2.2.1 | 3.0 before |
+|---|---|---|
+| medium 7 | 4.5 / 4.7 / 3.7 / 3.6 ms (12.5 / 11.7 / 8.6 / 9.1 µs), 400 units at 40 min | 4.8 / 5.3 / 7.4 / 6.0 ms (12.5 / 12.2 / 14.6 / 11.5 µs), 523 units |
+| medium 11 | 4.6 / 4.9 / 4.5 / 3.3 (13.0 / 11.3 / 8.6 / 7.4), 453 | 5.3 / 5.1 / 8.9 / 7.2 (13.9 / 11.3 / 15.5 / 11.8), 611 |
+| large 7 | 3.0 / 5.8 / 6.3 / 5.2 (7.6 / 11.5 / 9.5 / 7.9), 658 | 4.9 / 6.9 / 9.2 / 13.2 (11.9 / 12.9 / 13.1 / 15.6), 843 |
+| large 11 | 2.8 / 7.0 / 7.3 / 9.6 (7.1 / 13.8 / 10.2 / 13.1), 735 | 4.4 / 7.6 / 7.9 / 15.3 (10.7 / 14.0 / 12.9 / 19.7), 776 |
+| mean µs/unit-tick | 10.2 | 13.4 (**×1.31**) |
+| p99 / max (worst run) | 30 / 355 ms | 49 / 576 ms |
+
+Round 2: this branch (after the WP-REV merge and the changes below) vs 2.2.1.
+
+| map, seed | 2.2.1 | 3.0 after |
+|---|---|---|
+| medium 7 | 5.9 / 5.9 / 4.7 / 4.0 ms (16.4 / 14.8 / 10.9 / 9.9 µs), 400 units | 6.9 / 8.2 / 6.9 / 8.7 (17.9 / 19.3 / 14.1 / 15.3), 570 |
+| medium 11 | 7.1 / 6.4 / 6.4 / 6.5 (20.0 / 15.0 / 12.1 / 14.4), 453 | 8.8 / 6.1 / 12.6 / 9.1 (22.7 / 13.7 / 23.8 / 14.7), 616 |
+| large 7 | 6.8 / 6.4 / 9.3 / 4.7 (17.3 / 12.7 / 14.2 / 7.2), 658 | 5.0 / 9.5 / 7.4 / 9.9 (12.1 / 18.0 / 11.0 / 12.0), 822 |
+| large 11 | 4.5 / 7.4 / 11.6 / 6.4 (11.5 / 14.6 / 16.2 / 8.7), 735 | 4.9 / 10.6 / 6.7 / 13.6 (12.1 / 20.2 / 10.0 / 16.6), 822 |
+| mean µs/unit-tick | 13.5 | 15.8 (**×1.17**; medium ×1.24, large ×1.08) |
+| p99 / max (worst run) | 60 / 578 ms | 68 / 406 ms |
+
+Cost per unit is not linear (spatial queries grow with density), and 3.0 armies are 25–40 % larger
+at 40 min, so ×1.17 is an upper bound at equal unit counts. The spec target (≤ ×1.2) is met on the
+large map. On the medium map it is borderline, within this machine's run-to-run noise.
+
+### What the profile showed (large map, seed 7, 30 min, `--no-inline`)
+
+What 3.0 added over 2.2.1, as inclusive share of sim CPU:
+
+- Infiltration ≈ 12 %: rear reports 5 %, the anchor scan inside them 2.9 %, and hunters re-pathing
+  toward moving intruders 5.9 %.
+- Extra flow-field settling 5 %: the 3.0 wheeled-truck grid and the chase goals (2.1 field builds/s
+  vs 1.45).
+- Convoy think +1.6 %, rail and zone-of-control hooks ≈ 2 %, match load +1.8 %.
+
+The WP-REV anchor grid then cost 7 % on its own, because it was rebuilt in full on every capture.
+After this round, infiltration is ≈ 5 %.
+
+The worst single ticks were lazy nav-grid builds. The first heavy tank (or crew, wheeled truck, …)
+of a match built its movement class's grid inside the tick: 0.3 s per class, 1.6 s under the
+profiler at tick 10060.
+
+### Changes (each one behaviour-identical, checked with simhash)
+
+| Commit | Change | Effect |
+|---|---|---|
+| `perf(sim): share class-independent terrain samples between nav grids` | ground, slope, building raster and ford banks per 8 m cell are sampled once per terrain and refreshed with `refreshArea` | lazy grid build on the large map: 230–370 → 50–140 ms per class |
+| `perf(sim): economic lot search scans only the roads that can be nearest` | road segments sorted by distance from the town; the scan stops by the triangle inequality; slope test first | match load (large) econLots 2 464 → 272 ms; lots identical (sha1 of every slotPos) |
+| `perf(sim): resolve a unit type's nav grid once` | `navFor` cached per def (it re-derived the wheeled class from the transport rules on every call) | navFor + wheeledNav + moveClassOf were 2 % inclusive |
+| `perf(sim): anchor grid applies settlement captures incrementally` | a capture lowers the new holder's cells and rescans only the old holder's cells whose minimum was that town; full build only when a faction falls | mean ms/tick over 30 min, side by side: medium 6.18 → 5.98 / 6.76 → 5.74, large 8.40 → 7.77 / 8.74 → 8.04 |
+
+Tried and dropped: a typed-array bucket queue for the flow-field Dijkstra, and a modulo-free ring
+index. Neither gained anything, because the settle loop is memory-bound.
+
+### Snapshots (worker → main), `snapsize.ts`, seed 7
+
+| | 10 min | 20 min | 30 min | 40 min |
+|---|---|---|---|---|
+| 2.2.1 medium | 103 kB | 120 kB | 137 kB | 138 kB (400 units) |
+| 3.0 medium | 116 kB | 131 kB | 159 kB | 178 kB (523 units) |
+| 2.2.1 large | 110 kB | 144 kB | 189 kB | 218 kB (658 units) |
+| 3.0 large | 121 kB | 158 kB | 208 kB | 262 kB (843 units) |
+
+The per-unit record is the same size (34 float64; `upg` was added). 80 % of the bytes are the unit
+buffer, which is transferred, not cloned. The cloned part at 40 min (large map): works 26 kB,
+faction records 23 kB (every 4th snapshot), economic buildings 9.5 kB, transport and zones under
+1 kB. The growth comes from more units and works, not from the 3.0 records. `makeSnapshot` takes
+1.4–2.1 ms at 700–840 units on the loaded machine; the cost is memory-bound unit reads.
+
+### Renderer (headless Edge, RTX 2070 SUPER, 1600×900, high, static build, 8×, seed 7, 20 min)
+
+| view | 2.2.1 (paired) | 3.0 (paired) | 3.0 after (other runs) | target |
+|---|---|---|---|---|
+| overview | 6.75 ms | 7.94 ms | 5.74–7.26 ms | ≤ 6 |
+| front | 5.23 | 5.46 | 4.68–5.59 | — |
+| close | 4.82 | 5.42 | 5.17–5.69 | ≤ 4 |
+| close-low (blur off by default) | 5.60 | 5.10 | 5.05–6.25 | — |
+
+Values are the `renderer.frame` average. Every medium-map run held 60 fps with 0 % lag frames.
+
+- The 3.0 render parts are small: rails/trains 0.01–0.03 ms, time of day 0.04–0.07 ms, order
+  ribbons 0.10–0.19 ms. Draw calls are 93–183 (2.2.1: 86–162).
+- Under this load 2.2.1 misses the close target too. gl.render is 2.5–3.3 ms, a quarter of it the
+  shadow pass; units.sync 0.7 ms, works 0.3–0.5 ms, map labels 0.3–0.7 ms at the overview.
+- No renderer change in this round. The ideas left from 2.2 still apply: label / counter canvas
+  redraw, and the field-works rebuild on every progress step.
+
+Large map in the browser (20 min, 550–650 units): 60 fps in every view, but the **worker** does
+not hold 8×. 3.0 before: 4.5–6.7×; after: 6.2–7.3×; 2.2.1 on the same map: 6.9–8.0×.
+
+Quality governor (auto, large map, CDP CPU throttle ×6): tier 0 → 1 after ~14 s of slow frames,
+then 1 → 2 after the 12 s cooldown. It still steps down with the 3.0 meshes.
+
+### Open (proposals)
+
+1. Infiltration hunters (`closeOn`) re-path toward a moving intruder snapped to a 50 m lattice, so
+   a long chase builds new flow fields again and again: 2–6 % of sim CPU, and the 100–500 ms ticks
+   late in a large-map war. Proposal: aim far chases at the report position on the 128 m field
+   lattice, and hold the route while the target stays within ~150 m of it. This changes behaviour,
+   so it needs the infiltration lab.
+2. Flow-field memory: each grid caches 128 fields, ≈ 180 MB per class on the large map and
+   ~700 MB of array buffers across the six classes. 53 % of builds re-create an evicted field. A
+   shared budget across classes, or coarser long-haul fields, would cut both memory and builds.
+3. Map load on the large map takes 11–16 s here (`generateMap` 5 s, terrain 2.3 s).
+
+### WP-M2: hunter re-pathing and flow-field memory (proposals 1 and 2)
+
+Same loaded machine (other agents' soaks; single ms/tick values swing ±30 % and more). Every
+comparison ran side by side. Before = `feat/v3.0` 24b6837.
+
+| Commit | Change |
+|---|---|
+| e969f29 | `scripts/fieldmem.ts`: array buffers, cached fields per movement class, touched share, rebuilds of evicted goals, every 5 game-minutes |
+| 40bd479 | hunters: a chase more than 150 m from its target aims at the report position snapped to the 128 m field lattice (all hunters of a report share one field) and keeps that aim while the target stays within 150 m of it; re-aim after `infiltration.hunt_repath_s` (new key, 15 s). Changes behaviour |
+| d886b10, d7f3763 | flow fields: one 192 MB budget per terrain shared by all movement classes, LRU across classes (was 128 dense fields per class). A field being expanded is dense ("hot", 6 per terrain, the 3.0 loop unchanged); a cold field keeps only the 32-cell chunks its search touched (Uint16 chunk table). A* scratch arrays shared per terrain. Behaviour-identical |
+
+The cache cannot change a path: a field's settled values are the unique Dijkstra distances, and
+the descent only reads cells cheaper than its start, which are settled, so values do not depend
+on when a field was built, evicted or rebuilt. `tests/flowfield.test.ts` checks the hot / cold
+field against an eager dense Dijkstra and identical paths under a 1 MB budget that evicts across
+two classes. `simhash.ts` to 30 min, 40bd479 vs d7f3763: all 30 per-minute hashes identical for
+medium 7 / 11 and large 7 / 11 (final 7929a422, 3d7bcabd, f25d66ed, ac74c582).
+
+A first version expanded directly on the chunked storage. An in-process A/B showed 205–290 vs
+151–207 ns per settled cell (30–40 % slower), so expansion now always runs dense.
+
+**Infiltration lab** (`scripts/lab30/infiltration.ts --variants on`, 12 min + 10 min, 48 scripted
+infiltrators per run). Open: seeds 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59, 61; fog:
+the first nine. The hunts run all game, so the wars diverge before the launch and the rows are not
+paired by seed. Groups get through all or nothing, so per-seed outcomes are lumpy.
+
+| run | group | runs | units | past the line | past undetected | seen | reported | median s to detected | engaged | median s to engaged | mean depth m | at 700 m ring | alive |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| open, before | detachment | 15 | 90 | 5 (6 %) | 2 (2 %) | 77 (86 %) | 76 (84 %) | 7 | 84 (93 %) | 286 | 93 | 24 (27 %) | 45 (50 %) |
+| open, after | detachment | 15 | 90 | 13 (14 %) | 0 (0 %) | 64 (71 %) | 78 (87 %) | 1 | 66 (73 %) | 287 | 135 | 28 (31 %) | 52 (58 %) |
+| open, before | raid | 15 | 150 | 41 (27 %) | 0 (0 %) | 136 (91 %) | 137 (91 %) | 18 | 105 (70 %) | 292 | 191 | 58 (39 %) | 99 (66 %) |
+| open, after | raid | 15 | 150 | 43 (29 %) | 0 (0 %) | 133 (89 %) | 136 (91 %) | 40 | 98 (65 %) | 233 | 139 | 56 (37 %) | 116 (77 %) |
+| fog, before | detachment | 9 | 54 | 15 (28 %) | 6 (11 %) | 54 (100 %) | 23 (43 %) | 95 | 38 (70 %) | 212 | 131 | 12 (22 %) | 36 (67 %) |
+| fog, after | detachment | 9 | 54 | 6 (11 %) | 0 (0 %) | 43 (80 %) | 17 (31 %) | 83 | 36 (67 %) | 163 | 65 | 6 (11 %) | 28 (52 %) |
+| fog, before | raid | 9 | 90 | 13 (14 %) | 1 (1 %) | 79 (88 %) | 51 (57 %) | 59 | 53 (59 %) | 287 | 107 | 33 (37 %) | 62 (69 %) |
+| fog, after | raid | 9 | 90 | 18 (20 %) | 0 (0 %) | 81 (90 %) | 44 (49 %) | 97 | 61 (68 %) | 333 | 90 | 24 (27 %) | 54 (60 %) |
+
+Past the line undetected: 9 of 1 152 units before (fog seed 37, open / fog seed 61), 0 after. All
+units past the line 74 → 80 of 1 152. The other columns move both ways by about the spread between
+seeds. Engagement in open mode is lower after (189 → 164 of 240 units hit), the one
+column to watch.
+
+**Memory and field work** (`fieldmem.ts`, large map, seed 7, 30 min; 40bd479 and d7f3763 play the
+same war):
+
+| | array buffers | heap | cached fields | builds | rebuilds of evicted goals |
+|---|---|---|---|---|---|
+| 40bd479 (128 dense per class) | 876 MB | 267 MB | 544 (730 MB) | 3 281 | 1 429 (44 %) |
+| d7f3763 (shared budget, hot / cold) | **316 MB** | 157 MB | 525 (192 MB) | 2 577 (−21 %) | 728 (28 %) |
+
+At 10 / 20 min: 425 → 231 MB and 848 → 338 MB. In the 40-min `perf.ts` runs, cells settled by
+flow-field searches (deterministic, independent of machine load) fell by 21 % (seed 7) and 12 %
+(seed 11) against 40bd479. Cold fields made dense again: 1 676–1 832 per 40 min (≈ 0.5 ms each).
+
+**Sim time** (`SIZE=large perf.ts generated 2400`, before and after side by side), window mean
+ms/tick at 10 / 20 / 30 / 40 min, p99 and worst tick:
+
+| seed | before | after |
+|---|---|---|
+| 7 | 3.8 / 21.0 / 16.2 / 13.5 ms, p99 113, max 660 | 3.9 / 17.4 / 15.1 / 14.0 ms, p99 75, max 394 |
+| 11 | 4.1 / 16.0 / 13.1 / 15.1 ms, p99 72, max 528 | 4.2 / 24.8 / 15.4 / 13.9 ms, p99 110, max 704 |
+| field builds / cells settled | 7: 5 016 / 265 M; 11: 4 471 / 243 M | 7: 4 424 / 242 M; 11: 3 919 / 231 M |
+
+Wall time on this machine cannot resolve the change: the windows swing 30–50 % between the two
+seeds in opposite directions. Earlier pairs gave the same picture (hunters alone: 14.3 → 14.0 and
+14.5 → 13.5 ms/tick mean; hot / cold vs dense: 11.5 → 11.2 and 10.3 → 13.4).
+
+What the hunter change does on its own (CPU profile, large, seed 7, 30 min, `--no-inline`):
+`closeOn` → `moveTo` 2.1 % → 1.4 % of sim CPU, `infiltrationDuty` 3.0 % → 2.0 %. It does not build
+fewer fields (5 016 → 5 358 builds, a different war with the same units). `spike.ts` on the slowest
+late-war ticks of the before run (seed 7, #25800, #34521, #35443: 197–225 ms) shows them inside
+`pathByField` with the field search inlined (64–87 % self): lazy expansions of far fields for
+siege parties, convoy trucks and commanders, not hunters (`closeOn` ≤ 0.3 %). Ticks over 150 ms
+(`SPIKE_MS=150`): seed 7, 30 min, 20 → 3; seed 11, 40 min, 32 → 160. The load swings decide those
+counts, so there is no evidence either way on the spikes.
+
+**Browser** (static builds, headless Edge, large map, seed 7, 20 min, 8×, high, 1600×900;
+before / after alternated twice):
+
+| view | before (1st / 2nd) | after (1st / 2nd) |
+|---|---|---|
+| overview | 7.78× / 6.72× | 6.92× / 7.77× |
+| front | 7.43× / 7.36× | 6.69× / 7.54× |
+| close | 6.77× / 7.43× | 6.70× / 7.63× |
+| close-low | 5.99× / 6.73× | 5.42× / 6.79× |
+
+60 fps (p95 16.8 ms) in every view and run. The worker still does not hold 8× on the large map;
+the two builds are within run-to-run spread.
+
+Left open: the slow late-war ticks are cold far-field expansions (a full large-map field is ≈ 0.35 M
+cells, 50–60 ms). Spreading a big expansion over ticks, or a coarse long-haul field, would change
+paths and needs the labs.

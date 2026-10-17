@@ -1,13 +1,17 @@
-import { cancelOrder, placeSlots } from './production';
-import { startBuilding, ECON_KINDS } from './econ';
-import { placeById, placeOwner } from './settlements';
 import type { EconKind } from '../data/types';
 import type { Match } from './sim';
-import { DIRECTIVE_KINDS, DIRECTIVE_LINE_MIN_M, setDirective } from './directive';
-import { releaseFund } from './econai';
-import { applyDirectiveNow } from './theatre';
-import type { DirectiveKind, Unit } from './types';
-import { dist, type V2 } from './vec';
+import { applyWorks } from './worksCommands';
+import type { DirectiveKind } from './types';
+import type { V2 } from './vec';
+import {
+  applyBuildEcon, applyCancelOrder, applyQueueUnit, applyResetAlloc, applySetAlloc, applySetAuto, applySetAutoInvest,
+  applySetCap, applySetLock, applySetWeight, applyTogglePause,
+} from './commands/production';
+import { applyCancelZone, applySetDirective } from './commands/directive';
+import { applyFocus, applyUnitOrder } from './commands/units';
+import { applyBuildRoad, applyExtendRail, applyRepairRail } from './commands/transport';
+import { applyCancelResearch, applyResearch } from './commands/upgrades';
+import { fail } from './commands/shared';
 
 /**
  * Player commands = the supreme HQ's job (2.2, docs/V22_SPEC.md §1): the war effort (production,
@@ -35,16 +39,33 @@ export type Command =
    * 2.2 universal directive. `axis` = main effort (offensive) / threatened place (defend, fortify);
    * `line` (fortify only) becomes a permanent fortified zone held by the front nearest it.
    */
-  | { type: 'setDirective'; kind: DirectiveKind; axis?: V2; line?: { a: V2; b: V2 } }
+  /** 3.0 `force`: the HUD Force toggle (true / false); unset = forced when the same directive is re-issued within insist_window_s. */
+  | { type: 'setDirective'; kind: DirectiveKind; axis?: V2; line?: { a: V2; b: V2 }; force?: boolean }
   /** 2.1: stop a fortified-zone project (works already standing remain). */
   | { type: 'cancelZone'; zoneId: number }
+  /** 3.0: found an economic zone at a point / raise or rebuild one (econZones.ts); upgrade a work or lay a minefield (worksTiers.ts). */
+  | { type: 'buildZone'; pos: V2 }
+  | { type: 'upgradeZone'; zoneId: number }
+  | { type: 'upgradeWork'; fortId: number }
+  | { type: 'layMines'; pos: V2; facing: number }
   | { type: 'unitOrder'; unitIds: number[]; order: 'move' | 'moveHold' | 'attackMove' | 'retreat' | 'hold' | 'resume'; pos?: V2; queue?: boolean }
-  | { type: 'focus'; unitIds: number[]; targetId: number };
+  | { type: 'focus'; unitIds: number[]; targetId: number }
+  /** 3.0 unit upgrades: pay for and start researching an item at the capital; cancel the research under way. */
+  | { type: 'research'; upgradeId: string }
+  | { type: 'cancelResearch' }
+  /** 3.0 engineers: lay a road a -> b (<= road_job.max_len_m; bridges short gaps). */
+  | { type: 'buildRoad'; a: V2; b: V2 }
+  /** 3.0 engineers: rebuild a cut rail line the faction holds at both ends. */
+  | { type: 'repairRail'; lineId: number }
+  /** 3.0 engineers: extend the rail from own station `stationIdx` to own town / city `to` (objective index). */
+  | { type: 'extendRail'; stationIdx: number; to: number };
 
 export type CommandFail =
   | 'FACTION_DEAD' | 'NOT_OWNER' | 'STALE_TARGET' | 'UNREACHABLE' | 'BAD_VALUE' | 'ROUTING'
   | 'LOCKED' | 'INSUFFICIENT_M' | 'INSUFFICIENT_P' | 'OUT_OF_BOUNDS' | 'NO_ORDER' | 'NO_FRONT' | 'NO_SLOT' | 'CONTESTED'
-  | 'LINE_SHORT' | 'LINE_ONLY_FORTIFY';
+  | 'LINE_SHORT' | 'LINE_ONLY_FORTIFY' | 'BAD_SITE' | 'MAX_LEVEL' | 'BUSY'
+  | 'TOO_LONG' | 'BAD_TERRAIN' | 'NOT_CUT' | 'JOB_BUSY' | 'NOT_HELD' | 'HAS_STATION' | 'TRANSPORT_OFF'
+  | 'DISABLED' | 'OWNED' | 'RESEARCH_BUSY' | 'NO_RESEARCH';
 
 export interface CommandEnvelope {
   readonly commandId: number;
@@ -79,157 +100,37 @@ export class CommandBus {
   }
 }
 
-function ownedUnits(match: Match, actor: number, ids: number[]): Unit[] {
-  const out: Unit[] = [];
-  for (const id of ids) {
-    const u = match.world.unitAlive(id);
-    if (u && u.owner === actor && !u.fixed) out.push(u);
-  }
-  return out;
-}
-
-const fail = (reason: CommandFail): CommandOutcome => ({ ok: false, reason });
-const OK: CommandOutcome = { ok: true };
-
-const finiteV2 = (p: V2 | undefined): p is V2 => !!p && Number.isFinite(p.x) && Number.isFinite(p.z);
-
+/** Validates and dispatches one command to its handler module (src/sim/commands/*.ts); validation order is per handler. */
 function apply(match: Match, env: CommandEnvelope): CommandOutcome {
-  const w = match.world;
-  const f = w.factions[env.actor];
+  const f = match.world.factions[env.actor];
   if (!f || !f.alive) return fail('FACTION_DEAD');
   const c = env.cmd;
+  const actor = env.actor;
   switch (c.type) {
-    case 'setWeight':
-      if (!Number.isFinite(c.weight) || c.weight < 0 || !w.data.units.has(c.unitId)) return fail('BAD_VALUE');
-      f.weights = { ...f.weights, [c.unitId]: c.weight };
-      return OK;
-    case 'setCap':
-      if (!Number.isFinite(c.cap) || c.cap < 0) return fail('BAD_VALUE');
-      f.caps = { ...f.caps, [c.unitId]: Math.round(c.cap) };
-      return OK;
-    case 'togglePause':
-      f.paused = { ...f.paused, [c.unitId]: !f.paused[c.unitId] };
-      return OK;
-    case 'queueUnit':
-      // Front commanders are appointed by the supreme HQ, never bought.
-      if (!w.data.units.has(c.unitId) || c.unitId === w.data.rules.command.commander_unit) return fail('BAD_VALUE');
-      if (c.frontId !== -1 && !f.fronts.some((x) => x.id === c.frontId)) return fail('NO_FRONT');
-      if (c.placeId !== undefined) {
-        // 2.2: queue at a chosen place, which must be ours and have a slot of the unit's facility.
-        const p = placeById(w, c.placeId);
-        if (!p) return fail('BAD_VALUE');
-        if (placeOwner(w, p) !== env.actor) return fail('NOT_OWNER');
-        if (placeSlots(w, p, w.data.units.get(c.unitId)!.facility) <= 0) return fail('NO_SLOT');
-        f.manualQueue = [...f.manualQueue, { unitId: c.unitId, frontId: c.frontId, placeId: c.placeId }];
-        return OK;
-      }
-      f.manualQueue = [...f.manualQueue, { unitId: c.unitId, frontId: c.frontId }];
-      return OK;
-    case 'buildEcon': {
-      if (!ECON_KINDS.includes(c.kind)) return fail('BAD_VALUE');
-      const r = startBuilding(w, f, c.placeId, c.kind);
-      if (typeof r !== 'string') return OK;
-      return fail(r === 'INSUFFICIENT_P' || r === 'INSUFFICIENT_M' || r === 'NOT_OWNER' || r === 'NO_SLOT' ? r : r === 'CONTESTED' ? 'CONTESTED' : 'BAD_VALUE');
-    }
-    case 'cancelOrder':
-      return cancelOrder(w, f, c.orderId) ? OK : fail('NO_ORDER');
-    case 'setAlloc': {
-      const sum = c.alloc[0] + c.alloc[1] + c.alloc[2];
-      if (c.alloc.some((v) => !Number.isFinite(v) || v < 0) || !(sum > 0)) return fail('BAD_VALUE');
-      f.alloc = [c.alloc[0] / sum, c.alloc[1] / sum, c.alloc[2] / sum];
-      return OK;
-    }
-    case 'setAutoInvest':
-      f.autoInvest = c.on;
-      if (!c.on) releaseFund(w, f);
-      return OK;
-    case 'setAuto':
-      f.autoEconomy = c.on;
-      return OK;
-    case 'setLock': {
-      if (![0, 1, 2].includes(c.index)) return fail('BAD_VALUE');
-      const locks: [boolean, boolean, boolean] = [...f.locks];
-      locks[c.index] = c.locked;
-      f.locks = locks;
-      return OK;
-    }
-    case 'resetAlloc':
-      f.alloc = [...w.data.rules.economy.allocation_default] as [number, number, number];
-      return OK;
-    case 'setDirective': {
-      if (!DIRECTIVE_KINDS.includes(c.kind)) return fail('BAD_VALUE');
-      if ((c.axis !== undefined && !finiteV2(c.axis)) || (c.line !== undefined && (!finiteV2(c.line?.a) || !finiteV2(c.line?.b)))) return fail('BAD_VALUE');
-      if (c.line && c.kind !== 'fortify') return fail('LINE_ONLY_FORTIFY');
-      const pts = [c.axis, c.line?.a, c.line?.b].filter((p): p is V2 => !!p);
-      if (pts.some((p) => !w.terrain.inBounds(p.x, p.z))) return fail('OUT_OF_BOUNDS');
-      // Infantry must be able to stand there (a point in a lake or on a cliff is no objective).
-      const nav = w.nav(false, 35);
-      const axis = c.axis ? nav.nearestPassable(c.axis, 80) : null;
-      const la = c.line ? nav.nearestPassable(c.line.a, 30) : null;
-      const lb = c.line ? nav.nearestPassable(c.line.b, 30) : null;
-      if ((c.axis && !axis) || (c.line && (!la || !lb))) return fail('UNREACHABLE');
-      if (la && lb && dist(la, lb) < DIRECTIVE_LINE_MIN_M) return fail('LINE_SHORT');
-      setDirective(w, f, c.kind, axis ? { ...axis } : null, la && lb ? { a: { ...la }, b: { ...lb } } : null, true);
-      applyDirectiveNow(w, f);
-      return OK;
-    }
-    case 'cancelZone': {
-      const z = f.zones.find((x) => x.id === c.zoneId && !x.cancelled);
-      if (!z) return fail('NO_ORDER');
-      z.cancelled = true;
-      return OK;
-    }
-    case 'unitOrder': {
-      const units = ownedUnits(match, env.actor, c.unitIds);
-      if (units.length === 0) return fail('NOT_OWNER');
-      let any = false;
-      units.forEach((u, i) => {
-        if (c.order === 'resume') {
-          u.manual = null;
-          u.queue = [];
-          u.behavior = 'advance';
-          any = true;
-          return;
-        }
-        if (u.routing && c.order !== 'retreat') return;
-        // Formation offsets so a group does not converge on one point.
-        const off = c.pos ? formationOffset(i, units.length) : { x: 0, z: 0 };
-        const dest = c.pos ? { x: c.pos.x + off.x, z: c.pos.z + off.z } : u.pos;
-        const task =
-          c.order === 'move' ? { type: 'move' as const, dest, arrivedAt: null, hold: false }
-          : c.order === 'moveHold' ? { type: 'move' as const, dest, arrivedAt: null, hold: true }
-          : c.order === 'attackMove' ? { type: 'attackMove' as const, dest, clearSince: null }
-          : c.order === 'retreat' ? { type: 'retreat' as const }
-          : { type: 'hold' as const, pos: { ...u.pos } };
-        if (c.queue && u.manual && u.queue.length < w.data.rules.manual_control.max_queued_commands) u.queue.push(task);
-        else {
-          u.manual = task;
-          u.queue = [];
-          u.thinkAt = 0;
-          u.repathAt = 0;
-        }
-        any = true;
-      });
-      return any ? OK : fail('ROUTING');
-    }
-    case 'focus': {
-      const t = w.unitAlive(c.targetId);
-      if (!t || !w.knows(env.actor, t)) return fail('STALE_TARGET');
-      const units = ownedUnits(match, env.actor, c.unitIds);
-      if (units.length === 0) return fail('NOT_OWNER');
-      for (const u of units) {
-        u.manual = { type: 'focus', targetId: t.id, startedAt: w.time };
-        u.thinkAt = 0;
-      }
-      return OK;
-    }
+    case 'setWeight': return applySetWeight(match, f, c);
+    case 'setCap': return applySetCap(match, f, c);
+    case 'togglePause': return applyTogglePause(match, f, c);
+    case 'queueUnit': return applyQueueUnit(match, f, c, actor);
+    case 'buildEcon': return applyBuildEcon(match, f, c);
+    case 'buildZone':
+    case 'upgradeZone':
+    case 'upgradeWork':
+    case 'layMines':
+      return applyWorks(match, f, c);
+    case 'cancelOrder': return applyCancelOrder(match, f, c);
+    case 'research': return applyResearch(match, f, c);
+    case 'cancelResearch': return applyCancelResearch(match, f);
+    case 'setAlloc': return applySetAlloc(f, c);
+    case 'setAutoInvest': return applySetAutoInvest(match, f, c);
+    case 'setAuto': return applySetAuto(f, c);
+    case 'setLock': return applySetLock(f, c);
+    case 'resetAlloc': return applyResetAlloc(match, f);
+    case 'setDirective': return applySetDirective(match, f, c);
+    case 'cancelZone': return applyCancelZone(f, c);
+    case 'unitOrder': return applyUnitOrder(match, c, actor);
+    case 'buildRoad': return applyBuildRoad(match, c, actor);
+    case 'repairRail': return applyRepairRail(match, c, actor);
+    case 'extendRail': return applyExtendRail(match, c, actor);
+    case 'focus': return applyFocus(match, c, actor);
   }
-}
-
-function formationOffset(i: number, n: number): V2 {
-  if (n <= 1) return { x: 0, z: 0 };
-  const ring = Math.floor(Math.sqrt(i));
-  const a = i * 2.399963; // golden angle
-  const r = 12 * Math.sqrt(i) + ring;
-  return { x: Math.cos(a) * r, z: Math.sin(a) * r };
 }

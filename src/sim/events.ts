@@ -1,6 +1,7 @@
 import type { Faction, Objective, OperationKind, Posture, Personality, Front, Unit } from './types';
 import { crossings } from './terrainai';
 import { frontById } from './frontref';
+import { markContact } from './doctrines';
 import { dist, type V2 } from './vec';
 import type { World } from './world';
 
@@ -75,6 +76,20 @@ export interface DirectiveRecord {
   result: 'captured' | 'held' | 'lost' | 'expired' | 'open';
 }
 
+/** 3.0 a front's answer to the supreme-HQ directive (compliance.ts): declined, obeyed after its delay, or forced. */
+export interface ResponseRecord {
+  readonly f: number;
+  readonly front: number;
+  readonly kind: string;
+  readonly t: number;
+  readonly result: 'declined' | 'obeyed' | 'forced';
+  /** Compliance 0–1, the delay it obeyed after (s), its distance to the capital (m). */
+  readonly c: number;
+  readonly delay: number;
+  readonly distM: number;
+  readonly reason: string;
+}
+
 export interface SideTally {
   loss: number; // value lost
   hp: number; // hp lost
@@ -124,6 +139,8 @@ export interface BattleSample {
 export interface BattleLog {
   readonly ops: OpRecord[];
   readonly directives: DirectiveRecord[];
+  /** 3.0: fronts' answers to the directive (declines counted by the labs). */
+  readonly responses: ResponseRecord[];
   readonly engagements: EngagementRecord[];
   readonly captures: CaptureRecord[];
   readonly samples: BattleSample[];
@@ -143,7 +160,7 @@ export interface BattleLog {
 
 export function createBattleLog(): BattleLog {
   return {
-    ops: [], directives: [], engagements: [], captures: [], samples: [], skirmishes: 0, nextId: 1, enabled: true,
+    ops: [], directives: [], responses: [], engagements: [], captures: [], samples: [], skirmishes: 0, nextId: 1, enabled: true,
     activeOp: new Map(), openEng: new Map(), openDir: [], lastPos: new Map(), lastAttack: new Map(), areaGrid: null, gridNx: 0,
   };
 }
@@ -205,7 +222,10 @@ function tally(e: EngagementRecord, f: number): SideTally {
 /** Damage hook (from applyDamage): open / feed the engagement at the victim's area, charge the op. */
 export function noteHit(world: World, victim: Unit, attackerOwner: number, hp: number, killed: boolean): void {
   const log = world.battle;
-  if (!log.enabled || hp <= 0 || attackerOwner < 0 || attackerOwner === victim.owner) return;
+  if (hp <= 0 || attackerOwner < 0 || attackerOwner === victim.owner) return;
+  // 3.0: the first battle between two factions reveals their doctrines to each other (doctrines.ts).
+  if ((world.factions[attackerOwner]?.contactAt[victim.owner] ?? 0) < 0) markContact(world, attackerOwner, victim.owner);
+  if (!log.enabled) return;
   const maxHp = victim.fixed ? 1400 : victim.def.maxHp;
   const value = (victim.def.costP + victim.def.costM) * (hp / maxHp);
   const key = areaKey(world, victim.pos);
@@ -330,6 +350,11 @@ export function noteDirective(world: World, f: number, kind: DirectiveRecord['ki
   };
   push(log.directives, rec);
   log.openDir.push(rec);
+}
+
+/** 3.0: record a front's answer to the directive (compliance.ts; one record per answer, not per think). */
+export function noteResponse(world: World, rec: Omit<ResponseRecord, 't'>): void {
+  push(world.battle.responses, { ...rec, t: world.time });
 }
 
 // ---------------------------------------------------------------- per-second upkeep

@@ -13,6 +13,7 @@
  */
 import { readFileSync } from 'node:fs';
 import { buildGameData } from '../src/data/loader';
+import { applyOverrides, envOverrides } from './lab/overrides';
 import { createMatch, step } from '../src/sim/sim';
 import type { Unit } from '../src/sim/types';
 import { dist } from '../src/sim/vec';
@@ -20,9 +21,19 @@ import { mannedShare } from '../src/sim/structures';
 import { STRATEGY_AI } from '../src/sim/strategyai';
 import { STORM_AB } from '../src/sim/storm';
 import { THEATRE_AB } from '../src/sim/theatre';
+import { DOCTRINE_AB } from '../src/sim/doctrines';
 import { stockSummary } from '../src/sim/settlements';
 import { econCounts } from '../src/sim/econ';
 import type { World } from '../src/sim/world';
+import { INFILTRATION_AB } from '../src/sim/zoc';
+import { FINISH, FINISH_AB } from '../src/sim/storm';
+
+// A/B: INFIL_OFF=1 switches the 3.0 zone of control / pickets / rear screen off.
+if (process.env.INFIL_OFF) INFILTRATION_AB.on = false;
+// A/B: FINISH_BROKEN=0 turns the 3.0 broken-target finisher off (storm.ts, WP-T).
+if (process.env.FINISH_BROKEN === '0') FINISH_AB.broken = false;
+// FINISH_SET='{"brokenFullness":0.55}': finisher constants for tuning A/B runs (storm.FINISH).
+if (process.env.FINISH_SET) Object.assign(FINISH as unknown as Record<string, number>, JSON.parse(process.env.FINISH_SET) as Record<string, number>);
 
 // A/B: HOME_DEFENCE=0 turns the round-3 home defence off (docs/STRATEGY_LAB.md "Round 3").
 if (process.env.HOME_DEFENCE === '0') STRATEGY_AI.homeDefence = false;
@@ -30,12 +41,19 @@ if (process.env.HOME_DEFENCE === '0') STRATEGY_AI.homeDefence = false;
 if (process.env.STORM === '0') STRATEGY_AI.storm = false;
 // A/B: SIEGE=0 turns only the round-4 capital siege off.
 if (process.env.SIEGE === '0') STORM_AB.siege = false;
+// A/B: DOCTRINES=0 turns the 3.0 AI doctrines off (doctrines.ts).
+if (process.env.DOCTRINES === '0') DOCTRINE_AB.on = false;
 // A/B: THEATRE=0 turns the 2.0 AI supreme HQ (dynamic fronts and orders, theatre.ts) off.
 if (process.env.THEATRE === '0') STRATEGY_AI.theatre = false;
 // …or only some of its parts: THEATRE_OFF=stances,structure,counter
 for (const k of (process.env.THEATRE_OFF ?? '').split(',')) if (k === 'stances' || k === 'structure' || k === 'counter') THEATRE_AB[k] = false;
 
-const data = buildGameData(readFileSync('docs/data/units.csv', 'utf8'), readFileSync('docs/data/weapons.csv', 'utf8'), readFileSync('docs/data/rules.json', 'utf8'));
+// UPGRADES=0 → 3.0 unit upgrades off (A/B).
+// LAB_SET="a.b=1;unit.x.cost_p*=1.1": rules / csv overrides for tuning A/B runs (scripts/lab/overrides.ts).
+const labText = applyOverrides({ units: readFileSync('docs/data/units.csv', 'utf8'), weapons: readFileSync('docs/data/weapons.csv', 'utf8'), rules: readFileSync('docs/data/rules.json', 'utf8') }, envOverrides());
+const rulesText = labText.rules;
+const data = buildGameData(labText.units, labText.weapons,
+  process.env.UPGRADES === '0' ? JSON.stringify({ ...JSON.parse(rulesText), upgrades: { ...JSON.parse(rulesText).upgrades, enabled: false } }) : rulesText);
 const minutes = Number(process.argv[2] ?? 60);
 const seeds = (process.argv[3] ?? '7,11,13').split(',').map(Number);
 
@@ -103,6 +121,8 @@ for (const seed of seeds) {
     for (const f of w.forts) if (f.occupant !== null && !w.unitAlive(f.occupant)) note(`t=${Math.round(w.time)}s fort#${f.id} occupant ${f.occupant} is dead`);
   }
   if (win.length) report(win);
+  const elim = w.factions.filter((f) => f.eliminatedAt !== null);
+  console.log(`ELIMINATIONS ${elim.length} at [${elim.map((f) => ((f.eliminatedAt ?? 0) / 60).toFixed(1)).join(',')}] min`);
   const r = w.result;
   if (r) console.log(`RESULT: ${r.reason} winners [${r.winners.join(',')}] at ${(r.tick / w.tickHz / 60).toFixed(1)} min`);
   else console.log(`RESULT: no result after ${minutes} min (alive: ${w.factions.filter((f) => f.alive).map((f) => f.id).join(',')}; held ${w.factions.map((f) => w.objectives.filter((o) => o.owner === f.id).length).join('/')})`);

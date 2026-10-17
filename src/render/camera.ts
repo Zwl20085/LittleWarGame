@@ -15,8 +15,19 @@ export class CameraRig {
   private elevGoal = 45;
   private yawGoal = Math.PI / 2;
   private readonly baseHalfHeight = 160;
-  follow: (() => THREE.Vector3 | null) | null = null;
+  follow: (() => { readonly x: number; readonly z: number } | null) | null = null;
   shake = 0;
+  /**
+   * Easing rate (1/s) of zoom, elevation and yaw toward their goals (3.0 camera modes lower it
+   * during a mode transition for a slower, eased move).
+   */
+  easeRate = 10;
+  /** Easing rate (1/s) of the follow target (null = `easeRate`). */
+  followRate: number | null = null;
+  /** Counts manual pans (keyboard / middle drag): camera modes drop out of follow on a change. */
+  panCount = 0;
+  /** Counts `lookAt` jumps (minimap, "go to" buttons): camera modes tell theirs from the UI's. */
+  lookCount = 0;
 
   /** Farthest zoom: the whole table fits on screen. */
   readonly minZoom: number;
@@ -48,6 +59,18 @@ export class CameraRig {
     this.yawGoal += delta;
   }
 
+  get yawTarget(): number {
+    return this.yawGoal;
+  }
+  get zoomTarget(): number {
+    return this.zoomGoal;
+  }
+
+  /** Set the yaw goal (radians, unwrapped: callers pick the nearest turn to avoid a spin). */
+  setYawGoal(yaw: number): void {
+    this.yawGoal = yaw;
+  }
+
   /** Face the camera so that `headingRad` (sim heading) points up the screen. */
   faceHeading(headingRad: number, instant = false): void {
     this.yawGoal = headingRad + Math.PI;
@@ -65,6 +88,7 @@ export class CameraRig {
   /** Pan in screen-aligned ground directions (metres). */
   pan(right: number, forward: number): void {
     this.follow = null;
+    this.panCount++;
     const fx = Math.cos(this.yaw);
     const fz = Math.sin(this.yaw);
     // Forward on screen = direction the camera looks across the ground.
@@ -74,6 +98,7 @@ export class CameraRig {
   }
 
   lookAt(x: number, z: number): void {
+    this.lookCount++;
     this.target.x = x;
     this.target.z = z;
     this.clampTarget();
@@ -86,15 +111,16 @@ export class CameraRig {
   }
 
   update(dt: number, groundY: (x: number, z: number) => number): void {
-    const k = 1 - Math.exp(-dt * 10);
+    const k = 1 - Math.exp(-dt * this.easeRate);
     this.zoom += (this.zoomGoal - this.zoom) * k;
     this.elevationDeg += (this.elevGoal - this.elevationDeg) * k;
     this.yaw += (this.yawGoal - this.yaw) * k;
     if (this.follow) {
       const p = this.follow();
       if (p) {
-        this.target.x += (p.x - this.target.x) * k;
-        this.target.z += (p.z - this.target.z) * k;
+        const kf = 1 - Math.exp(-dt * (this.followRate ?? this.easeRate));
+        this.target.x += (p.x - this.target.x) * kf;
+        this.target.z += (p.z - this.target.z) * kf;
       } else this.follow = null;
     }
     this.target.y = groundY(this.target.x, this.target.z);

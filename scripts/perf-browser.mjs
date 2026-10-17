@@ -21,7 +21,9 @@ page.on('pageerror', (e) => errors.push(e.message));
 page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 // PERF_URL lets you point at a static `vite preview` build (no HMR reloads while measuring).
 const base = process.env.PERF_URL ?? 'http://localhost:5173';
-await page.goto(`${base}/?quick&map=gen&seed=${seed}&spectate`);
+// SIZE=large plays the large generated map.
+const size = process.env.SIZE === 'large' ? '&size=large' : '';
+await page.goto(`${base}/?quick&map=gen&seed=${seed}&spectate${size}`);
 await page.waitForFunction(() => window.__game && window.__game.host && window.__game.host.ready, null, { timeout: 120000 });
 console.log(`match ready; fast-forwarding ${ff} s of game time…`);
 await page.evaluate((s) => window.__game.fastForward(s, 240000), ff);
@@ -53,6 +55,9 @@ async function measure(label, setup) {
       part('counters', r.counters, 'draw'), part('labels', r.labels, 'draw'), part('opArrows', r.opArrows, 'sync'),
       part('projectiles', r.effects, 'syncProjectiles'), part('forts', r, 'syncForts'), part('objectives', r, 'syncObjectives'),
       part('overlays', r, 'drawOverlays'), part('fxHandle', r.effects, 'handle'), part('rig', r.rig, 'update'),
+      // 3.0 parts: rails / trains, time of day, order ribbons, front lines, haze.
+      part('rails', r.railField, 'update'), part('day', r.day, 'update'), part('orderLines', r.orderLines, 'sync'),
+      part('orderLabels', r.orderLines, 'drawLabels'), part('frontLines', r.frontLines, 'update'), part('haze', r.haze, 'update'),
     ];
     const info = r.renderer.info;
     info.autoReset = true;
@@ -91,13 +96,39 @@ async function measure(label, setup) {
       achievedSpeed: ((w.tick - tick0) / w.tickHz) / elapsed,
       ppm: r.pixelsPerMetre(),
       parts: Object.fromEntries(Object.entries(stats.parts).map(([k, v]) => [k, (sum(v) / stats.frames)])),
+      quality: r.quality?.level ?? -1,
       drawCalls: info.render.calls, triangles: info.render.triangles, programs: info.programs?.length ?? 0,
     };
   }, sampleSeconds);
   console.log(`   per-frame ms: ${Object.entries(out.parts).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${v.toFixed(2)}`).join(', ')} | draw calls ${out.drawCalls} tris ${(out.triangles / 1000).toFixed(0)}k programs ${out.programs}`);
   const f = (x) => x.toFixed(2);
-  console.log(`[${label}] units ${out.units} proj ${out.projectiles} ppm ${f(out.ppm)} | fps ${f(out.fps)} frame p50 ${f(out.frameP50)} p95 ${f(out.frameP95)} max ${f(out.frameMax)} ms | render avg ${f(out.renderAvg)} p95 ${f(out.renderP95)} (units.sync ${f(out.unitsSyncAvg)}, fx ${f(out.fxAvg)}) | snapshot apply avg ${f(out.applyAvg)} ms ×${out.applyCount} = ${f(out.applyTotalPerSec)} ms/s | lag frames ${(out.lagFrames * 100).toFixed(0)}% | achieved speed ${f(out.achievedSpeed)}x of ${speed}x`);
+  console.log(`[${label}] units ${out.units} proj ${out.projectiles} ppm ${f(out.ppm)} | fps ${f(out.fps)} frame p50 ${f(out.frameP50)} p95 ${f(out.frameP95)} max ${f(out.frameMax)} ms | render avg ${f(out.renderAvg)} p95 ${f(out.renderP95)} (units.sync ${f(out.unitsSyncAvg)}, fx ${f(out.fxAvg)}) | snapshot apply avg ${f(out.applyAvg)} ms ×${out.applyCount} = ${f(out.applyTotalPerSec)} ms/s | quality tier ${out.quality} | lag frames ${(out.lagFrames * 100).toFixed(0)}% | achieved speed ${f(out.achievedSpeed)}x of ${speed}x`);
   return out;
+}
+
+// GOVERNOR=<rate>: auto quality under a CPU throttle (CDP) — checks that the governor steps the
+// tier down when frames are slow, and how far the frame rate recovers. Skips the view set.
+if (process.env.GOVERNOR) {
+  const rate = Number(process.env.GOVERNOR) || 6;
+  await page.evaluate(() => window.__game.renderer.setQualityMode('auto'));
+  await page.evaluate(() => { const g = window.__game; const w = g.match.world; g.renderer.rig.lookAt(w.terrain.width / 2, w.terrain.depth / 2); g.renderer.rig.setZoom(0.5); });
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send('Emulation.setCPUThrottlingRate', { rate });
+  await page.evaluate((spd) => { window.__game.ctx.speed = spd; }, speed);
+  for (let k = 0; k < 8; k++) {
+    const s = await page.evaluate(async () => {
+      const g = window.__game;
+      const t0 = performance.now();
+      let n = 0;
+      await new Promise((res) => { const loop = () => { n++; if (performance.now() - t0 < 4000) requestAnimationFrame(loop); else res(); }; requestAnimationFrame(loop); });
+      return { level: g.renderer.quality.level, fps: n / ((performance.now() - t0) / 1000), units: g.match.world.units.size };
+    });
+    console.log(`[governor x${rate}] ${(k + 1) * 4}s tier ${s.level} fps ${s.fps.toFixed(1)} units ${s.units}`);
+  }
+  await cdp.send('Emulation.setCPUThrottlingRate', { rate: 1 });
+  if (errors.length) console.log('page errors:\n' + errors.slice(0, 10).join('\n'));
+  await browser.close();
+  process.exit(0);
 }
 
 await measure('overview', () => {
@@ -117,5 +148,7 @@ await measure('front', () => {
   g.renderer.rig.setZoom(3);
 });
 await measure('close', () => { window.__game.renderer.rig.setZoom(8); });
+// 3.0: low close-in angle — the high-tier tilt-shift pass is on here (battle cam / follow views).
+await measure('close-low', () => { window.__game.renderer.rig.setZoom(3); window.__game.renderer.rig.setElevation(36); });
 if (errors.length) console.log('page errors:\n' + errors.slice(0, 10).join('\n'));
 await browser.close();

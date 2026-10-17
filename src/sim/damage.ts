@@ -6,6 +6,7 @@ import { crowding, OPS } from './operations';
 import { armorFacing, armorSuppressionMul, armorValue, blastFalloff, heTargetMul, penetrationProbability } from './formulas';
 import { recordDamage } from './stats';
 import { frontById } from './frontref';
+import { frontMoraleLossMul } from './frontTiers';
 import { noteHit } from './events';
 import { noteBuildingHit, shieldBuilding } from './buildings';
 import { exposureSuppressionMul } from './terrainrules';
@@ -54,7 +55,7 @@ export function addSuppression(world: World, u: Unit, amount: number): void {
   const before = u.suppression;
   u.suppression = Math.min(100, u.suppression + amount);
   const added = u.suppression - before;
-  u.morale = Math.max(0, u.morale - COMBAT.moraleSuppressionFactor * added);
+  u.morale = Math.max(0, u.morale - COMBAT.moraleSuppressionFactor * added * frontMoraleLossMul(world, u));
   u.lastSuppressedAt = world.time;
 }
 
@@ -68,7 +69,7 @@ export function applyDamage(world: World, u: Unit, dmg: number, attackerOwner: n
   u.hp -= lost;
   u.lastDamagedAt = world.time;
   if (u.def.id === 'supply_truck') noteTruckHit(world, u);
-  u.morale = Math.max(0, u.morale - COMBAT.moraleHpLossFactor * (lost / maxHp));
+  u.morale = Math.max(0, u.morale - COMBAT.moraleHpLossFactor * (lost / maxHp) * frontMoraleLossMul(world, u));
   recordDamage(world.stats, attackerOwner, src, u, lost, u.hp <= 0);
   noteHit(world, u, attackerOwner, lost, u.hp <= 0);
   if (u.hp > 0) return;

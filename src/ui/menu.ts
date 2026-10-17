@@ -1,6 +1,7 @@
 import type { GameData } from '../data/types';
 import { Game } from '../game';
-import type { Difficulty, InfoMode, MatchConfig, Personality } from '../sim/types';
+import type { Difficulty, DoctrineId, InfoMode, MatchConfig, Personality } from '../sim/types';
+import { DOCTRINE_IDS, isDoctrineId } from '../sim/doctrines';
 import { CinematicDirector } from './cinematic';
 import { fmtTime, h, setText } from './dom';
 import { lang, onLangChange, setLang, t } from './i18n';
@@ -27,14 +28,21 @@ interface SetupState {
   readonly spectate: boolean;
   /** The player's force doctrine (production mix + preferred battle plans). */
   readonly doctrine: Personality;
+  /** 3.0: each AI side's war doctrine (index = faction slot; slot 0 is the player unless spectating). */
+  readonly aiDoctrines: readonly DoctrineChoice[];
 }
+
+type DoctrineChoice = DoctrineId | 'random';
+const DOCTRINE_CHOICES: readonly DoctrineChoice[] = ['random', ...DOCTRINE_IDS];
+const ALL_RANDOM: readonly DoctrineChoice[] = ['random', 'random', 'random', 'random'];
+const SLOT_ROMAN = ['I', 'II', 'III', 'IV'];
 
 const DOCTRINES: Personality[] = ['balanced', 'infantry', 'armor', 'mechanized', 'artillery'];
 
 const randomSeed = (): number => Math.floor(Math.random() * 1e6);
 
 function loadState(): SetupState {
-  const def: SetupState = { mapId: 'generated', mapSize: 'medium', factions: 4, difficulty: 'normal', infoMode: 'open', seed: randomSeed(), spectate: false, doctrine: 'balanced' };
+  const def: SetupState = { mapId: 'generated', mapSize: 'medium', factions: 4, difficulty: 'normal', infoMode: 'open', seed: randomSeed(), spectate: false, doctrine: 'balanced', aiDoctrines: ALL_RANDOM };
   try {
     const raw = localStorage.getItem(STORE_KEY);
     if (!raw) return def;
@@ -49,6 +57,7 @@ function loadState(): SetupState {
       infoMode: v.infoMode === 'fog' ? 'fog' : 'open',
       spectate: !!v.spectate,
       doctrine: DOCTRINES.includes(v.doctrine as Personality) ? (v.doctrine as Personality) : 'balanced',
+      aiDoctrines: ALL_RANDOM.map((_, i) => { const c = Array.isArray(v.aiDoctrines) ? v.aiDoctrines[i] : undefined; return isDoctrineId(c) ? c : 'random'; }),
     };
   } catch {
     return def;
@@ -69,7 +78,22 @@ function maxFactions(mapId: MapChoice): number {
 
 function toConfig(s: SetupState): MatchConfig {
   const factions = Math.min(maxFactions(s.mapId), s.factions);
-  return { mapId: s.mapId, mapSize: s.mapSize, factions, infoMode: s.infoMode, seed: s.seed, difficulty: s.difficulty, playerSlot: 0, spectate: s.spectate, personalities: s.spectate ? undefined : [s.doctrine] };
+  // 3.0: the player's slot draws whatever doctrine the AI choices leave (it only colours the music).
+  const doctrines = Array.from({ length: factions }, (_, i): DoctrineChoice => (!s.spectate && i === 0 ? 'random' : s.aiDoctrines[i] ?? 'random'));
+  return { mapId: s.mapId, mapSize: s.mapSize, factions, infoMode: s.infoMode, seed: s.seed, difficulty: s.difficulty, playerSlot: 0, spectate: s.spectate, personalities: s.spectate ? undefined : [s.doctrine], doctrines };
+}
+
+/** Per-AI doctrine selectors (custom game): one labelled select per AI slot, 'random' first. */
+function doctrineFields(s: SetupState, factions: number, set: (slot: number, v: DoctrineChoice) => void): HTMLElement {
+  const rows: HTMLElement[] = [];
+  for (let i = s.spectate ? 0 : 1; i < factions; i++) {
+    const cur = s.aiDoctrines[i] ?? 'random';
+    const sel = h('select', { class: 'sel', 'aria-label': `${t('setup.aiDoctrines')} ${t('setup.aiSlot', { roman: SLOT_ROMAN[i] })}`,
+      onchange: (e: Event) => set(i, (e.target as HTMLSelectElement).value as DoctrineChoice) },
+    ...DOCTRINE_CHOICES.map((c) => h('option', { value: c, selected: c === cur, title: t(c === 'random' ? 'wdoc.random.desc' : `wdoc.desc.${c}`) }, t(c === 'random' ? 'wdoc.random' : `wdoc.${c}`))));
+    rows.push(h('div', { class: 'doctrine-row' }, h('span', { class: 'small' }, t('setup.aiSlot', { roman: SLOT_ROMAN[i] })), sel));
+  }
+  return h('div', { class: 'field' }, h('span', { class: 'lbl' }, t('setup.aiDoctrines')), h('div', { class: 'doctrine-rows' }, ...rows));
 }
 
 /** Background battle for the title screen: a real all-AI match framed by a cinematic camera. */
@@ -193,9 +217,9 @@ export function showTitle(root: HTMLElement, data: GameData, onStart: (cfg: Matc
 
   const items: MenuItem[] = [
     // Quick battle is fought under fog of war (V22_SPEC §6); Custom keeps its own toggle, Spectate sees all.
-    { id: 'quick', action: () => start(toConfig({ ...state, mapId: 'generated', mapSize: 'medium', factions: 4, difficulty: 'normal', infoMode: 'fog', spectate: false, seed: randomSeed() })) },
+    { id: 'quick', action: () => start(toConfig({ ...state, mapId: 'generated', mapSize: 'medium', factions: 4, difficulty: 'normal', infoMode: 'fog', spectate: false, seed: randomSeed(), aiDoctrines: ALL_RANDOM })) },
     { id: 'custom', action: () => openPanel('custom') },
-    { id: 'spectate', action: () => start(toConfig({ ...state, mapId: 'generated', factions: 4, spectate: true, infoMode: 'open', seed: randomSeed() })) },
+    { id: 'spectate', action: () => start(toConfig({ ...state, mapId: 'generated', factions: 4, spectate: true, infoMode: 'open', seed: randomSeed(), aiDoctrines: ALL_RANDOM })) },
     { id: 'settings', action: () => openPanel('settings') },
   ];
 
@@ -260,6 +284,7 @@ export function showTitle(root: HTMLElement, data: GameData, onStart: (cfg: Matc
       h('div', { class: 'field' }, h('span', { class: 'lbl' }, t('setup.doctrine')),
         h('div', { class: 'seg-group wrap' }, ...DOCTRINES.map((d) => opt(t(`preset.${d}`), d, state.doctrine, (v) => ({ ...state, doctrine: v }))))),
       h('div', { class: 'small note' }, t(`doctrine.${state.doctrine}`)),
+      doctrineFields(state, factions, (slot, v) => { state = { ...state, aiDoctrines: state.aiDoctrines.map((c, k) => (k === slot ? v : c)) }; }),
       h('div', { class: 'field' }, h('span', { class: 'lbl' }, t('setup.info')),
         h('div', { class: 'seg-group' }, ...(['open', 'fog'] as InfoMode[]).map((m) => opt(t(`info.${m}`), m, state.infoMode, (v) => ({ ...state, infoMode: v }))))),
       h('div', { class: 'field' }, h('span', { class: 'lbl' }, t('setup.seed')), seedIn,
@@ -333,6 +358,7 @@ export function showTitle(root: HTMLElement, data: GameData, onStart: (cfg: Matc
     clearTimeout(focusTimer);
     clearTimeout(introTimer);
     offLang();
+    upd.dispose();
     battle.dispose();
     el.remove();
   };

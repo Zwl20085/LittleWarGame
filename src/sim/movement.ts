@@ -1,5 +1,7 @@
 import { COMBAT } from './config';
-import { groundSpeedMul, type NavGrid } from './nav';
+import type { NavGrid } from './nav';
+import { groundMul, moveClassOf, transportRules, wheeledNav } from './transport';
+import { aboard, railLeg } from './rail';
 import { hostileMask } from './spatial';
 import type { Unit } from './types';
 import { clamp, DEG, dist, headingTo, turnToward, type V2, angleDiff } from './vec';
@@ -7,10 +9,17 @@ import type { World } from './world';
 import { updateWorksCover } from './works';
 import { isStructure, updateStructureGarrison } from './structures';
 import { pocketExit } from './pocket';
+import { zocMul } from './zoc';
+import { mineSpeedMul } from './minefields';
+import { isMotorized } from './upgradestats';
 
 /** Set a movement destination; path is (re)computed lazily and rate-limited. */
 export function moveTo(world: World, u: Unit, dest: V2, force = false): void {
   if (u.fixed) return;
+  // 3.0 railways (rail.ts): a far trip may go by train: walk to the station, or wait / ride.
+  const leg = railLeg(world, u, dest);
+  if (leg?.hold) return;
+  if (leg) dest = leg.to;
   dest = reachableDest(world, u, dest);
   if (!force && u.dest && dist(u.dest, dest) < 6 && (u.path.length > 0 || dist(u.pos, dest) < 6)) return;
   // A consumed horizon-limited path must continue at once; everything else is rate-limited.
@@ -27,7 +36,8 @@ export function moveTo(world: World, u: Unit, dest: V2, force = false): void {
   const nav = world.navFor(u);
   // Long routes: vehicles share the most conservative vehicle grid (a route legal for a heavy
   // tank is legal for every vehicle) so all vehicle classes reuse the same cached flow fields.
-  const longNav = u.def.kind === 'vehicle' ? world.nav(true, 15) : nav;
+  // 3.0: wheeled vehicles (trucks) keep their own road-hugging grid (transport.ts wheeledNav).
+  const longNav = u.def.kind === 'vehicle' && !wheeledNav(world.data.rules, u.def) ? world.nav(true, 15) : nav;
   let res = dist(u.pos, dest) > 120 ? longNav.pathByField(u.pos, dest, PATH_HORIZON_CELLS) : nav.findPath(u.pos, dest, 4000);
   // The shared conservative grid can call a slope-side start or goal unreachable that this
   // unit's own class can climb (a light tank on an 18° bank): fall back to its own grid.
@@ -144,7 +154,7 @@ export const MOTOR = {
 
 /** Mount/dismount state machine; true while the squad is getting on or off its trucks. */
 function handleMount(world: World, u: Unit, wantsMove: boolean): boolean {
-  if (u.def.id !== 'motor_inf') return false;
+  if (!isMotorized(u)) return false;
   if (world.time < u.mountUntil) return true;
   // Re-evaluated every ~0.5 s per unit (spatial query), not every tick.
   if ((world.tick + u.id) % 10 !== 0 && !(u.mounted && world.time - u.lastDamagedAt < 1)) return false;
@@ -164,14 +174,16 @@ function handleMount(world: World, u: Unit, wantsMove: boolean): boolean {
 export function speedOf(world: World, u: Unit, heading: number): number {
   if (u.mounted) {
     const g = world.terrain.groundAt(u.pos.x, u.pos.z);
-    return MOTOR.speed * groundSpeedMul(g, true) * (world.data.rules.proposed_defaults.tempo_move_multiplier ?? 1);
+    // 3.0: riding its trucks = wheeled off road (transport.ts); 2.2 vehicle table when transport is off.
+    return MOTOR.speed * groundMul(transportRules(world.data.rules), g, 'wheeled') * (world.data.rules.proposed_defaults.tempo_move_multiplier ?? 1) * zocMul(world, u);
   }
   const veh = u.def.kind === 'vehicle';
   // Ground type and grade change slowly along a path: sample them every few ticks (perf).
   if (world.tick - u.terrainMulAt >= TERRAIN_SAMPLE_TICKS) {
     const g = world.terrain.groundAt(u.pos.x, u.pos.z);
     const grade = world.terrain.gradeAlong(u.pos.x, u.pos.z, heading);
-    u.terrainMul = groundSpeedMul(g, veh) * (grade > 0 ? clamp(1 - 0.02 * grade, 0.45, 1) : 1);
+    const tr = transportRules(world.data.rules);
+    u.terrainMul = groundMul(tr, g, moveClassOf(tr, u.def)) * (grade > 0 ? clamp(1 - 0.02 * grade, 0.45, 1) : 1);
     u.terrainMulAt = world.tick;
   }
   let s = u.def.speed * u.terrainMul * (world.data.rules.proposed_defaults.tempo_move_multiplier ?? 1);
@@ -183,7 +195,9 @@ export function speedOf(world: World, u: Unit, heading: number): number {
   s *= status;
   if (veh && u.hp < u.def.maxHp * 0.25) s *= COMBAT.lowHpVehicleSpeedMul;
   if (veh && u.ammo <= 0) s *= world.data.rules.supply.empty_vehicle_speed_multiplier;
-  return s;
+  // 3.0: minefields slow hostile vehicles (minefields.ts).
+  if (veh) s *= mineSpeedMul(world, u);
+  return s * zocMul(world, u);
 }
 
 /** Advance along path with hull-turn limits and light separation. */
@@ -193,7 +207,7 @@ export function updateMovement(world: World, u: Unit): void {
   u.prev.z = u.pos.z;
   u.moving = false;
   u.speedNow = 0;
-  if (u.fixed || u.hp <= 0) return;
+  if (u.fixed || u.hp <= 0 || aboard(u)) return;
   // A consumed horizon stretch continues at once (same tick): no pause, no crew weapon
   // deploying and no motorised squad dismounting between stretches of one long route.
   if (u.path.length === 0 && u.pathPartial && u.dest) moveTo(world, u, u.dest, true);

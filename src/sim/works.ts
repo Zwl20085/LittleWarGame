@@ -1,8 +1,10 @@
 import { trySpend } from './economy';
 import { stormOn } from './strategyai';
+import { trenchCoverM } from './worksTiers';
 import type { Faction, Fort, FortKind, Unit } from './types';
 import { angleDiff, DEG, dist, headingTo, type V2 } from './vec';
 import type { World } from './world';
+import { workMul } from './upgradestats';
 
 /**
  * Field works (user request: 筑垒围攻 / 筑垒防守). Besiegers dig trench lines around a town;
@@ -99,7 +101,7 @@ export function dig(u: Unit, fort: Fort, moveTo: (p: V2) => void, stop: () => vo
     stop();
     if (u.moraleState === 'normal') {
       // Engineers dig twice as fast as riflemen.
-      const rate = (u.def.id === 'engineer' ? 2 : 1) * 0.4 / WORKS[fort.kind as LineKind].workSeconds;
+      const rate = (u.def.id === 'engineer' ? 2 : 1) * workMul(u) * 0.4 / WORKS[fort.kind as LineKind].workSeconds;
       fort.progress = Math.min(1, fort.progress + rate);
     }
   }
@@ -117,7 +119,8 @@ export function updateWorksCover(world: World, u: Unit): void {
   if (u.def.kind === 'vehicle' || u.moving) return;
   for (const f of world.forts) {
     if (f.owner !== u.owner || f.hp <= 0 || f.progress < 1 || (f.kind !== 'trench' && f.kind !== 'sandbag')) continue;
-    if (segDist(u.pos, f.start ?? f.pos, f.end ?? f.pos) <= WORKS[f.kind].coverRadiusM) {
+    // 3.0: a fortified trench (tier 1) shelters a wider band (worksTiers.ts).
+    if (segDist(u.pos, f.start ?? f.pos, f.end ?? f.pos) <= trenchCoverM(world, f, WORKS[f.kind].coverRadiusM)) {
       u.worksFacing = f.facing;
       return;
     }

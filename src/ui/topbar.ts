@@ -1,3 +1,4 @@
+import { doctrineKnown } from '../sim/doctrines';
 import { economyRates } from '../sim/economy';
 import { populationCap } from '../sim/production';
 import type { GameContext } from './context';
@@ -105,7 +106,8 @@ export class TopBar {
         this.resolveWrap.append(h('div', { class: 'resolve', 'data-f': fac.id, title: factionLabel(w, fac.id) },
           h('span', { class: 'roman', style: `background:${fac.color}` }, fac.roman),
           h('div', { class: 'bar' }, h('div', { class: 'fill', style: `background:${fac.color}` })),
-          h('span', { class: 'num small' })));
+          h('span', { class: 'num small' }),
+          h('span', { class: 'doc' })));
       }
     }
     const resolveOn = !!w.data.rules.victory.resolve_enabled;
@@ -121,9 +123,25 @@ export class TopBar {
       setText(row.querySelector('.num') as HTMLElement, fac.alive ? String(Math.round(value)) : '✕');
       row.classList.toggle('dead', !fac.alive);
       row.classList.toggle('me', fac.id === this.ctx.playerId && !this.ctx.spectator);
+      this.doctrineLine(row, fac.id);
     }
     setText(this.time, fmtTime(w.time));
     this.speedBtns.forEach((b, i) => b.classList.toggle('on', !this.ctx.paused && this.ctx.speed === SPEEDS[i]));
     this.pauseBtn.classList.toggle('on', this.ctx.paused);
+  }
+
+  /**
+   * 3.0 doctrine flavour on a faction card: an enemy's doctrine once discovered (the first battle
+   * with it, or after `doctrines.reveal_s`); every side's in spectate; nothing on the player's own card.
+   */
+  private doctrineLine(row: HTMLElement, id: number): void {
+    const w = this.ctx.match.world;
+    const fac = w.factions[id];
+    const el = row.querySelector('.doc') as HTMLElement | null;
+    if (!el || !fac) return;
+    const own = id === this.ctx.playerId && !this.ctx.spectator;
+    const known = this.ctx.spectator || doctrineKnown(w, this.ctx.playerId, id);
+    setText(el, own ? '' : known ? t(`wdoc.short.${fac.doctrine}`) : '?');
+    row.title = own ? factionLabel(w, id) : `${factionLabel(w, id)} — ${known ? t('wdoc.line', { d: t(`wdoc.${fac.doctrine}`) }) : t('wdoc.unknown')}`;
   }
 }

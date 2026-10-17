@@ -1,4 +1,4 @@
-import { frontById, frontUnits } from '../sim/fronts';
+import { frontById, frontGroups } from '../sim/fronts';
 import type { Directive, DirectiveKind, Front, OrderKind } from '../sim/types';
 import { dist, type V2 } from '../sim/vec';
 import type { World } from '../sim/world';
@@ -73,10 +73,13 @@ export class FrontsPanel {
   private readonly zones: ZonesSection;
   /** Front last scrolled into view (only a newly expanded card is scrolled to). */
   private scrolledTo: number | null = null;
+  /** 3.0 HUD toggle 强制执行 / Force: directives are issued forced (every front obeys at once, compliance.ts). */
+  private forceOn = false;
 
   constructor(private readonly ctx: GameContext) {
     this.command = h('section', { class: 'hq-card orders panel paper-stack' });
-    this.cards = h('div', { class: 'front-cards' });
+    // 3.0: double-click a front card → the camera follows that front (cards rebuild, so delegate).
+    this.cards = h('div', { class: 'front-cards', ondblclick: (e: Event) => this.followFrom(e) });
     this.briefing = h('div', { class: 'briefing panel' });
     this.log = h('div', { class: 'eventlog' });
     this.zones = new ZonesSection(ctx);
@@ -86,6 +89,19 @@ export class FrontsPanel {
 
   dispose(): void {
     this.guard.dispose();
+  }
+
+  private followFrom(e: Event): void {
+    const id = Number((e.target as HTMLElement | null)?.closest?.('[data-front]')?.getAttribute('data-front'));
+    if (!Number.isFinite(id) || !this.ctx.camera) return;
+    this.expanded = id;
+    this.sig = '';
+    this.ctx.camera.followFront(id);
+  }
+
+  /** Front whose card is expanded (3.0: F follows it with the camera). */
+  get expandedFront(): number | null {
+    return this.expanded;
   }
 
   /** Expand / collapse a front's dossier. */
@@ -114,10 +130,28 @@ export class FrontsPanel {
       this.ctx.mode = { kind: 'normal' };
       return;
     }
-    this.ctx.issue({ type: 'setDirective', kind });
+    this.ctx.issue({ type: 'setDirective', kind, ...this.forceFlag() });
     this.ctx.toast(t('dir.issued', { dir: t(`dir.${kind}`) }));
     this.briefingDone = true;
     this.ctx.mode = PLACED.has(kind) ? { kind: 'directive', directive: kind } : { kind: 'normal' };
+    this.cmdSig = '';
+  }
+
+  /** `force` for a setDirective: the toggle's state once used (unset = the re-issue-within-30-s rule). */
+  forceFlag(): { force?: boolean } {
+    return this.forceOn ? { force: true } : {};
+  }
+
+  /** Toggle 强制执行: re-issues the directive in force with the new flag so it applies at once. */
+  private toggleForce(): void {
+    const f = this.ctx.match.world.factions[this.ctx.playerId];
+    if (!f || this.ctx.spectator) return;
+    this.forceOn = !this.forceOn;
+    const d = f.directive;
+    if (d.manual && d.kind !== 'advance') {
+      this.ctx.issue({ type: 'setDirective', kind: d.kind, ...(d.axis ? { axis: { ...d.axis } } : {}), ...(d.line ? { line: { a: { ...d.line.a }, b: { ...d.line.b } } } : {}), force: this.forceOn });
+    }
+    this.ctx.toast(t(this.forceOn ? 'dir.forceOn' : 'dir.forceOff'));
     this.cmdSig = '';
   }
 
@@ -148,7 +182,9 @@ export class FrontsPanel {
       this.renderCommand();
       this.zones.refresh();
       this.renderBriefing();
-      const counts = f.fronts.map((s) => frontUnits(w, f.id, s.id).length);
+      // One pass over the units for every card (3.0: unlimited fronts — no per-front scan).
+      const groups = frontGroups(w, f);
+      const counts = f.fronts.map((s) => groups.get(s.id)?.length ?? 0);
       const openFront = this.expanded !== null ? frontById(f, this.expanded) : undefined;
       const pos = openFront ? inPosition(w, f, openFront) : null;
       const now = w.time;
@@ -157,7 +193,7 @@ export class FrontsPanel {
           const c = w.unitAlive(s.commanderId);
           return [s.id, s.name, s.order.kind, s.order.issuedAt, s.order.manual, s.response, s.responseParams, s.reason, s.reasonParams, s.op, s.opPhase, s.posture,
             c ? Math.round((c.hp / c.def.maxHp) * 20) : -1, c?.status, s.commanderLostAt >= 0 && !c ? Math.round(now - s.commanderLostAt) : 0,
-            this.fresh.has(s.id)];
+            this.fresh.has(s.id), s.tier, s.stretched, s.obey, s.compliance];
         }),
         f.mainFront, counts, this.expanded, this.previewTarget, pos,
       ]);
@@ -169,10 +205,12 @@ export class FrontsPanel {
     this.renderLog();
   }
 
-  /** Stamp: "奉命 · 突击" for an order under the player's directive (binding), "自主 · …" for the commander's own. */
+  /** Stamp: "奉命 · 突击" for an order under the player's directive (binding), "自主 · …" for the commander's own; 3.0 "拒绝" / "强制". */
   private stampText(s: Front): string {
     if (s.order.kind === 'auto') return t('order.stampAuto');
     const order = t(`order.short.${s.order.kind}`);
+    if (s.obey === 'declined') return t('resp.stampDeclined', { order });
+    if (s.obey === 'forced' && s.order.manual) return t('resp.stampForced', { order });
     return t(s.order.manual ? 'resp.stampBound' : 'resp.stampOwn', { order });
   }
 
@@ -213,7 +251,7 @@ export class FrontsPanel {
     const d = f.directive;
     const m = this.ctx.mode;
     const armed = m.kind === 'directive' ? m.directive : null;
-    const sig = JSON.stringify([armed, d, home?.active, Math.round((home?.eta ?? 0) / 10), home?.recall.length, dirs.map((x) => [x.kind, x.obj, x.assigned])]);
+    const sig = JSON.stringify([armed, d, this.forceOn, home?.active, Math.round((home?.eta ?? 0) / 10), home?.recall.length, dirs.map((x) => [x.kind, x.obj, x.assigned])]);
     if (sig === this.cmdSig) return;
     this.cmdSig = sig;
     this.command.innerHTML = '';
@@ -243,6 +281,10 @@ export class FrontsPanel {
           'aria-pressed': String(d.kind === o.kind),
           onclick: () => this.pickDirective(o.kind),
         }, h('span', { class: 'og', 'aria-hidden': 'true' }, o.glyph), h('span', { class: 'on' }, t(`dir.short.${o.kind}`)), h('kbd', {}, o.key)))),
+      h('button', {
+        class: `btn force-toggle ${this.forceOn ? 'on' : ''} ${d.forced ? 'forced' : ''}`, 'aria-pressed': String(this.forceOn), title: t('dir.forceTip'),
+        onclick: () => this.toggleForce(),
+      }, t('dir.force')),
       h('div', { class: 'order-how' }, armed ? t(`dir.pick.${armed}`) : t('dir.how')),
       this.zones.el,
     );
@@ -278,12 +320,14 @@ export class FrontsPanel {
         onkeydown: (e: Event) => { if ((e as KeyboardEvent).key === 'Enter') this.select(s); },
       },
       h('div', { class: 'fc-top' },
-        h('span', { class: 'fc-idx num' }, String(i + 1)),
+        h('span', { class: 'fc-idx num', title: i < 8 ? t('front.hotkeyTip', { n: i + 1 }) : '' }, String(i + 1)),
         h('b', { class: 'fc-name' }, frontLabel(w, f.id, s.id)),
+        s.tier > 0 ? h('span', { class: `fc-tier t${s.tier}`, title: t('front.tierTip', { n: [0, ...w.data.rules.fronts.tiers.map((x) => x.min_units)][s.tier] }) }, t(`front.tier${s.tier}`)) : null,
+        s.stretched ? h('span', { class: 'fc-stretched', title: t('front.stretchedTip') }, t('front.stretched')) : null,
         main ? h('span', { class: 'fc-main', title: t('front.mainTip') }, '★') : null,
         h('span', { class: 'fc-mini num', title: t('front.troopsTip') }, String(counts[i])),
         h('span', { class: `order-stamp k-${s.order.kind} ${s.order.manual ? 'manual' : 'own'}` }, this.stampText(s))),
-      h('div', { class: 'fc-resp' }, responseText(w, s)),
+      h('div', { class: `fc-resp ${s.obey}` }, responseText(w, s), s.compliance >= 0 ? h('span', { class: 'fc-comply num', title: t('front.complianceTip') }, ` · ${t('front.compliance', { p: Math.round(s.compliance * 100) })}`) : null),
       this.commanderRow(s, counts[i]),
       h('div', { class: 'fc-reason' }, this.reasonText(s)));
       this.cards.append(card);

@@ -154,3 +154,52 @@ User (2026-10-10): the supreme HQ gives ONE command; every front decides its own
   click (Playwright: 13 / 25 palette and 17 / 25 card clicks lost in 2.1). `dom.PressGuard` holds the
   panel's re-render while a pointer is down on it; `scripts/clickcheck.mjs` (and `--noguard` for the A/B)
   checks 25+ button, map and card clicks. A press off the terrain and every refused command show a toast.
+
+## 8. 3.0 — unlimited fronts, front tiers, directive compliance (as built)
+
+- **No front cap.** `command.fronts_max` is gone; `fronts.soft_max` (32) is a perf guard only. Hotkeys 1–8 open the
+  first eight cards; the card list scrolls. Front planning is staggered: `thinkFronts(world, f, chunk)` plans
+  `fronts.fronts_per_think_tick` (8) fronts per tick (chunk k of faction f on tick ≡ f + 4k mod 2 s); the faction-wide
+  passes run with chunk 0. Per-front helpers take the front's units (`issueFrontOrder(…, units?)`, `nextTarget(…, units?)`)
+  instead of an O(units) scan per front; `frontById` uses an id map cached per `f.fronts` array; the UI counts troops
+  with one `frontGroups` pass.
+- **Tiers** (`frontTiers.ts`, rules `fronts.tiers`): ≥ 12 / 24 / 40 combat units = 军 / 集团军 / 方面军 (Corps / Army /
+  Army Group): batteries share a barrage point (target-score bonus), morale loss −5/8/12 %, hit probability +5/8/12 %,
+  supply and reinforcement weight ×1.1/1.2/1.3. Fewer than 0.5 units per 100 m of the front's stretch: *stretched*
+  (−6 % hit, +8 % morale loss). Lab switch `FRONT_TIERS_AB.on`.
+- **Theatre**: fronts wanted also grow with army size (one per 16 troops) and frontage (one per 700 m of line), never
+  more than tier-1 fronts the troops can make; a new axis opens with a tier-1 share; a cluster of ≥ 12 free troops far
+  from its fronts opens a front where it stands; a front under 7 combat units for 120 s merges into its neighbour.
+- **Compliance** (`compliance.ts`, rules `command.compliance*`): each front answers a directive other than advance with
+  compliance = base + proximity to the capital + temperament − risk (force ratio at its objective, exposed own towns,
+  ammunition, a winning assault it would break off). Below `compliance_threshold` it declines (card: 拒绝执行 — 敌优势
+  r:1，将危及 X), logs `log.frontDeclined` and a `battle.responses` record, and acts on its own (theatre.orderFront).
+  Accepting fronts move after `delay_s_per_km` × km from the capital (1–30 s; nearer fronts first; the previous order
+  stands meanwhile). A defend on the own capital is never declined within `home_recall_m`. **Insist**: the same directive
+  again within 30 s, or the HUD toggle 强制执行 / Force (`setDirective.force`), sets `Directive.forced`: every front obeys
+  at once. Obeyed orders under a player directive stay binding as in 2.2. The AI supreme HQ's directives use the same
+  model. Lab switch `COMPLIANCE_AB.on`; labs `scripts/lab30/fronts.ts`, `scripts/lab30/directive.ts`.
+
+## 9. 3.0 — sparse fronts and infiltration (as built, WP-E)
+
+- **Zone of control** (`zoc.ts`, rules `infiltration`): every 0.5 s, right after the visibility pass, an enemy within
+  `zoc_m` (150) of a front's *line unit* (line role, not manual / garrison / raid / spearhead / mounted, no guns or
+  trucks) moves at `zoc_speed_mul` (0.5) and is revealed to that faction. Two facing lines only slow each other; a real
+  intruder (a detachment, raid or column) is also chased by up to `engage_per_intruder` line units (leash
+  `engage_leash_m`, status 拦截越线之敌 / Intercepting). Moving across the segment between two own line units closer
+  than `contact_gap_m` (250) is a *line crossing*: it is reported at once and the front's reaction group intercepts.
+  Cost: one owner-masked `findOwner` per unit per pass (cells without a hostile owner are skipped).
+- **Pickets and reaction group** (`pickets.ts`, end of `planFront`): picket points every `picket_gap_m` (220) ×
+  `picket_tier_mul[tier]` along the front's whole stretch; an uncovered point takes the spare infantry squad with the
+  most redundant slot (≤ `picket_max_share` of the front's infantry). Pickets are line slots (binding-order rules
+  unchanged). `reaction_share` (15 %) of the front's combat units, motorized first then tanks, stand
+  `reaction_back_m` behind the middle while the front is not pushing. Each front's stretch is now the front cells
+  nearest its own line (`segmentsByProximity`): the 2.x split by array index gave fronts stretches far from them.
+- **Rear screen and hunt** (`infiltration.ts`): a known enemy on own ground (or unclaimed ground nearest the own
+  capital) `report_depth_m` from hostile-held ground and away from its own line units is an infiltrator; clusters
+  worth `report_min_value` are announced (log 渗透警报 / Infiltrator reported + a blinking minimap ring). The nearest
+  free units (not fighting, not on a binding order) hunt it until `hunt_ratio`:1 (追剿渗透之敌 / Hunting), and the
+  capital, cities / towns, towns with economic buildings and own economic zones within `screen_radius_m` get 1–2
+  squads posted toward it (警戒后方城镇 / Screening). Hunters + screens ≤ `response_max_share` of the army.
+- Lab switch `INFILTRATION_AB` (sub-switches zoc / engage / rear / pickets / segments); challenge `INFIL_OFF=1`;
+  lab `scripts/lab30/infiltration.ts [--fog]`; tests `tests/infiltration.test.ts`.

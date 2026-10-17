@@ -5,8 +5,17 @@ import type { Faction, Front } from './types';
  * a match (theatre.ts), so a front's id is NOT its index in `f.fronts`; every consumer looks fronts
  * up through here. Leaf module (types only) so low-level systems can use it without import cycles.
  */
-export const frontById = (f: Faction, id: number): Front | undefined =>
-  f.fronts[id]?.id === id ? f.fronts[id] : f.fronts.find((s) => s.id === id);
+const indexes = new WeakMap<readonly Front[], Map<number, Front>>();
+export const frontById = (f: Faction, id: number): Front | undefined => {
+  if (f.fronts[id]?.id === id) return f.fronts[id];
+  // 3.0 (unlimited fronts): an id map cached per `f.fronts` array (replaced on every change, never spliced).
+  let m = indexes.get(f.fronts);
+  if (!m) {
+    m = new Map(f.fronts.map((s) => [s.id, s]));
+    indexes.set(f.fronts, m);
+  }
+  return m.get(id);
+};
 
 /** The unit's front, or the faction's first front for a stale id (dissolved front, until reassigned). */
 export const frontOf = (f: Faction, id: number): Front | undefined => frontById(f, id) ?? f.fronts[0];

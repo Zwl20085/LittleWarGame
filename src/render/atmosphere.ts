@@ -23,21 +23,15 @@ const HAZE_COLOR = new THREE.Color('#d3c9b4');
 
 /**
  * Dim war-room backdrop around the table: a warm vignette rather than a flat colour, so the
- * diorama reads as an object lit on a desk.
+ * diorama reads as an object lit on a desk. 3.0: repaintable — the time-of-day drift tints it
+ * and washes the hour's sky over its top (timeOfDay.paintBackdrop).
  */
-export function roomBackground(): THREE.Texture {
-  const c = document.createElement('canvas');
-  c.width = c.height = 256;
-  const g = c.getContext('2d')!;
-  const grd = g.createRadialGradient(128, 118, 20, 128, 128, 190);
-  grd.addColorStop(0, '#8f8676');
-  grd.addColorStop(0.6, '#6c6457');
-  grd.addColorStop(1, '#3e3932');
-  g.fillStyle = grd;
-  g.fillRect(0, 0, 256, 256);
-  const t = new THREE.CanvasTexture(c);
-  t.colorSpace = THREE.SRGBColorSpace;
-  return t;
+export function backdropTexture(): { canvas: HTMLCanvasElement; texture: THREE.CanvasTexture } {
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = 256;
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return { canvas, texture };
 }
 
 /**
@@ -48,6 +42,11 @@ export class Haze {
   private readonly fog = new THREE.Fog(HAZE_COLOR, 1, 2);
 
   constructor(private readonly scene: THREE.Scene, private readonly span: number, private readonly camDist: number) {}
+
+  /** Haze tint follows the hour (3.0 time-of-day drift). */
+  setColor(c: THREE.Color): void {
+    this.fog.color.copy(c);
+  }
 
   /** `ppm` = screen pixels per metre. */
   update(ppm: number): void {

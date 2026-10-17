@@ -1,5 +1,6 @@
 import { isCommander } from './formulas';
 import { addZoneLine } from './fronts';
+import { doctrineDirective } from './doctrineai';
 import type { Directive, DirectiveKind, Faction } from './types';
 import { dist, type V2 } from './vec';
 import type { World } from './world';
@@ -21,10 +22,12 @@ export const initialDirective = (manual: boolean): Directive => ({ kind: 'advanc
  * Set a faction's directive (validated input). A drawn fortify line becomes a permanent fortified
  * zone at once (held by the front nearest it). The caller applies the fronts' responses.
  */
-export function setDirective(world: World, f: Faction, kind: DirectiveKind, axis: V2 | null, line: { a: V2; b: V2 } | null, manual: boolean): void {
-  f.directive = { kind, axis: axis ? { ...axis } : null, line: line ? { a: { ...line.a }, b: { ...line.b } } : null, issuedAt: world.time, manual };
+export function setDirective(world: World, f: Faction, kind: DirectiveKind, axis: V2 | null, line: { a: V2; b: V2 } | null, manual: boolean, forced = false): void {
+  f.directive = { kind, axis: axis ? { ...axis } : null, line: line ? { a: { ...line.a }, b: { ...line.b } } : null, issuedAt: world.time, manual, forced: manual && forced };
   if (line) addZoneLine(world, f, line.a, line.b);
   world.note(f.id, `log.directive.${kind}`, {}, 'info');
+  // 3.0: an insisted (forced) directive is obeyed at once by every front (compliance.ts).
+  if (manual && forced) world.note(f.id, 'log.directiveForced', {}, 'warn');
 }
 
 /** AI directive choice (lab-tunable). */
@@ -65,8 +68,15 @@ export function chooseDirective(world: World, f: Faction): boolean {
     kind = 'offensive';
     axis = world.hqPos(fin);
   } else {
-    const r = armyRatio(world, f);
-    if (r < AI_DIRECTIVE.defendBelow || (cur.kind === 'defend' && r < AI_DIRECTIVE.defendExit)) kind = 'defend';
+    // 3.0: the doctrine decides (doctrineai.ts); without one, the 2.2 rule.
+    const d = doctrineDirective(world, f);
+    if (d) {
+      kind = d.kind;
+      axis = d.axis;
+    } else {
+      const r = armyRatio(world, f);
+      if (r < AI_DIRECTIVE.defendBelow || (cur.kind === 'defend' && r < AI_DIRECTIVE.defendExit)) kind = 'defend';
+    }
   }
   const same = cur.kind === kind && ((cur.axis === null && axis === null) || (!!cur.axis && !!axis && dist(cur.axis, axis) < 1));
   if (same) return false;

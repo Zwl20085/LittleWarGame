@@ -1,5 +1,6 @@
 import type { Unit } from './types';
 import { hostileMask } from './spatial';
+import { frontSupplyWeight } from './frontTiers';
 import { dist, type V2 } from './vec';
 import type { World } from './world';
 
@@ -104,7 +105,7 @@ export function rebuildSupply(world: World, f: number, owner: (p: V2) => number)
   }
   const fac = world.factions[f];
   const needs = eligible.map((u) => u.def.supplyDemand);
-  const pri = eligible.map((u) => (u.frontId === fac.mainFront ? s.main_sector_priority : 1));
+  const pri = eligible.map((u) => (u.frontId === fac.mainFront ? s.main_sector_priority : 1) * frontSupplyWeight(world, fac, u.frontId));
   const alloc = allocateSupply(needs, pri, fac.logistics);
   eligible.forEach((u, i) => (u.supplyRatio = needs[i] > 0 ? alloc[i] / needs[i] : 1));
   fac.supplyDemand = mine.reduce((a, u) => a + u.def.supplyDemand, 0);

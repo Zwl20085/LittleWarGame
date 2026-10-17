@@ -16,6 +16,8 @@ export type MoraleState = 'normal' | 'suppressed' | 'pinned';
 export type InfoMode = 'open' | 'fog';
 /** Force doctrine: production mix and preferred battle operations. */
 export type Personality = 'armor' | 'infantry' | 'artillery' | 'balanced' | 'mechanized';
+/** 3.0 AI war doctrine (作战风格, doctrines.ts): builder 优先发育, blitz 一波直捣黄龙, attrition 稳扎稳打, maneuver 寻机决战. */
+export type DoctrineId = 'builder' | 'blitz' | 'attrition' | 'maneuver';
 export type Difficulty = 'easy' | 'normal' | 'hard';
 
 export type ManualTask =
@@ -28,9 +30,15 @@ export type ManualTask =
 export interface Unit {
   readonly id: number;
   readonly owner: number;
-  readonly def: UnitDef;
-  readonly primary: WeaponDef | null;
-  readonly secondary: WeaponDef | null;
+  /** Refit (upgradestats.ts) swaps these for upgraded variants; the base ids stay the same. */
+  def: UnitDef;
+  primary: WeaponDef | null;
+  secondary: WeaponDef | null;
+  /** 3.0 upgrade bits this unit carries (upgradestats.ts); 0 = stock unit. */
+  upg: number;
+  /** 3.0 next time the attached gun team / AP grenades may fire (upgradekit.ts). */
+  upgGunAt: number;
+  upgNadeAt: number;
   pos: V2;
   prev: V2;
   y: number;
@@ -91,7 +99,7 @@ export interface Unit {
   /** Breakthrough target (objective id or `hq:<faction>`): spearhead units drive past the front. */
   spearhead: string | null;
   /** Operational role: holds the line, raids enemy supply, or guards our own convoy routes. */
-  opRole: 'line' | 'raid' | 'rearguard' | 'garrison' | 'occupy' | 'maneuver' | 'infiltrate' | 'siege';
+  opRole: 'line' | 'raid' | 'rearguard' | 'garrison' | 'occupy' | 'maneuver' | 'infiltrate' | 'siege' | 'hunt' | 'screen';
   /** Settlement this unit garrisons / occupies under a high-command directive. */
   opObjective: string | null;
   /** Preferred wall-slide side (+1 / −1) when a building blocks the way. */
@@ -137,6 +145,23 @@ export interface Unit {
   rearming: boolean;
   /** 2.2: earliest time to search for a rearm point again after none was found. */
   rearmAt: number;
+  /** 3.0 (zoc.ts): inside an enemy front's zone of control until this time (moves at infiltration.zoc_speed_mul). */
+  zocUntil: number;
+  /** 3.0: rail trip in progress (rail.ts): walking to the station, waiting, or aboard (hidden). */
+  rail: RailRide | null;
+}
+
+/** 3.0 rail trip of one unit: board at station `from`, ride to `to`, then walk on to `dest`. */
+export interface RailRide {
+  stage: 'toStation' | 'waiting' | 'aboard';
+  readonly from: number;
+  readonly to: number;
+  /** Final destination (updated when a new order arrives while aboard). */
+  dest: V2;
+  /** Train carrying the unit (−1 until boarded). */
+  trainId: number;
+  /** When the current stage began (a walk to the station that takes too long is abandoned). */
+  since: number;
 }
 
 /** 正面推进 / 侧面迂回 / 钳形攻势 / 武装渗透 / 筑垒围攻. */
@@ -178,7 +203,12 @@ export interface Directive {
   readonly issuedAt: number;
   /** Issued by the player (binding front orders) or chosen by the AI supreme HQ. */
   readonly manual: boolean;
+  /** 3.0 (compliance.ts): the player insisted (re-issued within insist_window_s, or the Force toggle): every front obeys at once, as in 2.1. */
+  readonly forced?: boolean;
 }
+
+/** 3.0 a front's answer to the directive (compliance.ts): '' none asked (advance), obeying, waiting out its delay, declined, forced. */
+export type FrontObey = '' | 'obey' | 'pending' | 'declined' | 'forced';
 
 /** A line the front holds / assaults along (from a line order, or chosen by the commander). */
 export interface FrontLine {
@@ -245,6 +275,14 @@ export interface Front {
   /** 2.2: the commander's response to the directive (i18n key + params), shown on the front card. */
   response: string;
   responseParams: Record<string, string | number>;
+  /** 3.0 (frontTiers.ts): command tier 0–3, stretched line, the batteries' shared barrage point. */
+  tier: number;
+  stretched: boolean;
+  barrage: V2 | null;
+  /** 3.0 (compliance.ts): directive compliance 0–1 (−1 = none asked), the front's answer, when it moves. */
+  compliance: number;
+  obey: FrontObey;
+  obeyAt: number;
 }
 
 /**
@@ -333,6 +371,10 @@ export interface Faction {
   readonly isPlayer: boolean;
   readonly cityIdx: number;
   readonly personality: Personality;
+  /** 3.0: the supreme HQ's war doctrine (doctrines.ts); steers AI factions only. */
+  readonly doctrine: DoctrineId;
+  /** 3.0: match time of the first battle with each faction (index = faction id, -1 = none yet; HUD doctrine reveal). */
+  contactAt: number[];
   readonly difficulty: Difficulty;
   alive: boolean;
   eliminatedAt: number | null;
@@ -395,6 +437,23 @@ export interface Faction {
   aiThinkAt: number;
   /** Supply trucks of this faction hit recently (id, time); escorts read this short list (perf). */
   trucksUnderFire: { id: number; at: number }[];
+  /** 3.0 unit upgrades: owned bits and the research at the capital (upgrades.ts). */
+  upgrades: UpgradeState;
+}
+
+/** 3.0 per-faction upgrade tree state (upgrades.ts). */
+export interface UpgradeState {
+  /** Bit k set = item UPGRADE_IDS[k] researched. */
+  owned: number;
+  /** Research under way (one at a time): item, start, end and the price paid (refunds). */
+  research: { id: string; startedAt: number; endsAt: number; p: number; m: number } | null;
+  /** AI: next purchase check; income samples (P + M per minute) for the trend test. */
+  aiAt: number;
+  incomeSamples: number[];
+  /** AI: the item it is saving for and the P/M set aside for it (a share of income, like econFund). */
+  want: string | null;
+  fundP: number;
+  fundM: number;
 }
 
 export interface Objective {
@@ -436,7 +495,9 @@ export interface Projectile {
 }
 
 /** 2.0: pillbox (炮楼) and bunker (堡垒) are engineer-built defensive buildings manned by squads. */
-export type FortKind = 'field_cover' | 'mg_bunker' | 'trench' | 'sandbag' | 'pontoon' | 'pillbox' | 'bunker';
+export type FortKind = 'field_cover' | 'mg_bunker' | 'trench' | 'sandbag' | 'pontoon' | 'pillbox' | 'bunker'
+  /** 3.0 (V30 §8, worksTiers.ts / capitalDefence.ts). */
+  | 'fortress' | 'at_emplacement' | 'strongpoint' | 'minefield';
 
 export interface Fort {
   readonly id: number;
@@ -446,8 +507,9 @@ export interface Fort {
    * trench: dug line from start to end (siege works / field lines; many squads along it).
    * sandbag: barricade wall across a street or town edge, start to end (town defence).
    * pontoon: engineer bridge (start/end = banks).
+   * 3.0: changes in place when engineers upgrade it (pillbox → bunker → fortress).
    */
-  readonly kind: FortKind;
+  kind: FortKind;
   readonly pos: V2;
   readonly facing: number;
   /** Pontoon bridges: span endpoints (bank to bank) and deck length. */
@@ -455,12 +517,16 @@ export interface Fort {
   readonly end?: V2;
   readonly length?: number;
   hp: number;
-  readonly maxHp: number;
+  maxHp: number;
   progress: number;
   occupant: number | null;
   /** Defensive buildings: squads it can hold (default 1); occupants beyond `occupant` (bunkers). */
-  readonly capacity?: number;
+  capacity?: number;
   occupants?: number[];
+  /** 3.0: trench tier (1 = fortified trench); an engineer upgrade in progress; perimeter works are never cleared. */
+  tier?: number;
+  upgrade?: { readonly to: FortKind; progress: number } | null;
+  permanent?: boolean;
 }
 
 export type FxEvent =
@@ -489,6 +555,8 @@ export interface MatchConfig {
   readonly seed: number;
   readonly difficulty: Difficulty;
   readonly personalities?: Personality[];
+  /** 3.0 doctrine per faction slot ('random' or absent = drawn from the seed, all different while they last). */
+  readonly doctrines?: readonly (DoctrineId | 'random')[];
   readonly playerSlot: number;
   readonly spectate?: boolean;
 }

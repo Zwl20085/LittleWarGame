@@ -2,9 +2,12 @@
  * 2.2 command-system strings (universal directive, front responses). Looked up by `t()` before the
  * main dictionaries, so the keys here also replace the 2.1 texts that described per-front orders.
  */
+import { DOCTRINE_EN, DOCTRINE_ZH } from './i18n-doctrine';
+
 type Dict = Record<string, string>;
 
 export const COMMAND_ZH: Dict = {
+  ...DOCTRINE_ZH,
   'dir.title': '总方针',
   'dir.offensive': '全线进攻', 'dir.advance': '稳步推进', 'dir.defend': '全线防御', 'dir.fortify': '筑垒固守', 'dir.contract': '战略收缩',
   'dir.short.offensive': '进攻', 'dir.short.advance': '推进', 'dir.short.defend': '防御', 'dir.short.fortify': '筑垒', 'dir.short.contract': '收缩',
@@ -22,6 +25,14 @@ export const COMMAND_ZH: Dict = {
   'dir.pick.fortify': '【筑垒固守】可选：按住拖出一条防线（永备筑垒地域），或点选重点地段 · 右键 / Esc 跳过',
   'fail.noGround': '未点中地面：请点在地图上',
   'fail.LINE_SHORT': '防线太短（至少 60 米）', 'fail.LINE_ONLY_FORTIFY': '只有“筑垒固守”可以划防线',
+  'fail.TOO_LONG': '距离不合规（路段 20–600 米 / 铁路延伸过长）', 'fail.BAD_TERRAIN': '地形不可修（水域过宽或坡度过陡）', 'fail.NOT_CUT': '这条铁路并未中断', 'fail.JOB_BUSY': '该线路已在抢修', 'fail.NOT_HELD': '两端车站 / 城镇必须由我方控制', 'fail.HAS_STATION': '该城镇已有车站', 'fail.TRANSPORT_OFF': '本局未启用道路 / 铁路系统',
+  'eng.title': '工程', 'eng.btn': '工程 [I]', 'eng.road': '修路', 'eng.repair': '修复铁路', 'eng.extend': '延伸铁路', 'eng.cancel': '取消选点',
+  'eng.engineers': '空闲工兵 {n}', 'eng.noEngineer': '无空闲工兵：工程将等待工兵到位（生产工兵）',
+  'eng.noCut': '没有被切断的铁路', 'eng.line': '线路 {n}：{a} — {b}', 'eng.notHeld': '（车站未全部在我方手中）', 'eng.fix': '抢修', 'eng.repairing': '抢修中',
+  'eng.pickRoadA': '【修路】点选起点（或按住拖出路段，≤ 600 米） · 右键 / Esc 取消', 'eng.pickRoadB': '【修路】点选终点（≤ 600 米） · 右键 / Esc 取消',
+  'eng.pickStation': '【延伸铁路】点选我方车站 · 右键 / Esc 取消', 'eng.pickTown': '【延伸铁路】点选要通铁路的我方城镇 · 右键 / Esc 取消',
+  'eng.noStationHere': '附近没有我方车站', 'eng.noTownHere': '附近没有我方城镇',
+  'layer.rail': '铁路',
   'resp.main': '主攻 — 方向：{place}', 'resp.support': '协同主攻 — {place}', 'resp.axisHeld': '主攻目标已夺取 — 巩固 {place}', 'resp.attack': '进攻 — {place}',
   'resp.pin': '牵制 — {place}（敌优势 {r}:1）', 'resp.holdOutmatched': '固守 — 敌优势 {r}:1',
   'resp.hold': '固守本线', 'resp.holdAxis': '固守重点地段', 'resp.fortify': '筑垒固守本线', 'resp.fortifyLine': '构筑统帅部防线',
@@ -30,15 +41,26 @@ export const COMMAND_ZH: Dict = {
   'resp.zone': '驻守筑垒地域', 'resp.home': '回防首都', 'resp.counterStrike': '反突击 — {place}', 'resp.finish': '决战 — {place}',
   'resp.adv.attack': '推进 — {place}', 'resp.adv.defend': '推进中固守 — {place}', 'resp.adv.fortify': '推进中筑垒 — {place}', 'resp.adv.fallBack': '暂时后撤 — {place}',
   'resp.stampBound': '奉命 · {order}', 'resp.stampOwn': '自主 · {order}',
+  // 3.0 directive compliance (compliance.ts) and front tiers (frontTiers.ts).
+  'resp.declined': '拒绝执行 — 敌优势 {r}:1', 'resp.declinedExpose': '拒绝执行 — 敌优势 {r}:1，将危及 {place}', 'resp.declinedTown': '拒绝执行 — 将危及 {place}',
+  'resp.declinedAmmo': '拒绝执行 — 弹药不足（{ammo}%）', 'resp.declinedAssault': '拒绝执行 — 正在攻击 {place}，胜势在握', 'resp.declinedFar': '拒绝执行 — 远离统帅部，指挥官自行决断',
+  'resp.pending': '已受命 — {s} 秒内行动', 'resp.stampDeclined': '拒绝 · {order}', 'resp.stampForced': '强制 · {order}',
+  'dir.force': '强制执行', 'dir.forceTip': '开启后总方针为强制命令：各方面军立即执行，不得拒绝（30 秒内再次下达同一总方针亦视为强制）',
+  'dir.forceOn': '强制执行：开 — 各方面军必须立即执行总方针', 'dir.forceOff': '强制执行：关 — 前线指挥官可据实情拒绝',
+  'front.tier1': '军', 'front.tier2': '集团军', 'front.tier3': '方面军', 'front.tierTip': '兵力 ≥ {n}：炮兵集中射击、补给与增援优先、士气与命中加成',
+  'front.stretched': '战线过长', 'front.stretchedTip': '兵力不足以覆盖本方面战线：命中与士气下降',
+  'front.compliance': '服从 {p}%', 'front.complianceTip': '指挥官对总方针的服从度（距首都越近越高；敌优势、暴露城镇、弹药不足会降低）', 'front.hotkeyTip': '快捷键 {n}',
+  'log.frontDeclined': '{point} 方面指挥官拒绝执行总方针', 'log.directiveForced': '统帅部：总方针为强制命令', 'log.frontTierUp': '{point} 方面兵力扩充（等级 {tier}）', 'log.frontFromCluster': '统帅部以 {n} 支游离部队开设 {point} 方面',
   'front.cardTip': '点击：展开方面档案并定位指挥官（方面由统帅部自动开设、合并与撤销）',
   'front.order': '本方面行动', 'front.byYou': '依总方针', 'front.byHq': '指挥官自定',
   'log.directive.offensive': '统帅部总方针：全线进攻', 'log.directive.advance': '统帅部总方针：稳步推进', 'log.directive.defend': '统帅部总方针：全线防御',
   'log.directive.fortify': '统帅部总方针：筑垒固守', 'log.directive.contract': '统帅部总方针：战略收缩',
   'brief.body': '你是最高统帅，只下达一道总方针：全线进攻（Z）、稳步推进（X）、全线防御（C）、筑垒固守（V）或战略收缩（B）。进攻与防御可在地图上点选主攻方向 / 重点地段，筑垒固守可拖出一条防线（永备筑垒地域）。各方面军由统帅部自动开设、合并与撤销；每位前线指挥官依总方针和本方面态势自行决定行动，方面卡写明其决定与理由。出兵与劳动力在底部和顶部面板。',
-  'help.body': '最高统帅部总方针：Z 全线进攻 · X 稳步推进 · C 全线防御 · V 筑垒固守 · B 战略收缩 → 进攻 / 防御 / 筑垒可在地图上点选方向或重点，筑垒可拖出防线（Shift 连续）\n方面军：由统帅部自动开设、合并、撤销；方面卡（1–8 展开）为只读档案，显示指挥官的决定与理由 · ★ 主攻方面\n筑垒地域：划出的防线是永备工事，换方针不撤；统帅部卡“筑垒地域”列出进度，可取消\n部队（可选）：左键/拖框选择 · 右键移动/集火 · A 攻击移动 · H 固守 · R 撤退 · G 归建\n镜头：WASD/中键 平移 · Q/E 旋转 · 滚轮 缩放 · PgUp/PgDn 俯角 · Tab 总览 · F 跟随 · Space 暂停 · U 隐藏界面 · Esc 取消/菜单',
+  'help.body': '最高统帅部总方针：Z 全线进攻 · X 稳步推进 · C 全线防御 · V 筑垒固守 · B 战略收缩 → 进攻 / 防御 / 筑垒可在地图上点选方向或重点，筑垒可拖出防线（Shift 连续）\n方面军：由统帅部自动开设、合并、撤销；方面卡（1–8 展开）为只读档案，显示指挥官的决定与理由 · ★ 主攻方面\n筑垒地域：划出的防线是永备工事，换方针不撤；统帅部卡“筑垒地域”列出进度，可取消\n部队（可选）：左键/拖框选择 · 右键移动/集火 · A 攻击移动 · H 固守 · R 撤退 · G 归建\n镜头：WASD/中键 平移 · Q/E 旋转 · [ / ] 或 PgDn/PgUp 俯角 · 滚轮 缩放 · Tab 总览（再按返回）· F 跟随部队/展开的方面（双击方面卡）· O 环绕 · K 战斗镜头 · Esc 退出镜头模式 · Space 暂停 · U 隐藏界面 · Y 技术升级 · Esc 取消/菜单',
 };
 
 export const COMMAND_EN: Dict = {
+  ...DOCTRINE_EN,
   'dir.title': 'Directive',
   'dir.offensive': 'General offensive', 'dir.advance': 'Steady advance', 'dir.defend': 'General defence', 'dir.fortify': 'Fortify and hold', 'dir.contract': 'Strategic contraction',
   'dir.short.offensive': 'Attack', 'dir.short.advance': 'Advance', 'dir.short.defend': 'Defend', 'dir.short.fortify': 'Fortify', 'dir.short.contract': 'Contract',
@@ -56,6 +78,14 @@ export const COMMAND_EN: Dict = {
   'dir.pick.fortify': 'Fortify — optional: drag a line (a permanent fortified zone) or click the key sector · RMB / Esc skips',
   'fail.noGround': 'Missed the ground — click on the map',
   'fail.LINE_SHORT': 'Line too short (60 m minimum)', 'fail.LINE_ONLY_FORTIFY': 'Only "Fortify and hold" takes a line',
+  'fail.TOO_LONG': 'Bad length (road 20-600 m / rail extension too long)', 'fail.BAD_TERRAIN': 'Cannot build there (water too wide or too steep)', 'fail.NOT_CUT': 'That line is not cut', 'fail.JOB_BUSY': 'That line is already being repaired', 'fail.NOT_HELD': 'Both stations / the town must be held by us', 'fail.HAS_STATION': 'That town already has a station', 'fail.TRANSPORT_OFF': 'Roads and rails are off in this match',
+  'eng.title': 'Engineering', 'eng.btn': 'Engineering [I]', 'eng.road': 'Build road', 'eng.repair': 'Repair rail', 'eng.extend': 'Extend rail', 'eng.cancel': 'Cancel picking',
+  'eng.engineers': 'Free engineers {n}', 'eng.noEngineer': 'No free engineer: the job waits for one (produce engineers)',
+  'eng.noCut': 'No cut railway line', 'eng.line': 'Line {n}: {a} - {b}', 'eng.notHeld': '(stations not all held)', 'eng.fix': 'Repair', 'eng.repairing': 'Under repair',
+  'eng.pickRoadA': 'Road: click the start (or press and drag a segment, up to 600 m) · RMB / Esc cancels', 'eng.pickRoadB': 'Road: click the end (up to 600 m) · RMB / Esc cancels',
+  'eng.pickStation': 'Extend rail: click one of your stations · RMB / Esc cancels', 'eng.pickTown': 'Extend rail: click the town to connect · RMB / Esc cancels',
+  'eng.noStationHere': 'No station of yours there', 'eng.noTownHere': 'No town of yours there',
+  'layer.rail': 'Rail',
   'resp.main': 'Main effort — toward {place}', 'resp.support': 'Supporting the main effort — {place}', 'resp.axisHeld': 'Axis taken — consolidating {place}', 'resp.attack': 'Attacking — {place}',
   'resp.pin': 'Pinning — {place} (enemy {r}:1)', 'resp.holdOutmatched': 'Holding — enemy {r}:1',
   'resp.hold': 'Holding its line', 'resp.holdAxis': 'Holding the threatened sector', 'resp.fortify': 'Fortifying its line', 'resp.fortifyLine': 'Fortifying the HQ line',
@@ -64,10 +94,19 @@ export const COMMAND_EN: Dict = {
   'resp.zone': 'Garrisoning the fortified zone', 'resp.home': 'Recalled to the capital', 'resp.counterStrike': 'Counter-stroke — {place}', 'resp.finish': 'Decisive assault — {place}',
   'resp.adv.attack': 'Advancing — {place}', 'resp.adv.defend': 'Holding while advancing — {place}', 'resp.adv.fortify': 'Digging in — {place}', 'resp.adv.fallBack': 'Falling back — {place}',
   'resp.stampBound': 'Ordered · {order}', 'resp.stampOwn': 'Own · {order}',
+  'resp.declined': 'Declined — enemy {r}:1', 'resp.declinedExpose': 'Declined — enemy {r}:1, would expose {place}', 'resp.declinedTown': 'Declined — would expose {place}',
+  'resp.declinedAmmo': 'Declined — short of ammunition ({ammo}%)', 'resp.declinedAssault': 'Declined — winning the assault on {place}', 'resp.declinedFar': 'Declined — far from the HQ, acting on his own judgement',
+  'resp.pending': 'Order received — moving within {s} s', 'resp.stampDeclined': 'Declined · {order}', 'resp.stampForced': 'Forced · {order}',
+  'dir.force': 'Force', 'dir.forceTip': 'On: the directive is a binding order every front obeys at once (re-issuing the same directive within 30 s also forces it)',
+  'dir.forceOn': 'Force on — every front must obey the directive now', 'dir.forceOff': 'Force off — front commanders may decline a harmful order',
+  'front.tier1': 'Corps', 'front.tier2': 'Army', 'front.tier3': 'Army Group', 'front.tierTip': '≥ {n} units: concentrated artillery, supply and reinforcement priority, morale and accuracy bonus',
+  'front.stretched': 'Stretched', 'front.stretchedTip': 'Too few troops for this front\'s line: accuracy and morale penalty',
+  'front.compliance': 'complies {p}%', 'front.complianceTip': 'The commander\'s compliance with the directive (higher near the capital; lowered by enemy superiority, exposed towns, low ammunition)', 'front.hotkeyTip': 'Hotkey {n}',
+  'log.frontDeclined': '{point} Front commander declined the directive', 'log.directiveForced': 'Supreme HQ: the directive is a binding order', 'log.frontTierUp': '{point} Front reinforced (tier {tier})', 'log.frontFromCluster': 'Supreme HQ opens the {point} Front with {n} stray units',
   'front.cardTip': 'Click: open the front\'s dossier and locate its commander (fronts are opened, merged and closed by the HQ)',
   'front.order': 'Front action', 'front.byYou': 'per directive', 'front.byHq': 'commander\'s own',
   'log.directive.offensive': 'Supreme HQ directive: general offensive', 'log.directive.advance': 'Supreme HQ directive: steady advance', 'log.directive.defend': 'Supreme HQ directive: general defence',
   'log.directive.fortify': 'Supreme HQ directive: fortify and hold', 'log.directive.contract': 'Supreme HQ directive: strategic contraction',
   'brief.body': 'You are the supreme HQ and give one directive: General offensive (Z), Steady advance (X), General defence (C), Fortify and hold (V) or Strategic contraction (B). For an offensive or a defence you may click the main effort / threatened place on the map; for Fortify you may drag a line (a permanent fortified zone). The HQ opens, merges and closes fronts on its own; each front commander decides his front\'s action from the directive and the local situation, and his card says what and why. Production and labour live in the bottom and top panels.',
-  'help.body': 'Supreme HQ directive: Z general offensive · X steady advance · C general defence · V fortify and hold · B strategic contraction → offensive / defence / fortify may take a click (axis, threatened place) or a dragged line for Fortify (Shift keeps placing)\nFronts: opened, merged and closed by the HQ; the cards (1–8 expand) are read-only dossiers with the commander\'s decision and reason · ★ main effort\nFortified zones: a drawn line is a permanent project that survives new directives; the Supreme HQ card lists their progress and can cancel one\nUnits (optional): LMB/drag select · RMB move/focus · A attack-move · H hold · R retreat · G rejoin\nCamera: WASD/MMB pan · Q/E rotate · Wheel zoom · PgUp/PgDn tilt · Tab overview · F follow · Space pause · U hide HUD · Esc cancel/menu',
+  'help.body': 'Supreme HQ directive: Z general offensive · X steady advance · C general defence · V fortify and hold · B strategic contraction → offensive / defence / fortify may take a click (axis, threatened place) or a dragged line for Fortify (Shift keeps placing)\nFronts: opened, merged and closed by the HQ; the cards (1–8 expand) are read-only dossiers with the commander\'s decision and reason · ★ main effort\nFortified zones: a drawn line is a permanent project that survives new directives; the Supreme HQ card lists their progress and can cancel one\nUnits (optional): LMB/drag select · RMB move/focus · A attack-move · H hold · R retreat · G rejoin\nCamera: WASD/MMB pan · Q/E rotate · [ / ] or PgDn/PgUp tilt · Wheel zoom · Tab overview (again to return) · F follow unit / expanded front (double-click a front card) · O orbit · K battle cam · Esc leave camera mode · Space pause · U hide HUD · Y upgrades · Esc cancel/menu',
 };

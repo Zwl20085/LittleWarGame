@@ -6,7 +6,9 @@
  */
 import { rng, TAU } from './dsp';
 
-export type InstId = 'strings' | 'trem' | 'horn' | 'brass' | 'reed' | 'spic' | 'timp' | 'snare' | 'bdrum' | 'cymbal';
+export type InstId =
+  | 'strings' | 'basses' | 'trem' | 'horn' | 'brass' | 'tbn' | 'reed' | 'flute'
+  | 'spic' | 'timp' | 'snare' | 'bdrum' | 'cymbal';
 
 export interface MusicSample {
   readonly inst: InstId;
@@ -149,35 +151,60 @@ function dcBlock(buf: Float32Array, sr: number, fc: number): void {
 
 // ---- Sustained ensembles -----------------------------------------------------------------
 
+type Wave = 'saw' | 'square' | 'flute';
+
 interface Ensemble {
   readonly voices: number;
   /** Total detune spread across the section (cents). */
   readonly spread: number;
-  readonly square: boolean;
+  readonly wave: Wave;
   readonly attack: number;
   readonly vibRate: number;
   readonly vibCents: number;
   readonly vibDelay: number;
-  /** Filter cutoff (Hz) at time t (s) for fundamental f. */
-  cutoff(f: number, t: number): number;
+  /** Filter cutoff (Hz) at time t (s) for fundamental f; `dyn` 0 = piano layer, 1 = forte. */
+  cutoff(f: number, t: number, dyn: number): number;
   readonly q: number;
   readonly drive: number;
+  /** Extra drive on the forte layer (brass "brassiness"). */
+  readonly fDrive: number;
   /** Per-voice tremolo rate (0 = none). */
   readonly trem: number;
+  /** Breath / air noise around the fundamental (winds, brass). */
   readonly breath: number;
+  /** Rosin noise of the bow (strings): a 2–4 kHz band with wandering bow pressure. */
+  readonly bow: number;
+  /** Lip scoop: the attack starts this many cents flat and settles within ~60 ms. */
+  readonly scoop: number;
+  /** Fixed body / bell resonances: [Hz, gain, Q] parallel band-passes after the filter. */
+  readonly formants: readonly (readonly [number, number, number])[];
 }
 
 const SUSTAIN_LEN = 2.0;
 const LOOP_START = 0.55;
 const LOOP_FADE = 0.35;
 
-function ensemble(sr: number, midi: number, seed: number, e: Ensemble): Rendered {
-  const r = rng(seed);
-  const n = Math.ceil(SUSTAIN_LEN * sr);
-  const buf = new Float32Array(n);
-  const f = mtof(midi);
+/** One voice's waveform at normalised phase increment `dt` (flute: soft sine-rich tone). */
+class Voice {
+  private readonly osc: Osc;
+  private ph: number;
+  constructor(phase: number, private readonly wave: Wave) {
+    this.osc = new Osc(phase, wave === 'square');
+    this.ph = phase;
+  }
+  next(dt: number): number {
+    if (this.wave !== 'flute') return this.osc.next(dt);
+    this.ph += dt;
+    if (this.ph >= 1) this.ph -= 1;
+    const a = this.ph * TAU;
+    return Math.sin(a) + 0.22 * Math.sin(2 * a) + 0.06 * Math.sin(3 * a);
+  }
+}
+
+function addVoices(buf: Float32Array, sr: number, f: number, r: () => number, e: Ensemble): void {
+  const n = buf.length;
   for (let k = 0; k < e.voices; k++) {
-    const osc = new Osc(r(), e.square);
+    const osc = new Voice(r(), e.wave);
     const det = e.voices > 1 ? (k / (e.voices - 1) - 0.5) * e.spread + (r() - 0.5) * 3 : 0;
     const base = f * Math.exp(det * CENT);
     const vibW = (TAU * (e.vibRate * (0.92 + r() * 0.16))) / sr;
@@ -186,15 +213,18 @@ function ensemble(sr: number, midi: number, seed: number, e: Ensemble): Rendered
     let driftPh = r() * TAU;
     const tremW = (TAU * e.trem * (0.9 + r() * 0.2)) / sr;
     let tremPh = r() * TAU;
+    // Players never start together: a few ms of spread, and each has its own vibrato onset.
     const lag = r() * 0.03 * sr;
+    const vibDelay = e.vibDelay * (0.8 + r() * 0.5);
     const amp = (0.8 + r() * 0.4) / Math.sqrt(e.voices);
     let dt = base / sr;
     for (let i = 0; i < n; i++) {
       // Pitch modulation at control rate (every 16 samples) keeps the render cheap.
       if ((i & 15) === 0) {
         const t = i / sr;
-        const vd = Math.min(1, Math.max(0, (t - e.vibDelay) / 0.4));
-        const cents = Math.sin(vibPh) * e.vibCents * vd + Math.sin(driftPh) * 2.5;
+        const vd = Math.min(1, Math.max(0, (t - vibDelay) / 0.5));
+        const scoop = e.scoop > 0 ? -e.scoop * Math.exp(-Math.max(0, i - lag) / sr / 0.025) : 0;
+        const cents = Math.sin(vibPh) * e.vibCents * vd + Math.sin(driftPh) * 2.5 + scoop;
         vibPh += vibW * 16;
         driftPh += driftW * 16;
         dt = (base * (1 + cents * CENT)) / sr;
@@ -209,45 +239,118 @@ function ensemble(sr: number, midi: number, seed: number, e: Ensemble): Rendered
       buf[i] += osc.next(dt) * a * on * on * (3 - 2 * on);
     }
   }
-  if (e.breath > 0) {
-    const bf = new Svf();
-    bf.set(Math.min(sr * 0.4, f * 2.5), sr, 1.5);
-    for (let i = 0; i < n; i++) {
-      bf.lp(r() * 2 - 1);
-      const t = i / sr;
-      buf[i] += bf.bp * e.breath * (1 + 2 * Math.exp(-t / 0.06));
-    }
+}
+
+function addBreath(buf: Float32Array, sr: number, f: number, r: () => number, e: Ensemble): void {
+  const bf = new Svf();
+  bf.set(Math.min(sr * 0.4, f * 2.5), sr, 1.5);
+  for (let i = 0; i < buf.length; i++) {
+    bf.lp(r() * 2 - 1);
+    buf[i] += bf.bp * e.breath * (1 + 2 * Math.exp(-i / sr / 0.06));
   }
+}
+
+/** Rosin noise: band-limited hiss whose level follows a slow random bow pressure. */
+function addBow(buf: Float32Array, sr: number, r: () => number, e: Ensemble): void {
+  const bf = new Svf();
+  bf.set(Math.min(sr * 0.4, 3000), sr, 0.9);
+  let press = 1;
+  let target = 1;
+  for (let i = 0; i < buf.length; i++) {
+    if ((i & 255) === 0) target = 0.7 + r() * 0.6;
+    press += (target - press) * 0.002;
+    bf.lp(r() * 2 - 1);
+    const t = i / sr;
+    // Scrape on the attack (bow catching the string), then a steady hiss.
+    buf[i] += bf.bp * e.bow * press * (1 + 3 * Math.exp(-t / 0.05));
+  }
+}
+
+function ensemble(sr: number, midi: number, seed: number, e: Ensemble, dyn: number): Rendered {
+  const r = rng(seed + dyn * 7919);
+  const n = Math.ceil(SUSTAIN_LEN * sr);
+  const buf = new Float32Array(n);
+  const f = mtof(midi);
+  addVoices(buf, sr, f, r, e);
+  if (e.breath > 0) addBreath(buf, sr, f, r, e);
   const flt = new Svf();
+  const drive = e.drive * (1 + e.fDrive * dyn);
+  const res = e.formants.map(([hz, , q]) => {
+    const s = new Svf();
+    s.set(hz, sr, q);
+    return s;
+  });
   for (let i = 0; i < n; i++) {
-    if ((i & 31) === 0) flt.set(e.cutoff(f, i / sr), sr, e.q);
-    const y = flt.lp(buf[i]);
-    buf[i] = e.drive > 0 ? Math.tanh(y * e.drive) / e.drive : y;
+    if ((i & 31) === 0) flt.set(e.cutoff(f, i / sr, dyn), sr, e.q);
+    let y = flt.lp(buf[i]);
+    for (let k = 0; k < res.length; k++) {
+      res[k].lp(y);
+      y += res[k].bp * e.formants[k][1];
+    }
+    buf[i] = drive > 0 ? Math.tanh(y * drive) / drive : y;
   }
+  if (e.bow > 0) addBow(buf, sr, r, e);
   dcBlock(buf, sr, 40);
   const l0 = Math.floor(LOOP_START * sr);
   const out = sealLoop(buf, sr, l0, n, LOOP_FADE);
   normRms(out, l0, 0.22);
+  softPeak(out, 0.95);
   return { data: out, loopStart: LOOP_START, loopEnd: out.length / sr };
 }
 
+/** Round off rare phase-aligned peaks of big sections (low divisi) without touching the rest. */
+function softPeak(buf: Float32Array, ceil: number): void {
+  const knee = ceil * 0.8;
+  const room = ceil - knee;
+  for (let i = 0; i < buf.length; i++) {
+    const x = buf[i];
+    const a = Math.abs(x);
+    if (a > knee) buf[i] = Math.sign(x) * (knee + room * Math.tanh((a - knee) / room));
+  }
+}
+
+const NO_FORMANTS: Ensemble['formants'] = [];
+/** Violin-family body: air (≈290 Hz) and wood (≈520 Hz) modes, the bridge hill (≈3 kHz). */
+const STRING_BODY: Ensemble['formants'] = [[290, 0.35, 1.4], [520, 0.25, 1.6], [3000, 0.3, 1.2]];
+
 const STRINGS: Ensemble = {
-  voices: 6, spread: 18, square: false, attack: 0.22, vibRate: 5.3, vibCents: 7, vibDelay: 0.2,
-  cutoff: (f) => Math.min(5200, 750 + f * 5), q: 0.62, drive: 0, trem: 0, breath: 0.012,
+  voices: 6, spread: 18, wave: 'saw', attack: 0.22, vibRate: 5.3, vibCents: 7, vibDelay: 0.2,
+  cutoff: (f) => Math.min(5200, 750 + f * 5), q: 0.62, drive: 0, fDrive: 0, trem: 0, breath: 0, bow: 0.02, scoop: 0,
+  formants: STRING_BODY,
 };
-const TREM: Ensemble = { ...STRINGS, voices: 5, attack: 0.05, cutoff: (f) => Math.min(6500, 1100 + f * 6), trem: 12, vibCents: 4 };
+/** Celli / basses: darker, slower to speak, more bow, less vibrato. */
+const BASSES: Ensemble = {
+  ...STRINGS, voices: 5, spread: 14, attack: 0.28, vibRate: 4.8, vibCents: 5, vibDelay: 0.3,
+  cutoff: (f) => Math.min(2400, 420 + f * 6), bow: 0.014, formants: [[110, 0.3, 1.2], [260, 0.3, 1.3]],
+};
+const TREM: Ensemble = { ...STRINGS, voices: 5, attack: 0.05, cutoff: (f) => Math.min(6500, 1100 + f * 6), trem: 12, vibCents: 4, bow: 0.03 };
 const HORN: Ensemble = {
-  voices: 3, spread: 8, square: false, attack: 0.07, vibRate: 4.6, vibCents: 5, vibDelay: 0.35,
-  cutoff: (f, t) => Math.min(2800, 280 + f * 3) * (1 + 1.1 * Math.exp(-t / 0.09)), q: 0.85, drive: 1.3, trem: 0, breath: 0.006,
+  voices: 4, spread: 8, wave: 'saw', attack: 0.07, vibRate: 4.6, vibCents: 4, vibDelay: 0.4,
+  cutoff: (f, t, d) => Math.min(2800 + 1800 * d, (280 + f * 3) * (1 + 0.9 * d)) * (1 + 1.1 * Math.exp(-t / 0.09)),
+  q: 0.85, drive: 1.3, fDrive: 0.6, trem: 0, breath: 0.006, bow: 0, scoop: 18, formants: [[480, 0.35, 1.2]],
 };
+/** Trumpets: bright, fast tongue, strong brightness swing with dynamics. */
 const BRASS: Ensemble = {
-  voices: 3, spread: 10, square: false, attack: 0.03, vibRate: 5.5, vibCents: 6, vibDelay: 0.45,
-  cutoff: (f, t) => Math.min(6500, 500 + f * 6) * (t < 0.04 ? 0.35 + (t / 0.04) * 1.15 : 1 + 0.5 * Math.exp(-(t - 0.04) / 0.12)),
-  q: 1.0, drive: 2.2, trem: 0, breath: 0.004,
+  voices: 3, spread: 10, wave: 'saw', attack: 0.03, vibRate: 5.5, vibCents: 5, vibDelay: 0.5,
+  cutoff: (f, t, d) => Math.min(4200 + 3500 * d, (400 + f * 4) * (1 + 0.9 * d)) * (t < 0.04 ? 0.35 + (t / 0.04) * 1.15 : 1 + 0.5 * Math.exp(-(t - 0.04) / 0.12)),
+  q: 1.0, drive: 1.8, fDrive: 0.8, trem: 0, breath: 0.004, bow: 0, scoop: 25, formants: [[1300, 0.4, 1.0]],
+};
+/** Trombones + tuba: noble in the middle, dark and ominous low; the forte layer blares. */
+const TBN: Ensemble = {
+  voices: 4, spread: 9, wave: 'saw', attack: 0.06, vibRate: 4.2, vibCents: 2, vibDelay: 0.6,
+  cutoff: (f, t, d) => Math.min(2000 + 2600 * d, (220 + f * 3.2) * (1 + 1.2 * d)) * (t < 0.05 ? 0.4 + (t / 0.05) * 0.9 : 1 + 0.35 * Math.exp(-(t - 0.05) / 0.15)),
+  q: 0.9, drive: 1.6, fDrive: 0.9, trem: 0, breath: 0.004, bow: 0, scoop: 20, formants: [[600, 0.35, 1.1]],
 };
 const REED: Ensemble = {
-  voices: 1, spread: 0, square: true, attack: 0.05, vibRate: 5.0, vibCents: 5, vibDelay: 0.3,
-  cutoff: (f) => Math.min(3600, f * 5), q: 0.75, drive: 0, trem: 0, breath: 0.02,
+  voices: 1, spread: 0, wave: 'square', attack: 0.05, vibRate: 5.0, vibCents: 5, vibDelay: 0.3,
+  cutoff: (f) => Math.min(3600, f * 5), q: 0.75, drive: 0, fDrive: 0, trem: 0, breath: 0.02, bow: 0, scoop: 0,
+  formants: [[1500, 0.25, 2]],
+};
+/** Flutes (a2): soft sine-rich tone with plenty of air. */
+const FLUTE: Ensemble = {
+  voices: 2, spread: 6, wave: 'flute', attack: 0.06, vibRate: 5.2, vibCents: 6, vibDelay: 0.25,
+  cutoff: (f) => Math.min(7000, f * 6), q: 0.7, drive: 0, fDrive: 0, trem: 0, breath: 0.05, bow: 0, scoop: 0,
+  formants: NO_FORMANTS,
 };
 
 // ---- Short strings and percussion --------------------------------------------------------
@@ -367,17 +470,30 @@ function cymbal(sr: number, v: number): Rendered {
 
 // ---- Catalogue ---------------------------------------------------------------------------
 
-const tonal = (lo: number, hi: number, e: Ensemble, salt: number): Spec => ({
-  lo, hi, step: 4, variants: 1, rate: TONAL_RATE,
-  render: (sr, midi) => ensemble(sr, midi, salt + midi * 31, e),
+/** Sustained instrument; `layers` 2 renders a piano and a forte (brighter, more driven) layer. */
+const tonal = (lo: number, hi: number, e: Ensemble, salt: number, layers = 1): Spec => ({
+  lo, hi, step: 4, variants: layers, rate: TONAL_RATE,
+  render: (sr, midi, v) => ensemble(sr, midi, salt + midi * 31, e, v),
 });
+
+/** Velocity at and above which the forte layer of a two-layer instrument is used. */
+export const DYN_SPLIT: Partial<Record<InstId, number>> = { horn: 0.3, brass: 0.28, tbn: 0.28 };
+
+/** Sample variant for a sustained note: the dynamic layer chosen by velocity. */
+export function dynLayer(inst: InstId, vel: number): number {
+  const split = DYN_SPLIT[inst];
+  return split !== undefined && vel >= split ? 1 : 0;
+}
 
 export const INSTRUMENTS: Record<InstId, Spec> = {
   strings: tonal(36, 88, STRINGS, 1000),
+  basses: tonal(28, 52, BASSES, 1500),
   trem: tonal(48, 84, TREM, 2000),
-  horn: tonal(41, 77, HORN, 3000),
-  brass: tonal(41, 81, BRASS, 4000),
+  horn: tonal(41, 77, HORN, 3000, 2),
+  brass: tonal(53, 82, BRASS, 4000, 2),
+  tbn: tonal(30, 66, TBN, 4500, 2),
   reed: tonal(45, 81, REED, 5000),
+  flute: tonal(60, 96, FLUTE, 5500),
   spic: { lo: 26, hi: 62, step: 3, variants: 1, rate: TONAL_RATE, render: (sr, m) => spiccato(sr, m, 6000 + m) },
   timp: { lo: 36, hi: 52, step: 3, variants: 1, rate: PERC_RATE, render: (sr, m) => timpani(sr, m, 7000 + m) },
   snare: { lo: 60, hi: 60, step: 1, variants: 4, rate: PERC_RATE, render: (sr, _m, v) => snareDrum(sr, v) },
@@ -386,7 +502,7 @@ export const INSTRUMENTS: Record<InstId, Spec> = {
 };
 
 /** Render order: what the calm score needs first, battle-only instruments last. */
-const ORDER: readonly InstId[] = ['strings', 'reed', 'timp', 'spic', 'horn', 'snare', 'cymbal', 'brass', 'trem', 'bdrum'];
+const ORDER: readonly InstId[] = ['strings', 'basses', 'reed', 'flute', 'timp', 'horn', 'spic', 'snare', 'cymbal', 'tbn', 'brass', 'trem', 'bdrum'];
 
 export function sampleKeys(): SampleKey[] {
   const keys: SampleKey[] = [];

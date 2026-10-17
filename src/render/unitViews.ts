@@ -9,6 +9,8 @@ import { InstanceBatch, soldierMaterial, tintedMaterial } from './instancing';
 import { PAL } from './palette';
 import { choosePattern, crewSlot, slot, vhash, type Situation } from './formations';
 import { modelSpec, SOLDIER_SCALE, TRUCK_FOOT, unitGeometry, VEHICLE_SCALE, type ModelSpec } from './unitModels';
+import { UPG } from '../sim/upgradestats';
+import { drawGunTeam, drawTankUpgrades } from './upgradeModels';
 import { SC, snapSoldier, SOL_STRIDE, sortSlots, SS, step, stepSoldier, STRIDE_AMP, SV, SX, SZ, Trail, walkCap, wrapAngle } from './soldierMotion';
 
 /** Per-unit render state (no Three.js objects — everything is drawn through shared batches). */
@@ -180,6 +182,9 @@ export class UnitViews {
     this.rings = new InstanceBatch(this.group, ringGeo, ringMat, 32, false);
     this.rings.mesh.renderOrder = 3;
   }
+
+  /** Bound once (upgrade visuals take a batch getter; no closure per unit per frame). */
+  private readonly batchOf = (key: string): InstanceBatch => this.batch(key);
 
   private batch(key: string, wreck = false): InstanceBatch {
     const map = wreck ? this.wreckBatches : this.batches;
@@ -507,6 +512,7 @@ export class UnitViews {
     if (!draw) return;
     if (spec.body) this.batch(spec.body).push(body, v.color);
     if (spec.turret) this.batch(spec.turret).push(turret, v.color);
+    if (u.upg !== 0 && spec.vehicle) drawTankUpgrades(this.batchOf, u, body, turret, v.color);
     if (!this.showSoldiers || spec.crew.length === 0) return;
     const kneelCrew = this.batch('soldierKneel');
     const standCrew = this.batch('soldier');
@@ -647,7 +653,8 @@ export class UnitViews {
       let v = this.views.get(u.id);
       if (!v) v = this.create(u);
       v.seen = frame;
-      v.visible = !(fogOn && u.owner !== playerId && !w.visibleTo[playerId]?.has(u.id));
+      // 3.0: units aboard a train are hidden (the train is drawn by railField.ts).
+      v.visible = !(fogOn && u.owner !== playerId && !w.visibleTo[playerId]?.has(u.id)) && u.rail?.stage !== 'aboard';
       v.x = u.prev.x + (u.pos.x - u.prev.x) * alpha;
       v.z = u.prev.z + (u.pos.z - u.prev.z) * alpha;
       this.interpolateFacing(v, u, alpha, dt, w.tick);
@@ -679,6 +686,7 @@ export class UnitViews {
       else {
         if (v.mounted) this.dismount(v);
         this.drawSquad(v, u, dt, draw && this.showSoldiers);
+        if ((u.upg & UPG.inf_guns) !== 0 && draw && this.showSoldiers) drawGunTeam(this.batchOf, v.x, v.z, v.heading, this.ground, v.color);
       }
       if (draw && this.selected.has(u.id)) {
         const r = v.spec.vehicle ? RING_VEHICLE : RING_SQUAD;

@@ -1,3 +1,5 @@
+import { thinkTransport } from './transportjobs';
+import { unlinkedZoneSites } from './econZones';
 import { selectTarget } from './combat';
 import { enemyDistance } from './frontai';
 import { dig, openWork, startLine } from './works';
@@ -12,8 +14,10 @@ import { isCommander } from './formulas';
 import { createHomeThreat, fortifyPlace, homeOn, thinkHomeDefence, thinkHomeGuard, type HomeThreat } from './homeguard';
 import { reassignStale } from './frontops';
 import { boundOrder, lendsGarrisons } from './frontref';
-import { thinkTheatre } from './theatre';
+import { applyDirectiveNow, thinkTheatre } from './theatre';
+import { complianceDue } from './compliance';
 import { chooseDirective } from './directive';
+import { occupyWeight } from './doctrines';
 import { econWorth } from './econwar';
 import type { Faction, Objective, Unit } from './types';
 import { dist, headingTo, type V2 } from './vec';
@@ -212,11 +216,15 @@ function strengthNear(world: World, f: number, at: V2, r: number): { mine: numbe
 
 /** Theatre planning pass (every HQ.everySeconds). */
 export function thinkHighCommand(world: World, f: Faction): void {
+  // 3.0: a front that accepted the directive moves when its delay is over, not at the next HQ think (compliance.ts).
+  if (f.alive && world.time < f.command.nextAt && complianceDue(world, f)) applyDirectiveNow(world, f);
   if (!f.alive || world.time < f.command.nextAt) return;
   f.command.nextAt = world.time + HQ.everySeconds;
   const hc = f.command;
   if (eagerOn()) assessMood(world, f);
   thinkHomeDefence(world, f);
+  // 3.0: road links / rail repair by the engineers; unlinked economic zones are extra road sites.
+  thinkTransport(world, f, unlinkedZoneSites(world, f.id));
   const dirs: Directive[] = [];
   const bias: Record<string, number> = {};
   const hq = world.hqPos(f.id);
@@ -387,9 +395,10 @@ function assignOccupations(world: World, f: Faction, occupy: Directive[]): void 
   // Adaptive: nearest places first (fixed-time detachments marching far tended to expire).
   const order = adaptive() ? byReach(occupy, pool) : occupy;
   // Round 2: more detachments for a bigger idle pool and a needier economy (was a flat 3 × 3).
-  const maxDetachments = f.command.finisher ? FINISH.occupyDetachments : eagerOn()
+  // 3.0: the doctrine's occupation eagerness (builder takes every free town; maneuver after the battle).
+  const maxDetachments = f.command.finisher ? FINISH.occupyDetachments : Math.round(occupyWeight(world, f) * (eagerOn()
     ? Math.min(EAGER.occupyCap, EAGER.occupyBase + Math.floor((pool.length / EAGER.occupyPerUnits) * (0.5 + f.command.need)))
-    : HQ.occupyMaxDetachments;
+    : HQ.occupyMaxDetachments));
   for (const d of order) {
     if (detachments >= maxDetachments) break;
     if (active.has(d.obj)) {

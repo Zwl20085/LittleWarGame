@@ -151,6 +151,8 @@ svg.brass-gauge .needle { transform-origin: 30px 31px; transition: transform 400
 .resolve .fill { height: 100%; width: 100%; transform-origin: left; transition: transform 300ms var(--ease); }
 .resolve .num { color: var(--on-steel); font-size: var(--fs-s); min-width: 3ch; }
 .resolve.dead { opacity: 0.4; text-decoration: line-through; }
+.resolve .doc { color: var(--on-steel); opacity: 0.75; font-size: calc(10px * var(--ui)); white-space: nowrap; letter-spacing: 0.02em; }
+.resolve .doc:empty { display: none; }
 .resolve.me .roman { outline: 2px solid var(--brass-hi); outline-offset: 1px; }
 
 /* Left column (2.0): supreme-HQ orders card, front dossiers (pinned index cards), briefing, log. */
@@ -215,6 +217,16 @@ svg.brass-gauge .needle { transform-origin: 30px 31px; transition: transform 400
 .fc-idx { font-size: calc(10px * var(--ui)); color: var(--ink-muted); border: 1px solid var(--border); padding: 0 3px; border-radius: 2px; line-height: 1.3; }
 .fc-name { font-family: var(--font-stencil); font-weight: 800; letter-spacing: 0.06em; font-size: calc(15px * var(--ui)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .fc-main { color: var(--brass); font-size: calc(14px * var(--ui)); text-shadow: 0 1px 0 #5c4012; }
+/* 3.0 front tier / stretched badges, compliance and the Force toggle. */
+.fc-tier, .fc-stretched { font-size: calc(10px * var(--ui)); padding: 0 4px; border-radius: 3px; border: 1px solid currentColor; white-space: nowrap; }
+.fc-tier { color: var(--brass); }
+.fc-tier.t3 { background: rgba(196, 150, 60, 0.18); font-weight: 700; }
+.fc-stretched { color: #b5532f; border-style: dashed; }
+.fc-resp.declined { color: #b5532f; }
+.fc-resp.pending { opacity: 0.75; font-style: italic; }
+.fc-comply { color: var(--ink-muted); font-size: calc(10px * var(--ui)); }
+.force-toggle { margin-top: 4px; width: 100%; }
+.force-toggle.on { background: rgba(181, 83, 47, 0.25); border-color: #b5532f; font-weight: 700; }
 .order-stamp {
   margin-left: auto; flex: none; font-family: var(--font-stencil); font-weight: 900; text-transform: uppercase; letter-spacing: 0.1em; font-size: calc(11px * var(--ui));
   color: var(--oc); border: 2px solid var(--oc); padding: 0 5px; border-radius: 2px; transform: rotate(-4deg); opacity: 0.9; line-height: 1.35;
@@ -308,7 +320,7 @@ svg.brass-gauge .needle { transform-origin: 30px 31px; transition: transform 400
 /* Right: selection dossier, tilted from the right edge */
 .right {
   position: absolute; top: calc(80px * var(--ui)); right: 14px; width: calc(284px * var(--ui)); padding: 12px 14px;
-  max-height: calc(100% - 100px * var(--ui) - var(--mini-h, 330px)); overflow: auto;
+  max-height: calc(100% - 100px * var(--ui) - var(--mini-h, 330px) - 36px * var(--ui)); overflow: auto;
   transform: perspective(1200px) rotateY(-5deg); transform-origin: right center;
   animation: dossier-in var(--t-panel) var(--ease);
 }
@@ -393,6 +405,7 @@ svg.brass-gauge .needle { transform-origin: 30px 31px; transition: transform 400
 .layers { display: grid; grid-template-columns: repeat(auto-fit, minmax(40px, 1fr)); gap: 3px; }
 .layers .btn { padding: 1px 2px; letter-spacing: 0; font-size: var(--fs-s); min-height: 24px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
+.eng { left: calc(50% + 250px); transform: none; width: 340px; }
 .eco { position: absolute; top: calc(78px * var(--ui)); left: 50%; transform: translateX(-50%); width: 440px; padding: 12px 16px; animation: drop var(--t-panel) var(--ease); }
 .alloc { display: grid; grid-template-columns: 70px 1fr 44px 64px 90px; gap: 6px; align-items: center; margin: 4px 0; }
 .lock { font-size: var(--fs-s); display: flex; align-items: center; gap: 3px; }
@@ -439,6 +452,10 @@ svg.brass-gauge .needle { transform-origin: 30px 31px; transition: transform 400
 .settings-form { display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px; }
 .field { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .field .lbl { width: calc(96px * var(--ui)); flex: none; }
+.doctrine-rows { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 0; }
+.doctrine-row { display: flex; align-items: center; gap: 6px; }
+.doctrine-row .small { width: 4.5em; flex: none; }
+.doctrine-row .sel { flex: 1; min-width: 0; }
 .field.check { cursor: pointer; }
 .field input[type='range'] { flex: 1; min-width: 120px; }
 .note { font-style: italic; }
@@ -528,6 +545,8 @@ svg.brass-gauge .needle { transform-origin: 30px 31px; transition: transform 400
 .ts-update-k { font-family: var(--font-stencil); font-weight: 800; color: var(--danger); letter-spacing: 0.08em; text-transform: uppercase; font-size: var(--fs-s); }
 .ts-update-name { font-family: var(--font-title); font-size: var(--fs-m); margin: 4px 0 9px; overflow-wrap: anywhere; }
 .ts-update-btn { width: 100%; }
+.ts-update-bar { height: 6px; margin: 8px 0 2px; background: rgba(0, 0, 0, 0.18); border: 1px solid var(--brass); }
+.ts-update-bar > span { display: block; height: 100%; background: var(--brass); transition: width 300ms linear; }
 
 /* ---------- keyframes ---------- */
 @keyframes title-in { from { opacity: 0; transform: translateY(28%) scaleY(1.08); filter: blur(6px); } to { opacity: 1; transform: none; filter: none; } }
@@ -558,6 +577,7 @@ svg.brass-gauge .needle { transform-origin: 30px 31px; transition: transform 400
   .resolves { gap: 5px; }
   .topbar:not(.spectator) .np.grow .resolve .num { display: none; }
   .topbar:not(.spectator) .resolve .bar { width: 18px; }
+  .resolve .doc { display: none; }
   .gauge-np { gap: 3px; }
   svg.brass-gauge { width: calc(44px * var(--ui)); height: calc(27px * var(--ui)); }
   .key { min-width: calc(28px * var(--ui)); padding: 0 5px; }
@@ -613,3 +633,23 @@ svg.brass-gauge .needle { transform-origin: 30px 31px; transition: transform 400
 .tbld { display: grid; grid-template-columns: 1fr auto auto; gap: 8px; align-items: center; font-size: var(--fs-s); padding: 2px 0; }
 .tbld.ruin { color: var(--ink-muted); text-decoration: line-through; }
 .tbld-k { font-weight: 600; }
+
+/* 3.0 camera modes (ui/cameraControls.ts): mode strip above the minimap, dip to black for battle-cam cuts */
+.cam-modes { position: absolute; right: 10px; bottom: calc(var(--mini-h, 330px) + 16px); display: flex; align-items: center; gap: 4px; padding: 4px 8px; }
+.cam-modes .lbl { color: var(--on-steel); font-family: var(--font-stencil); font-weight: 700; letter-spacing: 0.12em; font-size: var(--fs-s); margin-right: 4px; }
+.cam-modes .cam-key { min-width: 0; height: calc(24px * var(--ui)); padding: 0 6px; font-size: var(--fs-s); }
+.cam-dip { position: absolute; inset: 0; background: #070605; opacity: 0; pointer-events: none; transition: opacity 420ms ease; }
+.cam-dip.dip { opacity: 1; transition-duration: 400ms; }
+
+/* 3.0 Upgrades panel (ui/upgrades.ts) */
+.upg-btn { position: absolute; top: calc(74px * var(--ui)); left: calc(50% + 230px * var(--ui)); }
+.upg { position: absolute; top: calc(108px * var(--ui)); left: 50%; transform: translateX(-50%); width: calc(520px * var(--ui)); max-height: calc(100vh - 320px); overflow-y: auto; padding: 12px 16px; animation: drop var(--t-panel) var(--ease); }
+.upg .title { display: flex; justify-content: space-between; align-items: center; font-family: var(--font-title); font-weight: 600; }
+.upg-now { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; margin: 6px 0; }
+.upg-now .meter { grid-template-columns: auto 1fr 40px; }
+.upg-list { display: flex; flex-direction: column; gap: 4px; margin: 6px 0; }
+.upg-row { display: grid; grid-template-columns: 1fr auto auto; gap: 8px; align-items: center; padding: 4px 0; border-bottom: 1px solid var(--border); }
+.upg-row.done { opacity: 0.7; }
+.upg-cost { white-space: nowrap; }
+.upg-owned { color: var(--olive); font-weight: 600; white-space: nowrap; }
+.upg-tags { font-weight: 500; font-size: var(--fs-s); }

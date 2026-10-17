@@ -19,8 +19,11 @@ export interface ChordInfo {
 }
 
 export type ThemeId =
-  | 'main' | 'mainB' | 'interlude' | 'tension' | 'tensionB' | 'battleA' | 'battle'
-  | 'lament' | 'hymn' | 'fill' | 'victory' | 'defeat' | 'capital';
+  | 'title' | 'main' | 'mainB' | 'interlude' | 'tension' | 'tensionB' | 'battleA' | 'battle'
+  | 'lament' | 'hymn' | 'fill' | 'victory' | 'defeat' | 'capital'
+  // 3.0: one theme per AI doctrine (see doctrines.ts) and the situation motifs (director.ts).
+  | 'builder' | 'blitz' | 'attrition' | 'maneuver'
+  | 'threat' | 'offensive' | 'fall';
 
 export interface Theme {
   readonly id: ThemeId;
@@ -114,9 +117,96 @@ const CAPITAL_MEL: readonly Mel[] = [
   [4, 4, 74],
 ];
 
+// ---- 3.0 themes ----------------------------------------------------------------------------
+
+/**
+ * Main title: a horn call (rising fourth, then fifth) answered by the strings, climbing to
+ * the high F and turning through a Neapolitan Eb onto the dominant (half cadence, so the
+ * next statement of the main theme lands as the answer).
+ */
+const TITLE_MEL: readonly Mel[] = [
+  [0, 1, 57], [1, 1, 62], [2, 2, 69],
+  [4, 1.5, 70], [5.5, 0.5, 69], [6, 2, 65],
+  [8, 1, 65], [9, 1, 69], [10, 2, 72],
+  [12, 1, 74], [13, 1, 72], [14, 2, 67],
+  [16, 1.5, 70], [17.5, 0.5, 72], [18, 2, 74],
+  [20, 1, 77], [21, 1, 76], [22, 2, 74],
+  [24, 2, 75], [26, 1, 74], [27, 1, 70],
+  [28, 3, 73], [31, 1, 69],
+];
+
+/** Builder (优先发育): pastoral D Dorian, stepwise, the raised sixth (B natural) on G major. */
+const BUILDER_MEL: readonly Mel[] = [
+  [0, 1, 62], [1, 1, 64], [2, 1, 65], [3, 1, 69],
+  [4, 2, 71], [6, 1, 69], [7, 1, 67],
+  [8, 1.5, 65], [9.5, 0.5, 64], [10, 2, 62],
+  [12, 1, 64], [13, 1, 67], [14, 2, 72],
+  [16, 1.5, 72], [17.5, 0.5, 74], [18, 2, 77],
+  [20, 1, 74], [21, 1, 71], [22, 2, 74],
+  [24, 1, 74], [25, 1, 72], [26, 2, 70],
+  [28, 4, 69],
+];
+
+/** Blitz (一波直捣黄龙): repeated-note anapests over a Phrygian bII (Eb) — a charge. */
+const BLITZ_MEL: readonly Mel[] = [
+  [0, 0.5, 62], [0.5, 0.25, 62], [0.75, 0.25, 62], [1, 1, 69], [2, 0.5, 69], [2.5, 0.5, 70], [3, 1, 69],
+  [4, 0.5, 70], [4.5, 0.25, 70], [4.75, 0.25, 70], [5, 1, 67], [6, 2, 63],
+  [8, 0.5, 62], [8.5, 0.25, 62], [8.75, 0.25, 62], [9, 1, 69], [10, 0.5, 72], [10.5, 0.5, 70], [11, 1, 69],
+  [12, 1, 67], [13, 1, 70], [14, 2, 75],
+  [16, 0.5, 74], [16.5, 0.25, 74], [16.75, 0.25, 74], [17, 1, 77], [18, 1, 74], [19, 1, 70],
+  [20, 0.5, 72], [20.5, 0.25, 72], [20.75, 0.25, 72], [21, 1, 76], [22, 1, 72], [23, 1, 67],
+  [24, 1, 67], [25, 1, 70], [26, 2, 74],
+  [28, 1, 73], [29, 1, 76], [30, 2, 73],
+];
+
+/** Attrition (稳扎稳打): narrow, low, grinding march over a descending lament bass. */
+const ATTRITION_MEL: readonly Mel[] = [
+  [0, 2, 62], [2, 1, 62], [3, 1, 64],
+  [4, 2, 65], [6, 2, 64],
+  [8, 1.5, 62], [9.5, 0.5, 64], [10, 2, 62],
+  [12, 2, 61], [14, 2, 57],
+  [16, 2, 62], [18, 1, 65], [19, 1, 69],
+  [20, 2, 70], [22, 1, 69], [23, 1, 65],
+  [24, 1.5, 67], [25.5, 0.5, 65], [26, 2, 62],
+  [28, 2, 64], [30, 2, 61],
+];
+
+/** Maneuver (寻机决战): sweeping octave leaps, a pivot through the relative major (F). */
+const MANEUVER_MEL: readonly Mel[] = [
+  [0, 1, 57], [1, 1, 69], [2, 2, 74],
+  [4, 1, 74], [5, 1, 70], [6, 2, 65],
+  [8, 1, 60], [9, 1, 72], [10, 2, 77],
+  [12, 1.5, 76], [13.5, 0.5, 74], [14, 2, 72],
+  [16, 1, 62], [17, 1, 69], [18, 1, 74], [19, 1, 77],
+  [20, 2, 79], [22, 1, 77], [23, 1, 74],
+  [24, 1, 77], [25, 1, 74], [26, 2, 70],
+  [28, 2, 69], [30, 1, 73], [31, 1, 76],
+];
+
+/** Home threatened: a stopped-horn semitone (D-Eb-D, A-Bb-A) over a D pedal. */
+const THREAT_MEL: readonly Mel[] = [
+  [0, 1, 62], [1, 1, 63], [2, 2, 62],
+  [4, 1, 69], [5, 1, 70], [6, 2, 69],
+];
+
+/** Offensive launched: a trumpet call (anapest, rising fifth to the octave), open on A. */
+const OFFENSIVE_MEL: readonly Mel[] = [
+  [0, 0.5, 62], [0.5, 0.25, 62], [0.75, 0.25, 62], [1, 1, 69], [2, 0.5, 69], [2.5, 0.5, 69], [3, 1, 74],
+  [4, 1, 74], [5, 1, 77], [6, 2, 76],
+];
+
+/** Capital falling: a descending lament through the Neapolitan (Eb/G) onto the dominant. */
+const FALL_MEL: readonly Mel[] = [
+  [0, 2, 74], [2, 1, 72], [3, 1, 70],
+  [4, 2, 69], [6, 2, 67],
+  [8, 3, 70], [11, 1, 67],
+  [12, 2, 64], [14, 2, 61],
+];
+
 const theme = (id: ThemeId, bpm: number, chords: string, melody: readonly Mel[]): Theme => ({ id, bpm, bars: prog(chords), melody });
 
 export const THEMES: Record<ThemeId, Theme> = {
+  title: theme('title', 72, 'Dm | Bb | F | C | Gm | Dm/F | Eb | A', TITLE_MEL),
   main: theme('main', 66, 'Dm | Bb | C | A | Dm | Gm | Bb A | Dm', MAIN_MEL),
   // Reharmonised restatement: descending lament bass D-C-Bb-A under the second half.
   mainB: theme('mainB', 66, 'Dm | Gm | C | A | Dm Dm/C | Gm/Bb | Bb A | Dm', MAIN_MEL),
@@ -133,6 +223,13 @@ export const THEMES: Record<ThemeId, Theme> = {
   victory: theme('victory', 72, 'D | E/D | D', VICTORY_MEL),
   defeat: theme('defeat', 50, 'Dm | Bb/D Gm/D | Dm', DEFEAT_MEL),
   capital: theme('capital', 84, 'D | D', CAPITAL_MEL),
+  builder: theme('builder', 76, 'Dm | G | Dm | C | F | G | Bb | A', BUILDER_MEL),
+  blitz: theme('blitz', 116, 'Dm | Eb | Dm | Eb | Bb | C | Gm | A', BLITZ_MEL),
+  attrition: theme('attrition', 80, 'Dm | Dm/C | Gm/Bb | A | Dm | Bb | Gm | A', ATTRITION_MEL),
+  maneuver: theme('maneuver', 96, 'Dm | Bb | F | C/E | Dm | Gm | Bb | A', MANEUVER_MEL),
+  threat: theme('threat', 84, 'Dm | Eb/D', THREAT_MEL),
+  offensive: theme('offensive', 104, 'Dm | Bb A', OFFENSIVE_MEL),
+  fall: theme('fall', 54, 'Dm | Gm/Bb | Eb/G | A', FALL_MEL),
 };
 
 // ---- Rhythm patterns ----------------------------------------------------------------------
@@ -145,6 +242,10 @@ export const SNARE_FILL = 'X.xxX.xxxxxxXXXX';
 export const TENSION_OST: readonly string[] = ['RRRRRRRR', 'R-RRR-RR'];
 export const BATTLE_OST8: readonly string[] = ['RR8R5R8R', 'RRR8RR58', 'R8R8R5R8'];
 export const BATTLE_OST16: readonly string[] = ['RRRRRR8RRRRR5R8R', 'R-RRR-R8R-RRR-58'];
+/** Triplet (12 steps per bar) gallop for the maneuver doctrine. */
+export const TRIPLET_OST: readonly string[] = ['R-RR-R8-RR-5', 'RRRRRRR8R5R8'];
+/** Heavy march (attrition): root on the beat, fifth and octave pick-ups. */
+export const MARCH_OST: readonly string[] = ['R--5R--5R--5R-58', 'R---R--5R---R-88'];
 
 /** Brass chord stabs: [beat, length] pairs within a bar. */
 export const STABS: readonly (readonly (readonly [number, number])[])[] = [

@@ -10,7 +10,9 @@ import type { GameContext } from './ui/context';
 import { h } from './ui/dom';
 import { Hud } from './ui/hud';
 import { t } from './ui/i18n';
+import { CameraControls } from './ui/cameraControls';
 import { InputController } from './ui/input';
+import { MusicCues } from './ui/musicCues';
 import { showPauseMenu } from './ui/pause';
 import { showResults } from './ui/results';
 import { onSettingsChange, prefersReducedMotion, settings, type Settings } from './ui/settings';
@@ -45,6 +47,8 @@ export class Game {
   private readonly host: SimHost | null;
   private readonly hud: Hud | null;
   private readonly input: InputController | null;
+  /** 3.0 camera modes (null in attract mode, where the cinematic director drives the camera). */
+  readonly camera: CameraControls | null = null;
   private acc = 0;
   private last = performance.now();
   private raf = 0;
@@ -56,6 +60,7 @@ export class Game {
   private readonly offSettings: () => void;
   private pauseMenu: (() => void) | null = null;
   private readonly audio: AudioSession;
+  private readonly cues: MusicCues;
 
   constructor(private readonly root: HTMLElement, data: GameData, readonly config: MatchConfig, private readonly exits: { again: () => void; menu: () => void }, opts: GameOptions = {}) {
     this.attract = !!opts.attract;
@@ -86,8 +91,11 @@ export class Game {
       },
       toast(text, sev) { self.hud?.toast(text, sev); },
     };
+    // 3.0 music wiring: doctrine theme, offensive / capital lost / quiet cues (ui/musicCues.ts).
+    this.cues = new MusicCues(config.playerSlot, spectator, !this.attract);
     this.bus.onResult = (env, out) => {
       if (!out.ok && env.actor === config.playerSlot) this.hud?.toast(t(`fail.${out.reason as CommandFail}`), 'warn');
+      this.cues.onCommand(env, out);
     };
     if (this.host) {
       this.host.onCommandResult = this.bus.onResult;
@@ -100,6 +108,12 @@ export class Game {
       this.hud = new Hud(root, this.ctx);
       this.input = new InputController(this.canvas, this.ctx, this.hud);
       this.input.onEscape = () => this.togglePauseMenu();
+      // 3.0 camera modes: keys run before the built-in ones; the mode strip sits in the HUD.
+      const hud = this.hud;
+      this.camera = new CameraControls(this.ctx, () => hud.fronts.expandedFront);
+      this.input.keyHandlers.push((e, k) => this.camera!.keydown(e, k));
+      this.ctx.camera = this.camera;
+      hud.root.append(this.camera.el);
     }
     window.addEventListener('resize', this.onResize);
     this.renderer.resize();
@@ -124,6 +138,8 @@ export class Game {
       this.qualityApplied = s.quality;
       this.renderer.setQualityMode(s.quality);
     }
+    this.renderer.day.drift = s.dayCycle;
+    this.renderer.depthBlur = s.depthBlur;
   }
 
   private qualityApplied: Settings['quality'] | null = null;
@@ -181,10 +197,12 @@ export class Game {
       this.slowBadge.style.display = this.slowSmoothed > 0.5 && !this.attract ? '' : 'none';
     }
     this.input?.update(dtReal);
+    this.camera?.update(dtReal);
     this.onFrame?.(dtReal);
     if (!this.host) alpha = ctx.paused ? 1 : Math.min(1, this.acc / w.dt);
     // Audio reads world.fx before the renderer consumes it.
     this.audio.update(dtReal, w, this.renderer.rig, ctx.paused, !this.renderSuspended);
+    this.cues.update(w);
     if (!this.renderSuspended) this.renderer.frame(alpha, ctx.paused ? 0 : dtReal * ctx.speed);
     this.hudTimer -= dtReal;
     if (this.hud && this.hudTimer <= 0) {
@@ -226,11 +244,13 @@ export class Game {
   dispose(): void {
     cancelAnimationFrame(this.raf);
     this.audio.dispose();
+    this.cues.dispose();
     this.host?.dispose();
     window.removeEventListener('resize', this.onResize);
     this.offSettings();
     this.pauseMenu?.();
     this.input?.dispose();
+    this.camera?.dispose();
     this.hud?.dispose();
     this.renderer.dispose();
     // Free the WebGL context now: the title screen and matches create one each.

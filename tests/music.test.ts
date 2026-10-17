@@ -72,8 +72,9 @@ describe('Conductor', () => {
     for (const p of run(5, 160, () => battle(0.05))) {
       // Chord changes fall on beat 0 or (for two-chord bars) beat 2.
       for (const b0 of [0, 2]) {
-        const heads = p.events.filter((e) => e.beat === b0 && (e.layer === 'strings' || e.layer === 'bass') && e.inst === 'strings' && e.atk > 0.2);
-        const bass = heads.find((e) => e.layer === 'bass');
+        const heads = p.events.filter((e) => e.beat === b0 && (e.layer === 'strings' || e.layer === 'bass') && (e.inst === 'strings' || e.inst === 'basses') && e.atk > 0.2 && e.vel > 0.16);
+        // The celli carry the bass line; the basses double it an octave below.
+        const bass = heads.filter((e) => e.layer === 'bass').sort((x, y) => y.midi - x.midi)[0];
         const upper = heads.filter((e) => e.layer === 'strings').map((e) => e.midi);
         if (!bass || upper.length !== 3) continue;
         const cur = [bass.midi, ...upper];

@@ -2,6 +2,7 @@ import type { GameData } from '../data/types';
 import { thinkUnit } from './behavior';
 import { majorityBleed, hqCaptured, updateHq, updateObjective } from './capture';
 import { personalityWeights, thinkCity } from './cityai';
+import { assignDoctrines, doctrineCaps, doctrinesOn } from './doctrines';
 import { updateProjectiles, updateWeapons } from './combat';
 import { AI } from './config';
 import { applyIncome, economyRates, nodeBonus, stewardStep } from './economy';
@@ -15,9 +16,13 @@ import { convoySecond } from './convoy';
 import { drawSecond, initPlaces, logisticsDemand, seedStocks, stockSecond } from './settlements';
 import { econIncome, econSecond } from './econ';
 import { fundSecond } from './econai';
+import { econZonesSecond, zoneIncome } from './econZones';
+import { minefieldSecond } from './minefields';
+import { capitalDefenceSecond, initCapitalDefence, observeCapital } from './capitalDefence';
 import { createHighCommand, thinkHighCommand } from './command';
 import { initialDirective } from './directive';
 import { buildFrontInfoFor } from './frontai';
+import { updateInfiltration } from './infiltration';
 import type { Faction, MatchConfig, Unit } from './types';
 import { hostileMask } from './spatial';
 import { DEG, dist } from './vec';
@@ -26,8 +31,11 @@ import { FACTION_COLORS, ROMAN, World } from './world';
 import { scaledData } from './scale';
 import { sampleStats, STATS_SAMPLE_SECONDS } from './stats';
 import { battleSecond } from './events';
+import { aboard, initTransport, railSecond, railTick } from './rail';
+import { transportSecond } from './transportjobs';
 import { canSpot, observerOf } from './terrainrules';
 import type { V2 } from './vec';
+import { newUpgradeState, upgradeSecond } from './upgrades';
 
 export interface Match {
   readonly world: World;
@@ -40,19 +48,22 @@ export interface Match {
 function makeFaction(world: World, id: number, isPlayer: boolean): Faction {
   const e = world.data.rules.economy;
   const personalities = world.config.personalities;
-  const personality = personalities?.[id] ?? (['balanced', 'armor', 'infantry', 'mechanized', 'artillery'] as const)[id % 5];
+  // 3.0: every slot gets a doctrine (seeded, all different in a 4-FFA); an AI's production flavour follows it.
+  const doctrine = assignDoctrines(world.config.seed, world.hostile.length, world.config.doctrines)[id];
+  const flavour = !isPlayer && doctrinesOn(world) ? world.data.rules.doctrines?.profiles[doctrine]?.personality : undefined;
+  const personality = personalities?.[id] ?? flavour ?? (['balanced', 'armor', 'infantry', 'mechanized', 'artillery'] as const)[id % 5];
   // The player's chosen doctrine sets the starting production mix too (balanced = spec defaults).
   const weights = isPlayer && !personalities?.[id] ? { ...world.data.rules.proposed_defaults.production_unit_weights } : personalityWeights(world, personality);
   return {
-    id, color: FACTION_COLORS[id], roman: ROMAN[id], isPlayer, cityIdx: id, personality, difficulty: world.config.difficulty,
+    id, color: FACTION_COLORS[id], roman: ROMAN[id], isPlayer, cityIdx: id, personality, doctrine, contactAt: world.hostile.map(() => -1), difficulty: world.config.difficulty,
     alive: true, eliminatedAt: null, p: e.starting_p, m: e.starting_m,
     alloc: [...e.allocation_default] as [number, number, number], locks: [false, false, false], autoEconomy: true, autoInvest: true,
     stewardHoldUntil: 0, stewardLastDir: -1, stewardReason: 'steward.default', stewardParams: {},
     resolve: world.data.rules.victory.initial_resolve, popPresent: 0, popReserved: 0, logistics: 0, supplyDemand: 0,
-    weights, caps: { ...world.data.rules.proposed_defaults.production_unit_caps }, paused: {},
+    weights, caps: doctrineCaps(world, { isPlayer, doctrine }, world.data.rules.proposed_defaults.production_unit_caps), paused: {},
     spent: [], protectedOrder: null, protectRetryAt: 0, nextRaidAt: 240, command: createHighCommand(), depot: 0, econP: 0, econM: 0, econFund: { p: 0, m: 0, active: false }, econInvested: 0, lastWorksAt: -999, orders: [], manualQueue: [], fronts: [], directive: initialDirective(isPlayer), mainFront: 0, frontSeq: 0, zones: [], zoneSeq: 0,
     incomeP: 0, incomeM: 0, overflowWarnAt: -1e9, hqProgress: {}, lostUnits: 0, producedUnits: 0,
-    spentTotalP: 0, spentTotalM: 0, aiThinkAt: id * 0.7, trucksUnderFire: [],
+    spentTotalP: 0, spentTotalM: 0, aiThinkAt: id * 0.7, trucksUnderFire: [], upgrades: newUpgradeState(),
   };
 }
 
@@ -99,6 +110,8 @@ export function createMatch(baseData: GameData, config: MatchConfig): Match {
       if (!placeStructure(world, f.id, 'pillbox', sp.pos, sp.facingDeg * DEG)) world.spawnUnit(f.id, 'mg', sp.pos, f.mainFront, { fixed: true, facingDeg: sp.facingDeg });
     }
   }
+  // 3.0: absolute defence perimeter + artillery position at every capital (capitalDefence.ts).
+  initCapitalDefence(world);
   // Starting territory: settlements near each capital (and closer to it than to any other).
   const initR = data.rules.territory?.initial_radius_m ?? 0;
   for (const o of world.objectives) {
@@ -114,6 +127,8 @@ export function createMatch(baseData: GameData, config: MatchConfig): Match {
   // 2.2: production / supply places and their starting stocks (settlements.ts).
   initPlaces(world);
   seedStocks(world);
+  // 3.0 road graph, rail lines and stations (rail.ts).
+  initTransport(world);
   for (const u of world.units.values()) updateHeight(world, u);
   world.spatial.rebuild(world.aliveUnits);
   const front = new FrontlineField(world, null);
@@ -145,6 +160,8 @@ export function updateVisibility(world: World): void {
       }
     }
     // Owned observation points add an observer with 180 m radius.
+    // 3.0: the capital observation ring (fog mode).
+    observeCapital(world, f.id, vis);
     for (const o of world.objectives) {
       if (o.owner !== f.id || o.type !== 'observation') continue;
       const y = world.terrain.heightAt(o.pos.x, o.pos.z) + 6;
@@ -222,6 +239,9 @@ function economySecond(match: Match): void {
     }
     // 2.2 economic buildings (econ.ts) add to the territory output.
     const econ = econIncome(world, f.id, (fi, p) => inSupply(match, fi, p));
+    const zinc = zoneIncome(world, f.id);
+    econ.p += zinc.p;
+    econ.m += zinc.m;
     f.econP = econ.p;
     f.econM = econ.m;
     const rates = economyRates(f.alloc, rules, bonus.p + econ.p, bonus.m + econ.m, cityShare);
@@ -248,6 +268,7 @@ function economySecond(match: Match): void {
       }
     }
     fundSecond(world, f);
+    upgradeSecond(world, f);
     scheduleProduction(world, f);
     advanceProduction(world, f, 1);
     convoySecond(world, f);
@@ -256,6 +277,10 @@ function economySecond(match: Match): void {
   stockSecond(world, (fi, p) => inSupply(match, fi, p));
   drawSecond(world);
   econSecond(world);
+  // 3.0: economic zones, minefields, the capital perimeter crews.
+  econZonesSecond(world, (p) => match.front.ownerAt(p));
+  minefieldSecond(world);
+  capitalDefenceSecond(world);
   for (const u of world.units.values()) {
     if (u.hp <= 0) continue;
     supplyTick(world, u, 1);
@@ -337,7 +362,9 @@ export function step(match: Match): void {
       f.aiThinkAt = world.time + cityEvery;
     }
     thinkHighCommand(world, f);
-    if (world.tick % Math.round(AI.frontThinkSeconds * hz) === f.id % (AI.frontThinkSeconds * hz)) thinkFronts(world, f);
+    // 3.0: front planning is staggered — chunk k of faction f on tick ≡ f + k·factions (mod 2 s).
+    const slot = (((world.tick - f.id) % Math.round(AI.frontThinkSeconds * hz)) + Math.round(AI.frontThinkSeconds * hz)) % Math.round(AI.frontThinkSeconds * hz);
+    if (slot % world.factions.length === 0) thinkFronts(world, f, slot / world.factions.length);
   }
   // Unit executor, staggered.
   for (let i = 0; i < units.length; i++) {
@@ -354,7 +381,7 @@ export function step(match: Match): void {
       u.hp = 0;
       continue;
     }
-    if (world.time >= u.thinkAt) {
+    if (world.time >= u.thinkAt && !aboard(u)) {
       thinkUnit(world, u);
       const slow = u.def.id === 'howitzer' || u.def.id === 'mortar' ? 1 : 0.4;
       u.thinkAt = world.time + slow + ((u.id * 7) % 10) / 50;
@@ -367,7 +394,11 @@ export function step(match: Match): void {
     updateMovement(world, u);
     updateHeight(world, u);
   }
-  if (world.tick % Math.round(hz / 2) === 0) updateVisibility(world);
+  railTick(world);
+  if (world.tick % Math.round(hz / 2) === 0) {
+    updateVisibility(world);
+    updateInfiltration(world); // 3.0 zone of control, contacts, rear reports (infiltration.ts)
+  }
   if (world.tick % (2 * hz) === 0) {
     match.supplyNodes = world.factions.map((f) => (f.alive ? convoyNodes(world, f.id) : []));
   }
@@ -378,6 +409,8 @@ export function step(match: Match): void {
   world.removeDead();
   if (world.tick % hz === 0) {
     economySecond(match);
+    railSecond(world, match.front);
+    transportSecond(world);
     battleSecond(world);
   }
   // Front field every 2 s, then one faction's front info per tick: the ~10 ms burst of doing
@@ -402,7 +435,7 @@ export function step(match: Match): void {
   if (world.tick % (10 * hz) === 0) {
     for (let i = world.forts.length - 1; i >= 0; i--) {
       const f = world.forts[i];
-      if (f.hp <= 0 && f.kind !== 'pontoon') world.forts.splice(i, 1);
+      if (f.hp <= 0 && f.kind !== 'pontoon' && !f.permanent) world.forts.splice(i, 1);
       else if (f.occupant !== null && !world.unitAlive(f.occupant)) f.occupant = null;
       if (f.occupants && f.occupants.some((id) => !world.unitAlive(id))) f.occupants = f.occupants.filter((id) => world.unitAlive(id));
     }

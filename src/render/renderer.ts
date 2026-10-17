@@ -7,7 +7,9 @@ import type { Match } from '../sim/sim';
 import type { Ground } from '../sim/terrain';
 import type { V2 } from '../sim/vec';
 import { lang } from '../ui/i18n';
-import { Haze, LIGHT, roomBackground } from './atmosphere';
+import { backdropTexture, Haze, LIGHT } from './atmosphere';
+import { DayCycle } from './timeOfDay';
+import { TiltShift, tiltStrength } from './tiltShift';
 import { CameraRig } from './camera';
 import { Effects } from './effects';
 import { MapLabels } from './mapLabels';
@@ -19,9 +21,12 @@ import { clothFlag, FLAG_TIME } from './flags';
 import { FieldWorks, isLineWork } from './fieldWorks';
 import { StructureViews, type StructureRecord } from './structures';
 import { registerEconModels } from './econModels';
+import { registerWorksModels } from './worksModels';
+import { structureKind } from './structureKinds';
 import { FrontLines } from './frontLines';
 import { fortModel } from './models';
 import { PontoonView } from './pontoon';
+import { RailField } from './railField';
 import { ScreenOverlay } from './screenOverlay';
 import { TerrainView } from './terrainView';
 import { UnitCounters } from './unitCounters';
@@ -67,9 +72,15 @@ export class GameRenderer {
   /** Unit vector toward the sun (afternoon light from the north-west). */
   private readonly sunDir = LIGHT.sunDir.clone();
   private readonly haze: Haze;
+  /** 3.0: time-of-day drift (dawn → noon → dusk) and the high-tier tilt-shift at low angles. */
+  readonly day: DayCycle;
+  private readonly tilt = new TiltShift();
+  /** Player setting: light depth blur at low close-in angles (high tier only; off by default). */
+  depthBlur = false;
   private readonly objectiveMarkers: ObjectiveMarkers;
   private readonly fortViews = new Map<number, THREE.Group>();
   private readonly pontoonViews = new Map<number, PontoonView>();
+  private readonly railField: RailField;
   private readonly fieldWorks: FieldWorks;
   /** Pillboxes / bunkers (instanced; works agent). */
   private readonly structureViews: StructureViews;
@@ -112,7 +123,8 @@ export class GameRenderer {
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.05;
     this.quality.setAutoStart(initialLevel(deviceHint(this.renderer.getContext())));
-    this.scene.background = roomBackground();
+    const backdrop = backdropTexture();
+    this.scene.background = backdrop.texture;
 
     this.rig = new CameraRig({ w: w.terrain.width, d: w.terrain.depth });
     this.haze = new Haze(this.scene, Math.max(w.terrain.width, w.terrain.depth) / 2, 4500);
@@ -137,6 +149,8 @@ export class GameRenderer {
     sc.near = 10;
     sc.far = 1500;
     this.scene.add(this.sun, this.sun.target);
+    this.tilt.prewarm(this.renderer);
+    this.day = new DayCycle({ sun: this.sun, hemi, sunDir: this.sunDir, setHaze: (c) => this.haze.setColor(c), backdrop });
 
     this.terrainView = new TerrainView(w.terrain);
     this.scene.add(this.terrainView.group);
@@ -160,7 +174,17 @@ export class GameRenderer {
     this.extraViews = new StructureViews(w.terrain, (owner) => w.factions[owner]?.color ?? '#888888');
     // 2.2 economic buildings (factory, recruitment office, depot) through the kind registry.
     registerEconModels();
-    this.extraStructures = () => w.econ;
+    // 3.0: economic zones and the new works kinds (worksModels.ts).
+    const mines = w.data.rules.construction.defensive.tiers?.minefield;
+    registerWorksModels(mines?.depth_m, mines?.length_m);
+    const extra: StructureRecord[] = [];
+    this.extraStructures = () => {
+      if (w.econZones.length === 0) return w.econ;
+      extra.length = 0;
+      for (const b of w.econ) extra.push(b);
+      for (const z of w.econZones) extra.push(z);
+      return extra;
+    };
     this.scene.add(this.extraViews.group);
     this.opArrows = new OpArrows((x, z) => w.terrain.heightAt(x, z));
     this.scene.add(this.opArrows.mesh);
@@ -168,6 +192,9 @@ export class GameRenderer {
     this.scene.add(this.orderLines.group);
     this.objectiveMarkers = new ObjectiveMarkers(w.objectives, w.terrain);
     this.scene.add(this.objectiveMarkers.group);
+    // 3.0 railways, stations, trains and engineer roads (railField.ts).
+    this.railField = new RailField(w.terrain, () => w.transport, (owner) => w.factions[owner]?.color ?? '#888888');
+    this.scene.add(this.railField.group);
     this.buildCities();
     this.freezeStatic();
   }
@@ -311,7 +338,7 @@ export class GameRenderer {
       for (let i = 0; i < this.extraViews.siteCount; i++) this.effects.workSite(this.extraViews.sites[i], dt);
     }
     for (const f of w.forts) {
-      if (f.hp <= 0 || isLineWork(f.kind) || f.kind === 'pillbox' || f.kind === 'bunker') continue;
+      if (f.hp <= 0 || isLineWork(f.kind) || structureKind(f.kind)) continue;
       seen.add(f.id);
       if (f.kind === 'pontoon') {
         let pv = this.pontoonViews.get(f.id);
@@ -505,6 +532,7 @@ export class GameRenderer {
     // shadows start at the feet and tracks.
     const texel = (2 * ext) / Math.max(1, this.sun.shadow.mapSize.x);
     this.sun.shadow.normalBias = Math.min(0.6, Math.max(0.03, texel * 1.5));
+    this.day.update(w.time);
     const back = 1500 + ext;
     this.sun.position.set(t.x - this.sunDir.x * -back, t.y + this.sunDir.y * back, t.z - this.sunDir.z * -back);
     this.sun.target.position.copy(t);
@@ -540,6 +568,7 @@ export class GameRenderer {
     this.effects.update(dt);
     this.syncObjectives();
     this.syncForts(dt);
+    this.railField.update(alpha);
     this.paintFront(this.match.frontView ?? this.match.front);
     this.drawOverlays(realDt);
     for (let i = this.orderMarkers.length - 1; i >= 0; i--) {
@@ -556,7 +585,8 @@ export class GameRenderer {
     const mapMode = this.layers.terrain;
     this.terrainView.uniforms.uTerrainLayer.value = mapMode ? 1 : 0;
     this.terrainView.water.update(realDt, this.rig.camera, this.sunDir, mapMode);
-    this.renderer.render(this.scene, this.rig.camera);
+    this.tilt.strength = this.depthBlur && this.quality.level === 0 ? tiltStrength(this.rig.elevationDeg, ppm) : 0;
+    this.tilt.render(this.renderer, this.scene, this.rig.camera);
     this.overlay.begin(this.rig.camera);
     this.labels.draw(this.overlay, ppm, this.rig.zoom, lang(), null, this.stockOf);
     this.counters.draw(this.overlay, ppm, this.playerId, this.fog);
@@ -609,6 +639,7 @@ export class GameRenderer {
   private applyQuality(): void {
     const q = this.quality.profile;
     this.effects.detail = this.quality.level;
+    if (this.quality.level !== 0) this.tilt.release();
     this.renderer.setPixelRatio(Math.min(q.maxPixelRatio, window.devicePixelRatio));
     const shadows = q.shadowMap > 0;
     if (this.renderer.shadowMap.enabled !== shadows) {
@@ -641,9 +672,11 @@ export class GameRenderer {
 
   dispose(): void {
     this.structureViews.dispose();
+    this.railField.dispose();
     this.extraViews.dispose();
     this.objectiveMarkers.dispose();
     this.overlay.dispose();
+    this.tilt.dispose();
     this.renderer.dispose();
   }
 }

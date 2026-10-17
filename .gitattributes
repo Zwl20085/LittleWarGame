@@ -1,2 +1,6 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# vite-node imports these in tests; a CRLF shebang line breaks the import
+scripts/release/*.mjs text eol=lf
+electron/*.cjs text eol=lf

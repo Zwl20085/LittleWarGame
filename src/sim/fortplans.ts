@@ -2,8 +2,13 @@ import { refund, trySpend } from './economy';
 import { HOME } from './homeguard';
 import { assignJob, canAfford, enemyNear, isStructure, jobOf, startStructure, structureSiteOk, STRUCT, type StructureKind } from './structures';
 import { Ground } from './terrain';
+import { onTransportJob } from './transportjobs';
 import { startLine, WORKS } from './works';
 import type { Faction, Fort, Unit, Zone } from './types';
+import { planWorksTiers, tierSitesWaiting } from './worksTiers';
+import { planZoneJobs, zoneSitesWaiting } from './econZones';
+import { zoneEngineerMul } from './econZoneAi';
+import { perimeterSitesWaiting, planPerimeterRepair } from './capitalDefence';
 import { dist, headingTo, type V2 } from './vec';
 import type { World } from './world';
 
@@ -117,12 +122,16 @@ export function planStructures(world: World, f: Faction): void {
   if (!f.alive) return;
   planCapitalLine(world, f);
   planZones(world, f);
+  // 3.0: works upgrades / minefields / perimeter repairs, and economic-zone jobs.
+  planZoneJobs(world, f);
+  planWorksTiers(world, f);
+  planPerimeterRepair(world, f);
   requestEngineers(world, f);
 }
 
 /** Plan items (buildings and trenches) not yet finished: the capital line and every live zone. */
 function sitesWaiting(world: World, f: Faction): number {
-  let n = 0;
+  let n = tierSitesWaiting(world, f) + zoneSitesWaiting(world, f) + perimeterSitesWaiting(world, f);
   const plans = [capitalPlans.get(f), ...zonePlansOf(f).values()];
   for (const p of plans) {
     for (const it of p?.items ?? []) {
@@ -143,7 +152,9 @@ function requestEngineers(world: World, f: Faction): void {
   if (f.paused.engineer) return;
   // Caps scale with the army (army_scale 10 fields ~20 engineers; the seed values are per scale 1).
   const k = world.data.rules.proposed_defaults.army_scale ?? 1;
-  const want = Math.min(Math.round(PLANS.maxEngineers * k), sitesWaiting(world, f));
+  // 3.0: an investing faction (econZoneAi.zoneEngineerMul) keeps more engineers for its zones.
+  const zk = zoneEngineerMul(world, f);
+  const want = Math.min(Math.round(PLANS.maxEngineers * k * zk), sitesWaiting(world, f));
   if (want <= 0) return;
   // Engineers on other errands (sieges, occupations, bridges) do not count, up to a hard cap on all engineers.
   const queued = f.orders.filter((o) => o.unitId === 'engineer').length + f.manualQueue.filter((q) => q.unitId === 'engineer').length;
@@ -152,9 +163,9 @@ function requestEngineers(world: World, f: Faction): void {
   for (const u of world.units.values()) {
     if (u.owner !== f.id || u.hp <= 0 || u.def.id !== 'engineer') continue;
     all++;
-    if (freeHand(f, u)) free++;
+    if (freeHand(f, u, world)) free++;
   }
-  const n = Math.min(want - free, Math.round(PLANS.maxEngineersAll * k) - all);
+  const n = Math.min(want - free, Math.round(PLANS.maxEngineersAll * k * zk) - all);
   if (n <= 0) return;
   f.manualQueue = [...f.manualQueue, ...Array.from({ length: n }, () => ({ unitId: 'engineer', frontId: -1 }))];
   if (world.time - (requestNotedAt.get(f) ?? -1e9) >= PLANS.requestNoteS) {
@@ -208,7 +219,7 @@ function layoutCapital(world: World, f: Faction): Plan {
 function capitalPool(world: World, f: Faction, hq: V2, site: Fort): Unit[] {
   const out: Unit[] = [];
   for (const u of world.units.values()) {
-    if (u.owner !== f.id || !freeHand(f, u)) continue;
+    if (u.owner !== f.id || !freeHand(f, u, world)) continue;
     const d = dist(u.pos, hq);
     // Home guards man the buildings (structures.seekGarrison); riflemen of quiet fronts dig.
     if (u.def.id === 'engineer' ? d < PLANS.capital.poolR : canDig(u, site) && d < PLANS.capital.rifleR && u.opRole === 'line' && quietFront(f, u)) out.push(u);
@@ -273,7 +284,7 @@ function zonePool(world: World, f: Faction, z: Zone, site: Fort): Unit[] {
   const out: { u: Unit; rank: number; d: number }[] = [];
   const fid = z.frontId !== null && f.fronts.some((x) => x.id === z.frontId) ? z.frontId : null;
   for (const u of world.units.values()) {
-    if (u.owner !== f.id || !freeHand(f, u)) continue;
+    if (u.owner !== f.id || !freeHand(f, u, world)) continue;
     const d = dist(u.pos, site.pos);
     const own = fid !== null && u.frontId === fid;
     if (u.def.id === 'engineer') {
@@ -305,7 +316,7 @@ export function planPlaceStructure(world: World, f: Faction, centre: V2, radius:
     if (!site) return;
   }
   const s = site;
-  assignBuilders(world, [s], () => byDistance([...world.units.values()].filter((u) => u.owner === f.id && u.def.id === 'engineer' && freeHand(f, u) && dist(u.pos, s.pos) < PLANS.place.poolR), s.pos));
+  assignBuilders(world, [s], () => byDistance([...world.units.values()].filter((u) => u.owner === f.id && u.def.id === 'engineer' && freeHand(f, u, world) && dist(u.pos, s.pos) < PLANS.place.poolR), s.pos));
 }
 
 // ---------------------------------------------------------------- shared
@@ -416,11 +427,13 @@ function releaseEscrow(world: World, f: Faction, it: PlanItem): void {
 }
 
 /** Keep `buildersPerSite` (trenches: `diggersPerTrench`) assigned to each site, nearest first. */
-function assignBuilders(world: World, sites: Fort[], pool: () => Unit[]): void {
+export function assignBuilders(world: World, sites: Fort[], pool: () => Unit[]): void {
   for (const site of sites) {
-    const want = isStructure(site.kind) ? PLANS.buildersPerSite : PLANS.diggersPerTrench;
+    // 3.0: upgrades, minefields and perimeter repairs are engineer work too (worksTiers.ts).
+    const engineersOnly = isStructure(site.kind) || !!site.upgrade || site.kind === 'minefield' || !!site.permanent;
+    const want = engineersOnly ? PLANS.buildersPerSite : PLANS.diggersPerTrench;
     // The pool's order is the preference (nearest first, or ranked by the pool).
-    const cands = pool().filter((u) => isStructure(site.kind) ? u.def.id === 'engineer' : canDig(u, site));
+    const cands = pool().filter((u) => engineersOnly ? u.def.id === 'engineer' : canDig(u, site));
     let have = 0;
     for (const u of cands) {
       if (jobOf(world, u) === site.id) {
@@ -442,11 +455,16 @@ function canDig(u: Unit, site: Fort): boolean {
   return (site.kind === 'trench' || site.kind === 'sandbag') && (u.def.id === 'engineer' || u.def.id === 'infantry');
 }
 
-/** Not on another errand: alive, not manual / routing / spearhead / op role, not bridging, not in a building. */
-function freeHand(f: Faction, u: Unit): boolean {
+/**
+ * Not on another errand: alive, not manual / routing / spearhead / op role, not bridging, not in a
+ * building, not on an engineer transport job (review HIGH 1: one owner per engineer — a transport
+ * worker belongs to transportjobs until released; transportjobs in turn skips engineers with a job here).
+ */
+export function freeHand(f: Faction, u: Unit, world: World): boolean {
   if (u.hp <= 0 || u.fixed || u.manual || u.routing || u.spearhead || u.fortId !== null || u.mounted) return false;
   if (u.behavior !== 'advance' && u.behavior !== 'rally') return false;
   if (u.opRole !== 'line' && !(u.opRole === 'garrison' && u.opObjective === `hq:${f.id}`)) return false;
+  if (u.def.id === 'engineer' && onTransportJob(world, u)) return false;
   // Engineers at (or near) their front's river crossing stay on the bridge.
   const s = f.fronts.find((x) => x.id === u.frontId);
   return !(u.def.id === 'engineer' && s?.bridgeSite && dist(u.pos, s.bridgeSite.mid) < PLANS.bridgeKeepM);

@@ -8,7 +8,10 @@ import { placeOwner } from '../src/sim/settlements';
 import type { EconBuilding, Place } from '../src/sim/types';
 import type { World } from '../src/sim/world';
 
-const data = loadGameData();
+// The 3.0 capital perimeter (capitalDefence.ts) is off here: its fixed crews would count as the
+// defence of every town near a capital on this small 2-faction map; these tests isolate the raid logic.
+const base = loadGameData();
+const data = { ...base, rules: { ...base.rules, capital_defence: base.rules.capital_defence && { ...base.rules.capital_defence, enabled: false } } };
 
 function makeWorld(): World {
   const m = createMatch(data, { mapId: 'generated', factions: 2, infoMode: 'open', seed: 21, difficulty: 'normal', playerSlot: 0, spectate: true });

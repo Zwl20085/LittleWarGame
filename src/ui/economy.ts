@@ -1,5 +1,6 @@
 import { economyRates } from '../sim/economy';
 import { econCounts } from '../sim/econ';
+import { zoneOutput, zoneRules } from '../sim/econZones';
 import { stockSummary } from '../sim/settlements';
 import type { GameContext } from './context';
 import { h, PressGuard } from './dom';
@@ -13,7 +14,7 @@ export class EconomyPanel {
   /** Income and the investment fund change every second: hold rebuilds while a button is pressed. */
   private readonly guard: PressGuard;
 
-  constructor(private readonly ctx: GameContext) {
+  constructor(private readonly ctx: GameContext, private readonly onEngineering: () => void = () => {}) {
     this.el = h('div', { class: 'eco panel' });
     this.el.style.display = 'none';
     this.guard = new PressGuard(this.el);
@@ -40,7 +41,7 @@ export class EconomyPanel {
       return;
     }
     this.el.style.display = '';
-    const sig = JSON.stringify([f.alloc.map((a) => Math.round(a * 100)), f.locks, f.autoEconomy, f.autoInvest, Math.round(f.econFund.p), Math.round(f.econFund.m), f.stewardReason, f.stewardParams, Math.round(f.incomeP), Math.round(f.incomeM), Math.round(f.econP), Math.round(f.econM), Math.round(f.depot / 10), econCounts(w, f.id)]);
+    const sig = JSON.stringify([f.alloc.map((a) => Math.round(a * 100)), f.locks, f.autoEconomy, f.autoInvest, Math.round(f.econFund.p), Math.round(f.econFund.m), f.stewardReason, f.stewardParams, Math.round(f.incomeP), Math.round(f.incomeM), Math.round(f.econP), Math.round(f.econM), Math.round(f.depot / 10), econCounts(w, f.id), w.econZones.map((z) => (z.owner === f.id ? `${z.level}${z.ruined ? 'x' : ''}${z.linked ? 'l' : ''}` : '')).join()]);
     if (sig === this.sig || this.guard.held) return;
     this.sig = sig;
     const rates = economyRates(f.alloc, w.data.rules);
@@ -51,7 +52,8 @@ export class EconomyPanel {
       h('div', { class: 'title' }, t('eco.title'), h('button', { class: 'btn icon close', onclick: () => this.toggle() }, '×')),
       h('div', { class: 'row' },
         h('button', { class: `btn ${f.autoEconomy ? 'on' : ''}`, onclick: () => this.ctx.issue({ type: 'setAuto', on: !f.autoEconomy }) }, f.autoEconomy ? t('eco.autoOn') : t('eco.autoOff')),
-        h('button', { class: 'btn', onclick: () => this.ctx.issue({ type: 'resetAlloc' }) }, t('eco.reset'))),
+        h('button', { class: 'btn', onclick: () => this.ctx.issue({ type: 'resetAlloc' }) }, t('eco.reset')),
+        this.ctx.match.world.transport ? h('button', { class: 'btn', onclick: () => this.onEngineering() }, t('eng.btn')) : null),
       // 2.2.1: the steward invests in economic buildings unless the player takes it over.
       h('div', { class: 'row' },
         h('button', { class: `btn ${f.autoInvest ? 'on' : ''}`, title: t('eco.investTip'), onclick: () => this.ctx.issue({ type: 'setAutoInvest', on: !f.autoInvest }) }, f.autoInvest ? t('eco.investOn') : t('eco.investOff')),
@@ -83,6 +85,24 @@ export class EconomyPanel {
       (() => {
         const s = stockSummary(w, f);
         return h('div', { class: 'small' }, t('eco.stock', { s: Math.round(s.stock), c: Math.round(s.cap) }));
+      })(),
+      // 3.0: economic zones — summary and the build button (click on the map to site one).
+      (() => {
+        let lv = 0;
+        let n = 0;
+        let p = 0;
+        let m = 0;
+        for (const z of w.econZones) {
+          if (z.owner !== f.id) continue;
+          n++;
+          lv += z.level;
+          const o = zoneOutput(w, z);
+          p += o.p;
+          m += o.m;
+        }
+        return h('div', { class: 'row' },
+          h('button', { class: 'btn', title: t('zone.buildTip'), disabled: !zoneRules(w), onclick: () => { this.ctx.mode = { kind: 'placeZone' }; } }, t('zone.build')),
+          h('span', { class: 'small' }, t('zone.count', { n, lv, p: Math.round(p), m: Math.round(m) })));
       })(),
       h('div', { class: 'reason' }, t(f.stewardReason, f.stewardParams)),
     );

@@ -7,7 +7,8 @@
 //   units.csv         unit.infantry.cost_p=90      unit.*.build_seconds*=0.7   (`*` = every row)
 //   weapons.csv       weapon.rifle.damage=40       weapon.*.damage*=1.2
 //
-// Operators: `=` sets, `*=` multiplies, `+=` adds (numbers only). Unknown paths are an error,
+// Operators: `=` sets, `*=` multiplies, `+=` adds (numbers only), `:=` sets a rules leaf that may be
+// absent (an optional key, e.g. a structure's absorb_share). Other unknown paths are an error,
 // so a typo can never silently produce a "no change" experiment.
 
 export interface DataText {
@@ -20,12 +21,12 @@ export interface Override {
   readonly raw: string;
   readonly target: 'rules' | 'unit' | 'weapon';
   readonly path: readonly string[];
-  readonly op: '=' | '*=' | '+=';
+  readonly op: '=' | '*=' | '+=' | ':=';
   readonly value: unknown;
 }
 
 // Non-greedy path so `a.b.**=0.5` reads as path `a.b.*`, operator `*=`.
-const SET_RE = /^([A-Za-z0-9_.*-]+?)\s*(\*=|\+=|=)\s*(.+)$/;
+const SET_RE = /^([A-Za-z0-9_.*-]+?)\s*(\*=|\+=|:=|=)\s*(.+)$/;
 
 function parseValue(text: string): unknown {
   try {
@@ -41,7 +42,7 @@ export function parseOverride(raw: string): Override {
   const segs = m[1].split('.');
   const op = m[2] as Override['op'];
   const value = parseValue(m[3].trim());
-  if (op !== '=' && typeof value !== 'number') throw new Error(`--set "${raw}": ${op} needs a number`);
+  if (op !== '=' && op !== ':=' && typeof value !== 'number') throw new Error(`--set "${raw}": ${op} needs a number`);
   if (segs[0] === 'unit' || segs[0] === 'weapon') {
     if (segs.length !== 3) throw new Error(`--set "${raw}": use ${segs[0]}.<id|*>.<column>`);
     return { raw, target: segs[0], path: segs.slice(1), op, value };
@@ -52,6 +53,7 @@ export function parseOverride(raw: string): Override {
 }
 
 function combine(old: unknown, o: Override): unknown {
+  if (o.op === ':=') return o.value;
   if (o.op === '=') return typeof old === 'number' && typeof o.value === 'string' ? Number(o.value) : o.value;
   if (typeof old !== 'number') throw new Error(`--set "${o.raw}": current value is not a number`);
   const v = o.value as number;
@@ -63,7 +65,7 @@ function setAt(node: Record<string, unknown>, path: readonly string[], o: Overri
   const keys = key === '*' ? Object.keys(node) : [key];
   let hits = 0;
   for (const k of keys) {
-    if (!(k in node)) throw new Error(`--set "${o.raw}": no rules key "${at}${k}"`);
+    if (!(k in node) && !(o.op === ':=' && rest.length === 0 && key !== '*')) throw new Error(`--set "${o.raw}": no rules key "${at}${k}"`);
     if (rest.length === 0) {
       if (key === '*' && typeof node[k] !== 'number' && o.op !== '=') continue;
       node[k] = combine(node[k], o);
@@ -121,4 +123,9 @@ export function applyOverrides(data: DataText, overrides: readonly Override[]): 
     else weapons = setCsv(weapons, o, 'weapons.csv');
   }
   return { units, weapons, rules };
+}
+
+/** Overrides from the LAB_SET environment variable (`a.b=1;unit.x.cost_p*=1.1`), for tuning A/B runs of any lab. */
+export function envOverrides(): Override[] {
+  return (process.env.LAB_SET ?? '').split(';').map((s) => s.trim()).filter(Boolean).map(parseOverride);
 }

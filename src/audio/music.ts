@@ -1,18 +1,19 @@
 import type { Mixer } from './mixer';
 import type { MusicBankMessage } from './music.worker';
 import { renderSample, sampleId, sampleKeys, sampleRoot, type MusicSample, type SampleKey } from './orchestra';
+import type { MusicEventKind } from './director';
 import { brightness, Conductor, LAYER_BUS, LAYERS, layerTargets, type Layer, type MusicMode, type NoteEv, type Outcome, type Stinger } from './score';
 
 export type { MusicMode, Outcome, Stinger } from './score';
 
 /**
  * Adaptive orchestral score (WWII war-film style) in D minor. The Conductor (score.ts)
- * composes one bar at a time from the game state; this class plays it on the audio clock
- * with a sampled orchestra built in a worker (orchestra.ts). Nine section buses
- * (strings, bass, winds, horns, brass, ostinato, tremolo, percussion, lead) crossfade
- * smoothly with battle intensity into the music bus; the mixer's master glue compressor
- * and limiter provide the dynamics control (a second compressor here flattened the
- * calm-versus-battle contrast through its automatic make-up gain).
+ * composes one bar at a time from the game state, the director's situation events and
+ * the doctrine colour; this class plays it on the audio clock with a sampled orchestra
+ * built in a worker (orchestra.ts). Ten section buses (strings, bass, winds, horns,
+ * trumpets, trombones, ostinato, tremolo, percussion, lead) crossfade smoothly with the
+ * effective intensity into the music bus; the mixer's music EQ, glue compressor and
+ * limiter provide the dynamics control. See docs/MUSIC.md.
  */
 
 /** Game-side musical context beyond intensity (see AudioSession). */
@@ -28,7 +29,7 @@ const LOOKAHEAD = 0.35;
 /** Overall score trim so the orchestra sits under the battle effects. */
 const SCORE_TRIM = 0.8;
 /** Voice budget: above this many sounding notes, quiet notes are skipped. */
-const MAX_NOTES = 48;
+const MAX_NOTES = 64;
 const QUIET_VEL = 0.12;
 
 interface Played {
@@ -60,6 +61,8 @@ export class Music {
   private mode: MusicMode = 'title';
   private retreat = false;
   private outcome: Outcome = null;
+  /** False while the music volume is zero / muted: the score keeps time but plays nothing. */
+  private audible = true;
   private nextBar = 0;
   private x = 0;
   private lastBright = -1;
@@ -159,6 +162,25 @@ export class Music {
     this.mode = m;
   }
 
+  /** Situation event (homeThreatened, offensiveLaunched, …); takes effect at the next bar. */
+  event(kind: MusicEventKind): void {
+    this.conductor.event(kind);
+  }
+
+  /** Doctrine colour (builder / blitz / attrition / maneuver); anything else = default score. */
+  setDoctrine(id: unknown): void {
+    this.conductor.setDoctrine(id);
+  }
+
+  get situation(): string {
+    return this.conductor.situation;
+  }
+
+  /** Skip note scheduling (CPU) while the music cannot be heard; the conductor keeps time. */
+  setAudible(on: boolean): void {
+    this.audible = on;
+  }
+
   setMood(m: MusicMood): void {
     this.retreat = m.retreat;
     this.outcome = m.outcome;
@@ -169,7 +191,7 @@ export class Music {
   update(intensity: number): void {
     const now = this.c.currentTime;
     this.pump(3);
-    this.x += (intensity - this.x) * 0.02;
+    this.x += (this.conductor.effectiveIntensity(intensity) - this.x) * 0.02;
     this.applyBuses(now);
     // Resync after the tab was hidden (rAF stopped): never schedule in the past.
     if (this.nextBar < now - 0.05) this.nextBar = now + 0.05;
@@ -177,6 +199,7 @@ export class Music {
       const plan = this.conductor.nextBar({ mode: this.mode, intensity, retreat: this.retreat, outcome: this.outcome });
       const spb = 60 / plan.bpm;
       for (const e of plan.events) {
+        if (!this.audible) break;
         try {
           this.play(e, this.nextBar + e.beat * spb, spb);
         } catch (err: unknown) {
@@ -195,7 +218,7 @@ export class Music {
   }
 
   private applyBuses(now: number): void {
-    const targets = layerTargets(this.x, this.mode, this.retreat);
+    const targets = layerTargets(this.x, this.mode, this.conductor.sombre(this.retreat), this.conductor.situation);
     for (const l of LAYERS) {
       const b = this.bus[l];
       const g = targets[l];

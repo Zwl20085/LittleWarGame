@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { loadGameData } from '../src/data';
+import { perimeterPosts } from '../src/sim/capitalDefence';
 import { createMatch, step } from '../src/sim/sim';
 import { coverAgainst } from '../src/sim/damage';
 import { populationOf } from '../src/sim/production';
@@ -223,7 +224,9 @@ describe('permanent works (2.1)', () => {
       const city = w.cityOf(f.id);
       const hq = w.hqPos(f.id);
       const pills = w.forts.filter((x) => x.owner === f.id && x.kind === 'pillbox' && x.progress >= 1 && dist(x.pos, hq) < 250);
-      const fixed = [...w.units.values()].filter((u) => u.owner === f.id && u.fixed);
+      // 3.0: the perimeter's fixed crews (capitalDefence.ts) are not strongpoint MGs.
+      const crews = new Set(perimeterPosts(w).map((p) => p.crewId));
+      const fixed = [...w.units.values()].filter((u) => u.owner === f.id && u.fixed && !crews.has(u.id));
       // Every strongpoint is a pillbox (or, with no buildable ground near it, the old fixed MG).
       expect(pills.length + fixed.length).toBe(city.strongpoints.length);
       expect(pills.length).toBeGreaterThan(0);
@@ -241,7 +244,7 @@ describe('permanent works (2.1)', () => {
     expect(pill.weapon).toBe('pillbox_mg');
     expect([mg.range, mg.damage, mg.interval, mg.suppression]).toEqual([200, 90, 1, 24]);
     expect([pill.cost_p, pill.cost_m, pill.work_seconds, pill.max_hp]).toEqual([6, 50, 60, 2750]);
-    expect([bunker.cost_p, bunker.cost_m, bunker.work_seconds, bunker.max_hp]).toEqual([12, 100, 100, 5625]);
+    expect([bunker.cost_p, bunker.cost_m, bunker.work_seconds, bunker.max_hp]).toEqual([12, 100, 100, 7000]);
     const { p, facing } = siteNearHome(w);
     const fort = placeStructure(w, 0, 'bunker', p, facing)!;
     expect(fort.progress).toBe(1);

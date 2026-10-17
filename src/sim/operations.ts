@@ -4,7 +4,9 @@ import { enemyDistance } from './frontai';
 import { EAGER, eagerOn, stormOn } from './strategyai';
 import { navPost } from './crewai';
 import { boundOrder } from './frontref';
+import { raidIntervalMul, raidsHeld } from './doctrines';
 import type { World } from './world';
+import { segmentsByProximity } from './pickets';
 
 /** Query scratch for crowding() (called per blast victim). */
 const SC_CROWD: Unit[] = [];
@@ -48,6 +50,9 @@ export function frontSegments(world: World, f: Faction, cells: V2[]): V2[][] {
     while (a < -Math.PI) a += 2 * Math.PI;
     return { c, a };
   }).sort((p, q) => p.a - q.a);
+  // 3.0 (pickets.ts): each front takes the stretch nearest its own battle line (fronts are not kept in angle order).
+  const near = segmentsByProximity(world, f, withAng.map((p) => p.c));
+  if (near) return near;
   // Equal shares by count, in left → right order (matching front keys left/center/right).
   const out: V2[][] = f.fronts.map(() => []);
   withAng.forEach((p, i) => out[Math.min(groups - 1, Math.floor((i / withAng.length) * groups))].push(p.c));
@@ -171,7 +176,10 @@ export function planOperations(world: World, f: Faction): void {
   }
   // Raids through the weakest front stretch toward the enemy rear.
   if (!contact || finisher || world.time < f.nextRaidAt) return;
-  f.nextRaidAt = world.time + OPS.raidEverySeconds;
+  // 3.0: the doctrine's convoy-raid cadence (doctrines.ts; Infinity = never).
+  f.nextRaidAt = world.time + OPS.raidEverySeconds * raidIntervalMul(world, f, 'convoy');
+  // 3.0 (WP-Y): a doctrine AI keeps its home-defence reserve (no raid with the home alarm on or the raid share used up).
+  if (raidsHeld(world, f)) return;
   const cells = world.frontInfo[f.id].cells;
   const gap = weakestPoint(world, f.id, cells);
   if (!gap) return;

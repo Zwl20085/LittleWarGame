@@ -13,6 +13,7 @@ import { availableM } from './production';
 import { thinkConvoyTruck } from './convoy';
 import { thinkBridgeBuilder } from './engineering';
 import { structureDuty } from './structures';
+import { transportDuty } from './transportjobs';
 import { enemyDistance, safeRear } from './frontai';
 import { enemyConvoyTargets } from './operations';
 import { EAGER, eagerOn, stormOn } from './strategyai';
@@ -26,6 +27,9 @@ import { dist, headingTo, type V2 } from './vec';
 import type { World } from './world';
 import { ARMOUR_AB, orphanTank, paceArmour } from './armour';
 import { thinkEconRaid } from './econwar';
+import { thinkRailRaid } from './railraid';
+import { infiltrationDuty } from './infiltration';
+import { retreatHpOf } from './doctrines';
 
 /** Deterministic per-unit spread offset so a squad group doesn't stack on one point. */
 function spread(u: Unit, radius: number): V2 {
@@ -69,7 +73,8 @@ function nearRepairPoint(world: World, u: Unit): boolean {
 
 function needsRetreat(world: World, u: Unit): boolean {
   if (u.def.id === 'supply_truck') return u.hp <= u.def.maxHp * 0.3;
-  if (u.hp <= u.def.maxHp * world.data.rules.morale.auto_retreat_hp_ratio) return true;
+  // 3.0: attrition preserves its force (doctrines.retreatHp); others, and every capital guard, the rules default.
+  if (u.hp <= u.def.maxHp * retreatHpOf(world, u)) return true;
   return false;
 }
 
@@ -139,6 +144,8 @@ export function thinkUnit(world: World, u: Unit): void {
   }
   if (u.opRole === 'garrison' && hqDuty(world, u)) return;
   if (u.def.id !== 'supply_truck' && structureDuty(world, u, s)) return;
+  // 3.0: an engineer assigned to a road / rail job (transportjobs.ts).
+  if (transportDuty(world, u)) return;
   // 2.2: shelled in the open → the nearest free building's lee wall until the shelling stops (shelter.ts).
   // (2.2 wave 2: a raid party keeps moving under fire — getting through is its job.)
   if (u.opRole !== 'raid' && takeShelter(world, u)) return;
@@ -151,6 +158,7 @@ export function thinkUnit(world: World, u: Unit): void {
   if (u.opRole === 'siege' && thinkSiegeParty(world, u, s)) return;
   if (u.opRole === 'raid' && thinkOpRaid(world, u)) return;
   if (u.opRole === 'rearguard' && thinkRearGuard(world, u)) return;
+  if (infiltrationDuty(world, u)) return; // 3.0 hunt / rear screen / zone-of-control chase
   // 2.1: a unit on a binding line order keeps its place on the line (no truck hunts / escorts away from it).
   const onLine = boundLine(s);
   // 2.2 (V22_SPEC §7): light tanks stay with their armour group; recon hunts the trucks.
@@ -725,6 +733,8 @@ function thinkInfiltrator(world: World, u: Unit): boolean {
 function thinkOpRaid(world: World, u: Unit): boolean {
   // 2.2: an economic raid party goes for its building (econwar.ts).
   if (u.opObjective?.startsWith('econ:')) return thinkEconRaid(world, u);
+  // 3.0: a rail raid party goes for its track point (railraid.ts).
+  if (u.opObjective?.startsWith('rail:')) return thinkRailRaid(world, u);
   if (u.routing || u.manual || world.time > u.opUntil || u.hp < u.def.maxHp * 0.4 || !u.opTarget) {
     u.opRole = 'line';
     u.opTarget = null;
