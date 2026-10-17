@@ -74,8 +74,11 @@ describe('3.0 debug lab: anomaly classifier', () => {
     const enemy = squad(w, 1, 'infantry', { x: at.x + 300, z: at.z }, 1, 1);
     expect(ofClass(after(w, p, 100), 'ammo_starved', full)).toBeUndefined();
     for (const u of full) u.ammo = 0.05;
-    // Still rearming within the last 90 s → not starved.
-    expect(ofClass(after(w, p, 60, () => full.forEach((u) => { u.rearming = true; })), 'ammo_starved', full)).toBeUndefined();
+    // Drew ammunition within the last 90 s → not starved.
+    expect(ofClass(after(w, p, 60, () => full.forEach((u) => { u.ammo += 0.02; })), 'ammo_starved', full)).toBeUndefined();
+    // "Rearming" for minutes without receiving anything → starved.
+    for (const u of full) u.rearming = true;
+    expect(ofClass(after(w, p, 100), 'ammo_starved', full)).toBeDefined();
     for (const u of full) u.rearming = false;
     enemy[0].hp = 0;
     expect(ofClass(after(w, p, 100), 'ammo_starved', full)).toBeUndefined();

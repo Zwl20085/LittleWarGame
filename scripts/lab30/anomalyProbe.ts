@@ -111,7 +111,8 @@ export function anomalySecond(w: World, p: AnomalyProbe): void {
       tr = { firstSeen: t, lastAmmo: u.ammo, lastRearmAt: t, idleSince: t, stuckX: u.pos.x, stuckZ: u.pos.z, stuckSince: t, failGoal: '', failCount: 0, failSince: t, lastFailed: false, lastCargo: u.cargo, lastDeliveryAt: t };
       p.units.set(u.id, tr);
     }
-    if (u.rearming || u.ammo > tr.lastAmmo + 1e-6) tr.lastRearmAt = t;
+    // Rearm activity = ammunition actually received (a unit "rearming" on a long walk for minutes is still starved).
+    if (u.ammo > tr.lastAmmo + 1e-6) tr.lastRearmAt = t;
     tr.lastAmmo = u.ammo;
     if (!isIdle(w, u)) tr.idleSince = t;
     if (!wantsMove(u) || Math.hypot(u.pos.x - tr.stuckX, u.pos.z - tr.stuckZ) > ANOMALY.stuck.moveM) {

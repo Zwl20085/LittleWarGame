@@ -77,7 +77,7 @@ export function truckCause(w: World, u: Unit): string {
     }
     case 'out': return u.pathFailed ? CAUSE.pathBlocked : 'never reaches its destination';
     case 'unload': return 'no takers within hand-over radius';
-    default: return 'turned back (threat / failed path)';
+    default: return 'driving back loaded (threat / no takers / failed path)';
   }
 }
 
