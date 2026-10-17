@@ -23,6 +23,12 @@ Branch `worktree-agent-a8afeff94d884d5c5` (reset to `feat/v3.0` fd3a892). Spec: 
 ## Not done / open
 - roadside.gif "inside the building" moment: three seeds tried, the staged shelling never housed a squad in a
   roadside building on camera (`roadside.js` `__inside`); the 2.2 clip is kept (re-encoded).
-- rail.gif has no engineer-road moment: the engineer road jobs stalled around 55 % in every try.
+- rail.gif: fixed after merging feat/v3.0 (WP-REV engineer double-booking fix). The road job now runs to
+  completion (seed 42: 0.51 at 914 s, done before 1060 s, `builtRoads` 1) and the GIF ends on the new road.
+- Zone raid: still not recorded on the merged tree. The staged party (attack-move on the zone) was 124 m away and
+  did no damage in 14 game s on one run, and 1 470 m away and never arrived on the next; zones.gif unchanged.
+- Minefield: the two tanks are now ordered through the field; on seed 42 the charges went off (field HP 600 → 420,
+  the medium tank died) but the mine blast (radius 4 m) is not readable at README size. works.gif shows the heavy
+  tank caught in the field. Worth a bigger mine explosion FX if the effect should read on screen.
 - Fortress close-up: the only bunkers near capitals stand between town buildings; works.gif shows the perimeter
   strongpoint, an AT emplacement and a minefield instead.
