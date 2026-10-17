@@ -6,7 +6,7 @@ import { armyScale } from './settlements';
 import { Ground } from './terrain';
 import { transportRules } from './transport';
 import type { TransportJob, TransportJobKind } from './transportstate';
-import type { Unit } from './types';
+import type { Faction, Unit } from './types';
 import { dist, type V2 } from './vec';
 import type { World } from './world';
 
@@ -276,33 +276,57 @@ export function needRoadLinks(world: World, f: number, extra: readonly V2[] = []
 
 const nextThink = new WeakMap<World, number[]>();
 
+/** An engineer of `f` that could take a job now (alive, not on a manual order, not riding, not already on a job). */
+export function freeEngineer(world: World, f: number): boolean {
+  const st = world.transport;
+  if (!st) return false;
+  const busy = new Set(st.jobs.map((j) => j.worker));
+  for (const u of world.aliveUnits) {
+    if (u.owner === f && u.hp > 0 && u.def.id === 'engineer' && !u.manual && !u.rail && !busy.has(u.id)) return true;
+  }
+  return false;
+}
+
 /**
- * Once per game second (sim.ts): assign engineers, drop stale jobs, and the small AI: every
- * `ai.think_seconds` an AI faction with no open job repairs one of its cut lines, else lays one
- * missing road link.
+ * HQ think (command.thinkHighCommand, every HQ think) for an AI faction: every `ai.think_seconds`,
+ * with no open job, an engineer free and a reserve in the stock, repair one of its own cut lines,
+ * else lay one missing road link (settlements and `extraSites` cut off from the capital's net).
+ * `extraSites` is the seam for WP-F economic zones (pass the zone positions once `econZones` lands).
  */
-export function transportSecond(world: World): void {
+export function thinkTransport(world: World, f: Faction, extraSites: readonly V2[] = []): void {
   const st = world.transport;
   const t = transportRules(world.data.rules);
-  if (!st || !t) return;
+  const ai = t?.ai;
+  if (!st || !t || !ai?.enabled || !f.alive || f.isPlayer) return;
+  const due = nextThink.get(world) ?? world.factions.map((x) => x.id * 3);
+  nextThink.set(world, due);
+  if (world.time < due[f.id]) return;
+  due[f.id] = world.time + ai.think_seconds;
+  if (st.jobs.some((j) => j.owner === f.id)) return;
+  if (!freeEngineer(world, f.id)) return;
+  const cut = st.lines.find((l) => l.cut && stationOwner(world, st.stations[l.a]) === f.id && stationOwner(world, st.stations[l.b]) === f.id);
+  if (cut && railRules(world) && startRailRepair(world, f.id, cut.id).ok) return;
+  const want = needRoadLinks(world, f.id, extraSites)[0];
+  const road = roadRules(world);
+  if (!want || !road) return;
+  // Keep a reserve: the road is paid from what is left after a few of its own cost.
+  const cost = (road.cost_m_k_per_100m * armyScale(world) * dist(want.from, want.to)) / 100;
+  if (availableM(world, f) < cost * ROAD_RESERVE) return;
+  startRoadJob(world, f.id, want.from, want.to);
+}
+
+/** Road work is only ordered when the stock holds this many times its cost. */
+const ROAD_RESERVE = 3;
+
+/** Once per game second (sim.ts): assign engineers and drop stale jobs. The AI side is `thinkTransport`. */
+export function transportSecond(world: World): void {
+  const st = world.transport;
+  if (!st || !transportRules(world.data.rules)) return;
   for (let i = st.jobs.length - 1; i >= 0; i--) {
     const j = st.jobs[i];
     if (!world.factions[j.owner]?.alive || world.time - j.workedAt > STALE_S) st.jobs.splice(i, 1);
   }
   if (st.jobs.length > 0) assignWorkers(world);
-  const ai = t.ai;
-  if (!ai?.enabled) return;
-  const due = nextThink.get(world) ?? world.factions.map((f) => f.id * 3);
-  nextThink.set(world, due);
-  for (const f of world.factions) {
-    if (!f.alive || f.isPlayer || world.time < due[f.id]) continue;
-    due[f.id] = world.time + ai.think_seconds;
-    if (st.jobs.filter((j) => j.owner === f.id).length >= ai.max_open_jobs) continue;
-    const cut = st.lines.find((l) => l.cut && stationOwner(world, st.stations[l.a]) === f.id && stationOwner(world, st.stations[l.b]) === f.id);
-    if (cut && railRules(world) && startRailRepair(world, f.id, cut.id).ok) continue;
-    const want = needRoadLinks(world, f.id)[0];
-    if (want) startRoadJob(world, f.id, want.from, want.to);
-  }
 }
 
 /** Open transport jobs of a faction (lab / HUD). */

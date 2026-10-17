@@ -2,6 +2,7 @@ import type { GameRenderer } from '../render/renderer';
 import type { Command, CommandBus } from '../sim/commands';
 import type { Match } from '../sim/sim';
 import type { DirectiveKind } from '../sim/types';
+import type { V2 } from '../sim/vec';
 
 export type InputMode =
   | { kind: 'normal' }
@@ -10,7 +11,10 @@ export type InputMode =
    * 2.2: a directive was just issued and its optional place is being picked on the map:
    * click = axis (main effort / threatened place), drag (fortify) = a fortified line.
    */
-  | { kind: 'directive'; directive: DirectiveKind };
+  | { kind: 'directive'; directive: DirectiveKind }
+  /** 3.0 engineering map picks: a road a -> b (a = first point), or a station then a town for a rail extension. */
+  | { kind: 'engineer'; tool: 'road'; a: V2 | null }
+  | { kind: 'engineer'; tool: 'extend'; station: number | null };
 
 /** Shared state between the loop, input handling and HUD panels. */
 export interface GameContext {

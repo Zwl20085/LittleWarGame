@@ -13,7 +13,7 @@ export class EconomyPanel {
   /** Income and the investment fund change every second: hold rebuilds while a button is pressed. */
   private readonly guard: PressGuard;
 
-  constructor(private readonly ctx: GameContext) {
+  constructor(private readonly ctx: GameContext, private readonly onEngineering: () => void = () => {}) {
     this.el = h('div', { class: 'eco panel' });
     this.el.style.display = 'none';
     this.guard = new PressGuard(this.el);
@@ -51,7 +51,8 @@ export class EconomyPanel {
       h('div', { class: 'title' }, t('eco.title'), h('button', { class: 'btn icon close', onclick: () => this.toggle() }, '×')),
       h('div', { class: 'row' },
         h('button', { class: `btn ${f.autoEconomy ? 'on' : ''}`, onclick: () => this.ctx.issue({ type: 'setAuto', on: !f.autoEconomy }) }, f.autoEconomy ? t('eco.autoOn') : t('eco.autoOff')),
-        h('button', { class: 'btn', onclick: () => this.ctx.issue({ type: 'resetAlloc' }) }, t('eco.reset'))),
+        h('button', { class: 'btn', onclick: () => this.ctx.issue({ type: 'resetAlloc' }) }, t('eco.reset')),
+        this.ctx.match.world.transport ? h('button', { class: 'btn', onclick: () => this.onEngineering() }, t('eng.btn')) : null),
       // 2.2.1: the steward invests in economic buildings unless the player takes it over.
       h('div', { class: 'row' },
         h('button', { class: `btn ${f.autoInvest ? 'on' : ''}`, title: t('eco.investTip'), onclick: () => this.ctx.issue({ type: 'setAutoInvest', on: !f.autoInvest }) }, f.autoInvest ? t('eco.investOn') : t('eco.investOff')),
