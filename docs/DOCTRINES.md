@@ -2,7 +2,11 @@
 
 Every faction has a **doctrine**. An AI supreme HQ's doctrine scales the levers the existing AI
 already reads; there is no second AI. The player's faction also draws a doctrine (the music and
-spectate use it) but is never steered by it.
+spectate use it; a custom game lets the player pick it, 玩家作风 / Your doctrine). 3.0.1: while
+**Auto HQ** (`Faction.autoCommand`, HQ card; command `setAutoCommand`) is on — the default — the
+doctrine AI chooses the player's directive and auto research follows its upgrade order; a manual
+directive other than Advance pauses it for `command.auto_resume_s` (600 s). Its other levers
+(production mix, raids, retreat, compliance) never steer the player.
 
 | id | zh | in one line |
 |---|---|---|
