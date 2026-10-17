@@ -19,7 +19,7 @@ const SLEEPER_STEP = 2.4;
 const PIECE = 6;
 const GAUGE = 1.44;
 const MAX_TRAINS = 48;
-const BALLAST = new THREE.Color('#7b766b');
+const BALLAST = new THREE.Color('#5c574f');
 const BALLAST_CUT = new THREE.Color('#7d4a3a');
 const SLEEPER = new THREE.Color('#4b3a2a');
 const RAIL = new THREE.Color('#9a9a96');
@@ -94,7 +94,7 @@ export class RailField {
     const box = new THREE.BoxGeometry(1, 1, 1);
     const plain = new THREE.MeshStandardMaterial({ roughness: 0.95, metalness: 0 });
     const metal = new THREE.MeshStandardMaterial({ roughness: 0.4, metalness: 0.6, color: RAIL });
-    const bed = this.instanced(box, plain, beds, (p) => [p.len + 0.3, 0.35, 3.2, 0.12], (p) => (p.cut ? BALLAST_CUT : BALLAST));
+    const bed = this.instanced(box, plain, beds, (p) => [p.len + 0.3, 0.35, 4.4, 0.12], (p) => (p.cut ? BALLAST_CUT : BALLAST));
     const sleepers = this.instanced(box, plain, ties, () => [0.26, 0.14, 2.5, 0.33], () => SLEEPER);
     const railPieces = beds.flatMap((p) => [-1, 1].map((side) => ({ ...p, side })));
     const rails = this.instanced(box, metal, railPieces, (p) => [p.len + 0.05, 0.14, 0.08, 0.44], null, (p) => (p as Piece & { side: number }).side * GAUGE * 0.5);

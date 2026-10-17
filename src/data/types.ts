@@ -179,6 +179,8 @@ export interface TransportRules {
     readonly trains_per_faction: number;
     readonly city_link_max_m: number;
     readonly stock_transfer_per_min_k: number;
+    /** Supply trucks board trains too (default false: supply rides as stock transfer). */
+    readonly trucks_ride?: boolean;
     readonly check_seconds: number;
     readonly frontline_sample_m: number;
     readonly repair: { readonly cost_p_k: number; readonly cost_m_k: number; readonly work_seconds: number };

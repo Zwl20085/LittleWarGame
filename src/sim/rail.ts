@@ -223,6 +223,8 @@ export function railLeg(world: World, u: Unit, dest: V2): RailLeg {
   }
   const r = railRules(world);
   if (!r || u.fixed || u.fortId !== null) return null;
+  // Supply moves by rail as stock (stockTransfer); trucks only ride when the rules say so (lab: they lost time waiting).
+  if (u.def.id === 'supply_truck' && !r.trucks_ride) return null;
   const d = dist(u.pos, dest);
   if (d < r.min_trip_m) return null;
   const last = decided.get(u);

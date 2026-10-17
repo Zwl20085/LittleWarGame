@@ -279,6 +279,8 @@
       "trains_per_faction": 4,
       "city_link_max_m": 1400,
       "stock_transfer_per_min_k": 3,
+      "trucks_ride": false,
+      "trucks_ride_comment": "Lab 3.0 transport: trucks boarding trains made convoy trips 40 % fewer (waits at stations); supply moves by rail as the stock transfer between the two settlements of a held line instead.",
       "check_seconds": 2,
       "frontline_sample_m": 100,
       "repair": {"cost_p_k": 2, "cost_m_k": 12, "work_seconds": 150},
