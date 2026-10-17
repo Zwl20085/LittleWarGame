@@ -1,5 +1,6 @@
 import type { SnapshotCursor } from './snapshot';
-import type { RailLine, RailStation, Train } from './transportstate';
+import { BRIDGE_W, paintRoad, roadHalfWidth } from './transportjobs';
+import type { BuiltRoad, RailLine, RailStation, Train } from './transportstate';
 import type { RailRide, Unit } from './types';
 import type { V2 } from './vec';
 import type { World } from './world';
@@ -25,7 +26,7 @@ export interface TransportSnap {
   readonly geo: {
     readonly stations: { pos: V2; placeIdx: number }[];
     readonly lines: { a: number; b: number; pts: V2[]; built: boolean }[];
-    readonly builtRoads: { a: V2; b: V2 }[];
+    readonly builtRoads: readonly BuiltRoad[];
   } | null;
 }
 
@@ -62,7 +63,10 @@ export function applyTransport(w: World, snap: TransportSnap): void {
       st.stations[l.a]?.lines.push(i);
       st.stations[l.b]?.lines.push(i);
     }
-    for (let i = st.builtRoads.length; i < g.builtRoads.length; i++) st.builtRoads.push(g.builtRoads[i]);
+    for (let i = st.builtRoads.length; i < g.builtRoads.length; i++) {
+      st.builtRoads.push(g.builtRoads[i]);
+      mirrorRoad(w, g.builtRoads[i]);
+    }
     st.version = snap.version;
   }
   for (let i = 0; i < st.lines.length && i < snap.lineState.length; i++) {
@@ -78,6 +82,18 @@ export function applyTransport(w: World, snap: TransportSnap): void {
       pos: { x: b[o + 2], z: b[o + 3] }, prev: { x: b[o + 4], z: b[o + 5] }, heading: b[o + 6], riders: new Array<number>(b[o + 7]).fill(-1), timer: 0,
     });
   }
+}
+
+/**
+ * Review MEDIUM 5: replay an engineer road on the main-thread world as transportjobs.completeJob did
+ * in the worker (ground paint, bridged gaps, road graph), so the renderer, minimap and terrain tip
+ * read the same ground as the sim.
+ */
+function mirrorRoad(w: World, r: BuiltRoad): void {
+  paintRoad(w, r.a, r.b, roadHalfWidth(w));
+  for (const [p, q] of r.gaps ?? []) w.terrain.addBridge(p, q, BRIDGE_W);
+  w.onTerrainChanged?.(r.a, r.b);
+  w.transport?.roads.addSegment(r.a, r.b);
 }
 
 /** Mirror-side ride record of a unit the worker reports as aboard (the renderer hides it). */

@@ -8,7 +8,8 @@ import { freeHand } from '../src/sim/fortplans';
 import { normalizedWeights } from '../src/sim/production';
 import { createMatch, type Match } from '../src/sim/sim';
 import { assignJob, dropJob } from '../src/sim/structures';
-import { jobFront, needRoadLinks, roadSegmentOk, startRoadJob, thinkTransport, transportSecond } from '../src/sim/transportjobs';
+import { applyTransport, packTransport } from '../src/sim/transportsnap';
+import { completeJob, jobFront, needRoadLinks, roadSegmentOk, startRoadJob, thinkTransport, transportSecond } from '../src/sim/transportjobs';
 import type { TransportJob } from '../src/sim/transportstate';
 import type { ManualTask } from '../src/sim/types';
 import { selectTarget } from '../src/sim/combat';
@@ -260,6 +261,43 @@ describe('review MED 10: cached anchor grid gives the exact rear-depth answer', 
     o.owner = 2;
     check();
   }, 120_000);
+});
+
+describe('review MED 5: engineer roads and their bridges reach the main-thread mirror', () => {
+  it('applyTransport paints the road, lays the bridge and joins the road graph like the worker', () => {
+    const opts = { mapId: 'generated', factions: 4, infoMode: 'open', seed: 7, difficulty: 'normal', playerSlot: 0, spectate: true } as const;
+    const worker = createMatch(data, opts).world;
+    const mirror = createMatch(data, opts).world;
+    // A road across a short water gap (a bridge), else any buildable road.
+    let seg: [V2, V2] | null = null;
+    let bridged = false;
+    for (let x = 300; x < worker.terrain.width - 300 && !bridged; x += 60) for (let z = 300; z < worker.terrain.depth - 300 && !bridged; z += 60) {
+      for (let k = 0; k < 4 && !bridged; k++) {
+        const a = { x, z };
+        const b = { x: x + Math.cos((k * Math.PI) / 4) * 220, z: z + Math.sin((k * Math.PI) / 4) * 220 };
+        const chk = roadSegmentOk(worker, a, b);
+        if (!chk.ok) continue;
+        if (!seg) seg = [a, b];
+        if (chk.gaps.length > 0) { seg = [a, b]; bridged = true; }
+      }
+    }
+    expect(seg).not.toBeNull();
+    const [a, b] = seg!;
+    worker.factions[0].m = 1e5;
+    const res = startRoadJob(worker, 0, a, b);
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    completeJob(worker, res.job);
+    const cursor = { lastLog: null, frontVersion: -1, viewVersion: -1, statusIndex: new Map(), statusSent: 0, sent: 0, defIndex: null, transportVersion: -1 };
+    const edges = mirror.transport!.roads.edges.length;
+    const bridges = mirror.terrain.bridges.length;
+    applyTransport(mirror, packTransport(worker, cursor)!);
+    expect(Array.from(mirror.terrain.ground)).toEqual(Array.from(worker.terrain.ground));
+    expect(mirror.terrain.bridges.length).toBe(worker.terrain.bridges.length);
+    if (bridged) expect(mirror.terrain.bridges.length).toBeGreaterThan(bridges);
+    expect(mirror.transport!.roads.edges.length).toBe(worker.transport!.roads.edges.length);
+    expect(mirror.transport!.roads.edges.length).toBeGreaterThan(edges);
+  }, 180_000);
 });
 
 /** Issue one command as `actor` and return its outcome. */

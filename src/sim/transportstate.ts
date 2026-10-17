@@ -87,6 +87,13 @@ export interface TransportJob {
   unfitSince?: number;
 }
 
+/** An engineer road: a → b, and the water gaps it bridged (mirrored to the main thread, transportsnap.ts). */
+export interface BuiltRoad {
+  readonly a: V2;
+  readonly b: V2;
+  readonly gaps?: readonly (readonly [V2, V2])[];
+}
+
 export interface TransportState {
   readonly roads: RoadNet;
   readonly stations: RailStation[];
@@ -96,7 +103,7 @@ export interface TransportState {
   readonly riders: number[];
   readonly jobs: TransportJob[];
   /** Engineer roads laid so far (render + snapshot). */
-  readonly builtRoads: { a: V2; b: V2 }[];
+  readonly builtRoads: BuiltRoad[];
   nextId: number;
   /** Bumped when lines / stations / built roads change (render rebuilds its meshes). */
   version: number;

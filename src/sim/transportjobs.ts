@@ -39,7 +39,7 @@ const STALE_S = 900;
 /** A worker unfit this long (manual order, routing, riding, beyond ASSIGN_RADIUS_M) is released and replaced (s). */
 const UNFIT_S = 60;
 /** Bridge deck width of an engineer road across a water gap (m). */
-const BRIDGE_W = 9;
+export const BRIDGE_W = 9;
 
 // ------------------------------------------------------------------ starting jobs
 
@@ -178,11 +178,11 @@ export function completeJob(world: World, job: TransportJob): void {
   if (i >= 0) st.jobs.splice(i, 1);
   if (job.kind === 'road') {
     const chk = roadSegmentOk(world, job.a, job.b);
-    paintRoad(world, job.a, job.b, roadRules(world)?.half_width_m ?? 5);
+    paintRoad(world, job.a, job.b, roadHalfWidth(world));
     if (chk.ok) for (const [p, q] of chk.gaps) world.terrain.addBridge(p, q, BRIDGE_W);
     world.onTerrainChanged?.(job.a, job.b);
     st.roads.addSegment(job.a, job.b);
-    st.builtRoads.push({ a: { ...job.a }, b: { ...job.b } });
+    st.builtRoads.push({ a: { ...job.a }, b: { ...job.b }, gaps: chk.ok ? chk.gaps : [] });
     st.version++;
     world.note(job.owner, 'log.roadBuilt', {}, 'info');
     return;
@@ -198,6 +198,9 @@ export function completeJob(world: World, job: TransportJob): void {
   }
   world.note(job.owner, 'log.railBuilt', {}, 'info');
 }
+
+/** Road half width of engineer roads (m). */
+export const roadHalfWidth = (world: World): number => roadRules(world)?.half_width_m ?? 5;
 
 /** Stamp Ground.Road along a → b (half width w), never over water or into houses. */
 export function paintRoad(world: World, a: V2, b: V2, w: number): void {
