@@ -1,4 +1,4 @@
-import { appointCommander, frontUnits, nearestFront, newFront } from './fronts';
+import { appointCommander, frontUnits, nearestFront, newFront, rallyPoint } from './fronts';
 import { frontById, onBoundFront } from './frontref';
 import { resetOperation } from './doctrine';
 import { isCommander } from './formulas';
@@ -39,7 +39,7 @@ export function createFront(world: World, f: Faction, target: Objective, want: n
   const n = f.fronts.length + 1;
   const s = newFront(world, f, target, 0, 1 / n);
   // 3.0 (soak: a tank sat 3 min on a rally point on a 23° forest slope): the rally point is ground vehicles can reach.
-  s.rally = world.nav(true, 15).nearestPassable(s.rally, 150) ?? s.rally;
+  s.rally = rallyPoint(world, s.rally);
   for (const x of f.fronts) x.share *= (n - 1) / n;
   f.fronts = [...f.fronts, s];
   appointCommander(world, f, s);

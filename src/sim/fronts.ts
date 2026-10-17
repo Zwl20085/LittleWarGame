@@ -142,7 +142,7 @@ export function issueFrontOrder(world: World, f: Faction, s: Front, order: Front
   const exit = world.cityOf(f.id).exit;
   const attack = order.kind === 'attack';
   if (order.manual) {
-    s.rally = lerpV(exit, centre, attack ? 0.4 : 0.9);
+    s.rally = rallyPoint(world, lerpV(exit, centre, attack ? 0.4 : 0.9));
     s.reason = `reason.order.${order.kind}`;
     s.reasonParams = { point: s.targetObjective ?? '' };
     if (!repeat) {
@@ -151,7 +151,7 @@ export function issueFrontOrder(world: World, f: Faction, s: Front, order: Front
     }
   } else {
     // 1.x retarget rally points (lab-tuned): halfway to a capital, a third of the way to a place.
-    s.rally = lerpV(exit, centre, attack ? (s.targetCity !== null ? 0.5 : 0.35) : 0.9);
+    s.rally = rallyPoint(world, lerpV(exit, centre, attack ? (s.targetCity !== null ? 0.5 : 0.35) : 0.9));
     setGoalReason(s);
     if (!attack) {
       setPosture(world, s, order.kind === 'fortify' ? 'fortify' : 'hold');
@@ -358,6 +358,9 @@ export function upkeepCommander(world: World, f: Faction, s: Front): void {
 export const leaderless = (world: World, s: Front): boolean =>
   s.commanderId === null && s.commanderLostAt >= 0 && world.time - s.commanderLostAt < world.data.rules.command.commander_lost_hold_seconds;
 
+/** 3.0 (soak: a tank sat 3 min on a rally point on a 23° forest slope): rally points stand on ground vehicles can reach. */
+export const rallyPoint = (world: World, p: V2): V2 => world.nav(true, 15).nearestPassable(p, 150) ?? p;
+
 export const lerpV = (a: V2, b: V2, t: number): V2 => ({ x: a.x + (b.x - a.x) * t, z: a.z + (b.z - a.z) * t });
 
 function knownEnemyStrength(world: World, f: number, at: V2, r: number): number {
@@ -525,7 +528,7 @@ export function thinkFronts(world: World, f: Faction, chunk?: number): void {
         s.targetCity = t.city;
         s.lastRetarget = world.time;
         setGoalReason(s);
-        s.rally = lerpV(world.cityOf(f.id).exit, s.targetPos, t.city !== null ? 0.5 : 0.35);
+        s.rally = rallyPoint(world, lerpV(world.cityOf(f.id).exit, s.targetPos, t.city !== null ? 0.5 : 0.35));
       }
     }
     // Round 7: binding attack orders get the AI's cautious ⇄ assault rule (2.2: cityai sets the other fronts' postures, the player's included).
