@@ -31,7 +31,7 @@ function gunWeapon(fx: UpgradeEffectRules): WeaponDef {
     w = {
       id: 'inf_gun', labelZh: '步兵炮', fireMode: 'ballistic', range: g.range_m, minRange: 40, interval: g.interval_s,
       damage: g.damage, penetration: 30, accuracy: 0, blastRadius: g.blast_m, suppression: g.suppression, canFireMoving: false,
-      ammoCost: g.ammo_cost, muzzleSpeed: g.muzzle_mps, minElevationDeg: 8, maxElevationDeg: 70,
+      ammoCost: g.ammo_cost, muzzleSpeed: g.muzzle_mps, minElevationDeg: 5, maxElevationDeg: 85,
     };
     gunWeapons.set(fx, w);
   }
