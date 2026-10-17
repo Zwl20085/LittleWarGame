@@ -218,12 +218,12 @@
     "comment": "3.0 absolute defence perimeter (绝对国防圈, V23_SPEC §1.3 / V30_SPEC §8; capitalDefence.ts): a free, permanent ring of `strongpoints` bunker-hard strongpoints at radius_m around every capital, each with a fixed MG crew (crew_unit), plus a fixed artillery position (artillery_unit) behind the capital. Small arms cannot break the concrete (it must be stormed by armour or heavy guns); engineers repair it; a dead crew is replaced while its strongpoint stands and the enemy is not close. observation: in fog mode the capital sees every hostile within radius_m (shown on the minimap). A faction holding less than min_held_share of the mean settlements of the living factions (a beaten side, not a backdoor victim) no longer replaces crews or repairs the ring, so wars stay endable. enabled flags are for the lab.",
     "enabled": true,
     "radius_m": 210,
-    "strongpoints": 5,
-    "min_held_share": 0.5,
+    "strongpoints": 4,
+    "min_held_share": 0.7,
     "crew_unit": "mg",
     "artillery_unit": "mortar",
     "artillery_back_m": 45,
-    "crew_respawn_seconds": 90,
+    "crew_respawn_seconds": 150,
     "crew_min_hp_ratio": 0.5,
     "quiet_m": 200,
     "repair_hp_per_second": 30,
@@ -262,12 +262,12 @@
       "comment": "2.0 defensive buildings (user: 工兵可以建设筑垒区域、炮楼、堡垒，需要步兵/侦察等单位进入驻防，不占人口). Built by engineers (structures.ts); costs are per building and NOT × army_scale (like unit costs). Buildings cost no population and squads inside them do not count against the population cap. A fortified zone (筑垒地域) is a planned layout of trenches + pillboxes + a bunker along a line, not a building of its own.",
       "structures": [
         {"id": "pillbox", "label_zh": "炮楼", "cost_p": 6, "cost_m": 50, "work_seconds": 60, "max_hp": 2750, "capacity": 1, "max_crews": 1, "accepts": ["infantry", "recon", "engineer", "motor_inf", "mg"], "cover": 3, "weapon": "pillbox_mg", "fire_mul": {"damage": 1, "range": 1}, "blind_rear_deg": 90, "occupant_blast_mul": 0.55, "muzzle_raise_m": 2.2},
-        {"id": "bunker", "label_zh": "堡垒", "cost_p": 12, "cost_m": 100, "work_seconds": 100, "max_hp": 5625, "capacity": 2, "max_crews": 1, "accepts": ["infantry", "recon", "engineer", "motor_inf", "mg", "at_gun"], "cover": 3, "weapon": null, "fire_mul": {"damage": 1.2, "range": 1.15}, "blind_rear_deg": 0, "occupant_blast_mul": 0.4, "muzzle_raise_m": 0.8},
-        {"id": "fortress", "label_zh": "要塞", "cost_p": 28, "cost_m": 260, "work_seconds": 220, "max_hp": 11000, "capacity": 3, "max_crews": 2, "accepts": ["infantry", "recon", "engineer", "motor_inf", "mg", "at_gun"], "cover": 3, "weapon": null, "fire_mul": {"damage": 1.3, "range": 1.2, "accuracy": 1.15}, "blind_rear_deg": 0, "occupant_blast_mul": 0.3, "muzzle_raise_m": 1.2, "absorb_share": 0.65},
-        {"id": "at_emplacement", "label_zh": "反坦克阵地", "cost_p": 8, "cost_m": 70, "work_seconds": 60, "max_hp": 3200, "capacity": 1, "max_crews": 1, "accepts": ["at_gun"], "cover": 3, "weapon": null, "fire_mul": {"damage": 1.1, "range": 1.1, "accuracy": 1.3}, "blind_rear_deg": 120, "occupant_blast_mul": 0.45, "muzzle_raise_m": 0.3, "absorb_share": 0.7},
-        {"id": "strongpoint", "label_zh": "国防圈支撑点", "cost_p": 0, "cost_m": 0, "work_seconds": 100, "max_hp": 9000, "capacity": 2, "max_crews": 1, "accepts": ["infantry", "recon", "engineer", "motor_inf", "mg", "at_gun"], "cover": 3, "weapon": null, "fire_mul": {"damage": 1.25, "range": 1.15}, "blind_rear_deg": 0, "occupant_blast_mul": 0.3, "muzzle_raise_m": 1.5, "absorb_share": 0.72}
+        {"id": "bunker", "label_zh": "堡垒", "cost_p": 12, "cost_m": 100, "work_seconds": 100, "max_hp": 7000, "capacity": 2, "max_crews": 1, "accepts": ["infantry", "recon", "engineer", "motor_inf", "mg", "at_gun"], "cover": 1, "weapon": null, "fire_mul": {"damage": 1.2, "range": 1}, "blind_rear_deg": 0, "occupant_blast_mul": 0.4, "muzzle_raise_m": 0.8, "absorb_share": 0.3},
+        {"id": "fortress", "label_zh": "要塞", "cost_p": 28, "cost_m": 260, "work_seconds": 220, "max_hp": 11000, "capacity": 3, "max_crews": 2, "accepts": ["infantry", "recon", "engineer", "motor_inf", "mg"], "cover": 3, "weapon": null, "fire_mul": {"damage": 1, "range": 1.2, "accuracy": 1}, "blind_rear_deg": 0, "occupant_blast_mul": 0.3, "muzzle_raise_m": 1.2, "absorb_share": 0.65},
+        {"id": "at_emplacement", "label_zh": "反坦克阵地", "cost_p": 8, "cost_m": 70, "work_seconds": 60, "max_hp": 3200, "capacity": 1, "max_crews": 1, "accepts": ["at_gun"], "cover": 1, "weapon": null, "fire_mul": {"damage": 1, "range": 1, "accuracy": 0.85}, "blind_rear_deg": 120, "occupant_blast_mul": 0.45, "muzzle_raise_m": 0.3, "absorb_share": 0.25},
+        {"id": "strongpoint", "label_zh": "国防圈支撑点", "cost_p": 0, "cost_m": 0, "work_seconds": 100, "max_hp": 6000, "capacity": 2, "max_crews": 1, "accepts": ["infantry", "recon", "engineer", "motor_inf", "mg", "at_gun"], "cover": 3, "weapon": null, "fire_mul": {"damage": 1.25, "range": 1.15}, "blind_rear_deg": 0, "occupant_blast_mul": 0.3, "muzzle_raise_m": 1.5, "absorb_share": 0.72}
       ],
-      "tiers_comment": "3.0 (V30_SPEC §8): works upgrade in place by engineers (worksTiers.ts): pillbox → bunker → fortress, trench → fortified trench (tier 1: hp × hp_mul, wider cover). AT emplacement = dug-in AT gun (accuracy and armour: absorb_share). Minefields: engineer-laid rectangles that slow hostile vehicles and blow them up by chance; engineers clear them slowly. Manned works see farther and spot for artillery. enabled=false switches the whole tier system off for the lab.",
+      "tiers_comment": "3.0 (V30_SPEC §8): works upgrade in place by engineers (worksTiers.ts): pillbox → bunker → fortress, trench → fortified trench (tier 1: hp × hp_mul, wider cover). AT emplacement = dug-in AT gun (accuracy and armour: absorb_share); 3.0 tuning (WP-T, docs/BALANCE_LAB.md 3.0 round): AT guns sit in bunkers and AT emplacements only (not fortresses), and a gun in concrete is light cover (cover 1, absorb 0.25-0.3): with cover 3 an equal-cost tank-led assault never broke a bunker or fortress line (0 %). Minefields: engineer-laid rectangles that slow hostile vehicles and blow them up by chance; engineers clear them slowly. Manned works see farther and spot for artillery. enabled=false switches the whole tier system off for the lab.",
       "tiers": {
         "enabled": true,
         "upgrades": [
@@ -275,7 +275,7 @@
           {"from": "bunker", "to": "fortress", "cost_p": 16, "cost_m": 160, "work_seconds": 120},
           {"from": "trench", "to": "trench", "cost_p": 6, "cost_m": 30, "work_seconds": 40, "hp_mul": 2.2, "cover_radius_m": 8}
         ],
-        "minefield": {"cost_p": 4, "cost_m": 60, "work_seconds": 45, "length_m": 48, "depth_m": 18, "max_hp": 600, "charge_hp": 60, "clear_hp_per_second": 4, "vehicle_speed_mul": 0.5, "trigger_chance_per_second": 0.2, "damage_ratio": 0.3},
+        "minefield": {"cost_p": 4, "cost_m": 60, "work_seconds": 45, "length_m": 48, "depth_m": 18, "max_hp": 600, "charge_hp": 60, "clear_hp_per_second": 4, "vehicle_speed_mul": 0.5, "trigger_chance_per_second": 0.12, "damage_ratio": 0.2},
         "manned": {"observation_bonus_m": 120, "artillery_spotting": true}
       },
       "garrison": {
@@ -434,12 +434,12 @@
         "personality": "mechanized",
         "production": {"howitzer": 1.7, "medium_tank": 1.3, "light_tank": 1.1, "mg": 0.7},
         "caps": {"motor_inf": 2.0, "medium_tank": 1.5, "howitzer": 2.0, "light_tank": 1.3},
-        "invest": 0.8, "occupy": 0.7, "occupy_broken": 1.6, "broken_ratio": 0.6,
+        "invest": 0.8, "occupy": 1.1, "occupy_broken": 1.6, "broken_ratio": 0.6,
         "attack_ratio": 1.5, "defend_below": 0.35, "defend_exit": 0.55, "defend_kind": "defend", "contract_below": 0,
         "retreat_hp": 0.25,
         "raid_rate": 0.7, "raid_targets": {"econ": 1, "convoy": 1, "rail": 0, "zone": 0}, "raid_on_defence": false,
-        "front_density": 1.3, "picket_gap": 1.35, "temperament": -0.05, "main_share": 1.8, "armour_main_share": 0.9,
-        "offensive": {"mode": "battle", "after_s": 300, "min_fullness": 0.5, "max_s": 420, "break_share": 0.6, "cooldown_s": 60, "force_after_s": 0, "force_ratio": 0, "between": "advance"},
+        "front_density": 1.3, "picket_gap": 1.35, "temperament": -0.05, "main_share": 1.5, "armour_main_share": 0.9,
+        "offensive": {"mode": "battle", "after_s": 600, "min_fullness": 0.7, "max_s": 420, "break_share": 0.6, "cooldown_s": 180, "force_after_s": 0, "force_ratio": 0, "between": "advance"},
         "upgrades": ["motorization", "gun_1", "arty_range", "truck_capacity", "armour_1", "staff", "gun_2", "armour_2", "ap_grenades", "inf_guns", "gun_3", "armour_3", "eng_speed"]
       }
     }
@@ -461,7 +461,7 @@
     "comment": "3.0 roads and railways (V30_SPEC §10, transport.ts / roadnet.ts / rail.ts / transportjobs.ts). enabled=false restores the 2.2 ground multipliers (road 1.05 foot / 1.35 vehicle, open 1) and switches rail and the engineer road/rail jobs off (lab A/B). On a road (or a town street) every class moves at on_road; off it at off_road[class], stacked with the forest / town / mud and grade modifiers. Class: vehicles tracked, crews towed, infantry infantry, overridden per unit by class_of.",
     "enabled": true,
     "on_road": 1.0,
-    "off_road": {"tracked": 0.6, "wheeled": 0.4, "infantry": 0.75, "towed": 0.5},
+    "off_road": {"tracked": 0.6, "wheeled": 0.55, "infantry": 0.75, "towed": 0.5},
     "class_of": {"supply_truck": "wheeled", "train": "wheeled", "mg": "infantry", "mortar": "infantry"},
     "town_counts_as_road": true,
     "ford_nav_cost": 2.5,
@@ -493,15 +493,15 @@
     "escalation": 0.06,
     "cancel_refund_ratio": 0.8,
     "items": {
-      "inf_guns": {"p_k": 150, "m_k": 330, "seconds": 120},
-      "ap_grenades": {"p_k": 110, "m_k": 250, "seconds": 90},
+      "inf_guns": {"p_k": 175, "m_k": 385, "seconds": 120},
+      "ap_grenades": {"p_k": 300, "m_k": 680, "seconds": 90},
       "motorization": {"p_k": 220, "m_k": 440, "seconds": 150},
       "armour_1": {"p_k": 160, "m_k": 300, "seconds": 120},
       "armour_2": {"p_k": 240, "m_k": 450, "seconds": 150, "requires": ["armour_1"]},
-      "armour_3": {"p_k": 320, "m_k": 600, "seconds": 180, "requires": ["armour_2"]},
+      "armour_3": {"p_k": 200, "m_k": 380, "seconds": 180, "requires": ["armour_2"]},
       "gun_1": {"p_k": 160, "m_k": 300, "seconds": 120},
       "gun_2": {"p_k": 240, "m_k": 450, "seconds": 150, "requires": ["gun_1"]},
-      "gun_3": {"p_k": 320, "m_k": 600, "seconds": 180, "requires": ["gun_2"]},
+      "gun_3": {"p_k": 200, "m_k": 380, "seconds": 180, "requires": ["gun_2"]},
       "arty_range": {"p_k": 160, "m_k": 260, "seconds": 120},
       "truck_capacity": {"p_k": 100, "m_k": 220, "seconds": 90},
       "eng_speed": {"p_k": 80, "m_k": 180, "seconds": 90},
@@ -509,7 +509,7 @@
     },
     "effects": {
       "inf_gun": {"range_m": 260, "interval_s": 10, "damage": 110, "blast_m": 6, "suppression": 22, "muzzle_mps": 75, "sigma_m": 7, "ammo_cost": 0.006},
-      "ap_grenade": {"range_m": 35, "interval_s": 9, "damage": 240, "penetration": 85, "ammo_cost": 0.01},
+      "ap_grenade": {"range_m": 35, "interval_s": 12, "damage": 140, "penetration": 85, "ammo_cost": 0.01},
       "armour_per_level": {"armour": 0.12, "hp": 0.05, "speed": -0.03},
       "gun_per_level": {"pen": 12, "damage": 0.1, "range": 0.04},
       "arty_range_mul": 1.2,

@@ -3,6 +3,7 @@
 // factions are the normal AI. Deterministic per seed: strategies read world state only.
 import { readFileSync } from 'node:fs';
 import { buildGameData } from '../../src/data/loader';
+import { applyOverrides, envOverrides } from '../lab/overrides';
 import type { GameData } from '../../src/data/types';
 import { CommandBus, type Command } from '../../src/sim/commands';
 import { createMatch, step } from '../../src/sim/sim';
@@ -40,7 +41,9 @@ export interface ChallengeOptions {
 export const DEFAULT_PARAMS: ChallengeParams = { rushAt: 300, variant: '' };
 
 export function loadDataFromDisk(): GameData {
-  return buildGameData(readFileSync('docs/data/units.csv', 'utf8'), readFileSync('docs/data/weapons.csv', 'utf8'), readFileSync('docs/data/rules.json', 'utf8'));
+  // LAB_SET env: rules / csv overrides for tuning A/B runs.
+  const t = applyOverrides({ units: readFileSync('docs/data/units.csv', 'utf8'), weapons: readFileSync('docs/data/weapons.csv', 'utf8'), rules: readFileSync('docs/data/rules.json', 'utf8') }, envOverrides());
+  return buildGameData(t.units, t.weapons, t.rules);
 }
 
 export function runChallengeMatch(opt: ChallengeOptions): ChallengeReport {

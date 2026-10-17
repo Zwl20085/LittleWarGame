@@ -20,6 +20,8 @@ import type { World } from './world';
  */
 
 const RETRY_S = 3;
+/** Scatter multiplier for a gun-team shot fired while the squad is on the move. */
+const MOVING_SIGMA_MUL = 1.5;
 const SC_NADE: Unit[] = [];
 
 /** Synthetic weapon records (projectile / hit bookkeeping), one per effects-rules object. */
@@ -69,13 +71,15 @@ function gunAim(world: World, u: Unit, w: WeaponDef): V2 | null {
 
 function fireGun(world: World, u: Unit, fx: UpgradeEffectRules): boolean {
   const w = gunWeapon(fx);
-  if (u.moving || u.ammo + 1e-9 < w.ammoCost) return false;
+  // The gun team fires from short halts while its squad advances (WP-T: gated on `!moving` it never
+  // fired in an attack-move, where squads keep walking; the shell scatters wider on the move).
+  if (u.ammo + 1e-9 < w.ammoCost) return false;
   const at = gunAim(world, u, w);
   if (!at) return false;
   // No shell where our own troops stand (the lob scatters by sigma_m).
-  const safeR = w.blastRadius + 2 * fx.inf_gun.sigma_m;
+  const safeR = w.blastRadius + 2 * fx.inf_gun.sigma_m * (u.moving ? MOVING_SIGMA_MUL : 1);
   if (world.spatial.findOwner(at.x, at.z, safeR, 1 << u.owner, (o) => o.hp > 0 && o.owner === u.owner)) return false;
-  const sigma = fx.inf_gun.sigma_m;
+  const sigma = fx.inf_gun.sigma_m * (u.moving ? MOVING_SIGMA_MUL : 1);
   const land = { x: at.x + world.rngScatter.normal() * sigma, z: at.z + world.rngScatter.normal() * sigma };
   const m: V3 = { x: u.pos.x, y: u.y + 1.2, z: u.pos.z };
   const p1: V3 = { x: land.x, y: world.terrain.heightAt(land.x, land.z), z: land.z };

@@ -82,7 +82,7 @@ const DEPLOY_S = 25;
 const LEAD_M = 40;
 
 interface AssaultTask { kind: 'assault'; tier: Tier; seed: number; minutes: number }
-interface AssaultResult { tier: Tier; ok: boolean; won: boolean; atkLeft: number; defLeft: number; tanksLost: number; tanks: number; atkCost: number; defCost: number; worksCost: number }
+interface AssaultResult { tier: Tier; ok: boolean; won: boolean; atkLeft: number; defLeft: number; tanksLost: number; tanks: number; atkCost: number; defCost: number; worksCost: number; defKills?: Record<string, number> }
 
 /** Upgrade path cost of a building kind (pillbox → bunker → fortress) from the rules. */
 function buildingCost(data: GameData, kind: StructureKind): number {
@@ -200,6 +200,10 @@ function runAssault(t: AssaultTask): AssaultResult {
   return {
     tier: t.tier, ok: true, won: atkLeft > defLeft, atkLeft, defLeft,
     tanksLost: atks.filter((u) => TANKS.has(u.def.id) && u.hp <= 0).length, tanks: tanks.length, atkCost: ac, defCost, worksCost,
+    // Kill value by defender type (which part of the line does the killing).
+    defKills: Object.fromEntries(Object.entries(w.stats.byType[1] ?? {}).map(([k, v]) => [k, Math.round(v.killValue)])),
+    // Per side and type: shots / damage dealt / damage taken (diagnosis; LAB_TASK single runs).
+    sides: [0, 1].map((f) => Object.fromEntries(Object.entries(w.stats.byType[f] ?? {}).map(([k, v]) => [k, [v.shots, Math.round(v.dmgDealt), Math.round(v.dmgTaken)]]))),
   };
 }
 
@@ -330,7 +334,8 @@ async function main(): Promise<void> {
   const warmup = Number(arg('warmup', '15'));
   const jobs = Number(arg('jobs', '4'));
   const tasks: Task[] = [];
-  if (suites.includes('assault')) for (const tier of TIERS) for (let s = 1; s <= trials; s++) tasks.push({ kind: 'assault', tier, seed: 100 + s, minutes: 5 });
+  const tierSel = arg('tiers', TIERS.join(',')).split(',');
+  if (suites.includes('assault')) for (const tier of TIERS.filter((x) => tierSel.includes(x))) for (let s = 1; s <= trials; s++) tasks.push({ kind: 'assault', tier, seed: 100 + s, minutes: 5 });
   if (suites.includes('mines')) for (const rows of [0, 1, 2]) for (let s = 1; s <= trials; s++) tasks.push({ kind: 'mines', rows, seed: 200 + s });
   if (suites.includes('cheapwin')) for (const probe of ['backdoor', 'armour'] as const) for (const ring of [false, true]) for (const seed of seeds) tasks.push({ kind: 'cheapwin', probe, ring, seed, warmup, minutes: 10 });
   const res = await fanOut<Task, Record<string, unknown>>('scripts/lab30/defence.ts', tasks, jobs);
@@ -338,13 +343,17 @@ async function main(): Promise<void> {
   const assault = res.filter((r) => 'tier' in r && r.ok) as unknown as AssaultResult[];
   if (assault.length) {
     lines.push('## Equal-cost tank-led assault vs works tier', '', '| tier | trials | attacker wins | win % | attacker value left | defender value left | tanks lost | attacker cost | defender units + works cost |', '|---|---:|---:|---:|---:|---:|---:|---:|---:|');
+    const killLines: string[] = [];
     for (const tier of TIERS) {
       const r = assault.filter((x) => x.tier === tier);
       if (!r.length) continue;
       const wins = r.filter((x) => x.won).length;
+      const kills: Record<string, number> = {};
+      for (const x of r) for (const [k, v] of Object.entries(x.defKills ?? {})) kills[k] = (kills[k] ?? 0) + v;
+      killLines.push(`- ${tier}: defender kill value by type ${Object.entries(kills).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${v}`).join(', ') || '-'}`);
       lines.push(`| ${tier} | ${r.length} | ${wins} | ${pct(wins / r.length)} | ${pct(mean(r.map((x) => x.atkLeft)))} | ${pct(mean(r.map((x) => x.defLeft)))} | ${r.reduce((s, x) => s + x.tanksLost, 0)}/${r.reduce((s, x) => s + x.tanks, 0)} | ${Math.round(mean(r.map((x) => x.atkCost)))} | ${Math.round(mean(r.map((x) => x.defCost)))} + ${Math.round(mean(r.map((x) => x.worksCost)))} |`);
     }
-    lines.push('');
+    lines.push('', ...killLines, '');
   }
   const mines = res.filter((r) => 'rows' in r && r.ok) as unknown as MinesResult[];
   if (mines.length) {

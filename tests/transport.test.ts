@@ -51,7 +51,7 @@ describe('3.0 transport: off-road multipliers', () => {
       expect(groundMul(T, Ground.Road, cls)).toBe(T.on_road);
       expect(groundMul(T, Ground.Open, cls)).toBe(T.off_road[cls]);
     }
-    expect(T.off_road).toEqual({ tracked: 0.6, wheeled: 0.4, infantry: 0.75, towed: 0.5 });
+    expect(T.off_road).toEqual({ tracked: 0.6, wheeled: 0.55, infantry: 0.75, towed: 0.5 });
     // Forest stacks the 2.2 forest factor with the off-road factor.
     expect(groundMul(T, Ground.Forest, 'tracked')).toBeCloseTo(0.55 * 0.6);
     expect(groundMul(T, Ground.Forest, 'infantry')).toBeCloseTo(0.85 * 0.75);

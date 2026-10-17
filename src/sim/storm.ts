@@ -73,7 +73,34 @@ export const FINISH = {
   /** Occupation detachments kept while finishing (was 3–10). */
   occupyDetachments: 2,
   releaseCalmS: 15,
+  /**
+   * 3.0 (WP-T, 4-FFA pace): finishing a broken side does not need us to dwarf the strongest enemy.
+   * The finish target holds below `brokenHeldShare` of the living factions' mean settlements, we
+   * field `brokenArmyRatio` × its known army, are at least `brokenStrongestRatio` × the strongest
+   * enemy's population and `brokenFullness` full. Soak: three sides each 2–5 × a beaten maneuver
+   * AI never closed on its capital in 30 min because nobody dwarfed the other two.
+   */
+  brokenHeldShare: 0.65,
+  brokenArmyRatio: 1.5,
+  brokenStrongestRatio: 0.8,
+  brokenFullness: 0.7,
 } as const;
+
+/** Lab switch for the 3.0 broken-target finisher (FINISH_BROKEN=0 in soak A/B runs). */
+export const FINISH_AB = { broken: true };
+
+/** Settlements held by `id` ÷ the mean of the living factions (1 = average). */
+function heldShare(world: World, id: number): number {
+  let mine = 0;
+  let all = 0;
+  for (const o of world.objectives) {
+    if (o.owner < 0 || o.kind === 'point' || !world.factions[o.owner]?.alive) continue;
+    all++;
+    if (o.owner === id) mine++;
+  }
+  const alive = world.factions.filter((f) => f.alive).length;
+  return all > 0 ? (mine * alive) / all : 1;
+}
 
 /** Update `command.finisher` and `command.finishArmyRatio` (every HQ think, from assessMood's numbers). */
 export function assessFinisher(world: World, f: Faction, army: number, known: Map<number, number>): void {
@@ -88,8 +115,11 @@ export function assessFinisher(world: World, f: Faction, army: number, known: Ma
   const econ = world.data.rules.economy;
   const rich = f.p + f.m >= (econ.cap_p + econ.cap_m) * FINISH.stockShare || hc.fullness >= FINISH.fullness;
   const ratio = f.popPresent / Math.max(1, strongest);
-  hc.finisher = strongest > 0 && (hc.finisher ? ratio >= FINISH.offRatio : ratio >= FINISH.popRatio && rich);
   hc.finishArmyRatio = hc.finishTarget >= 0 ? army / Math.max(1, known.get(hc.finishTarget) ?? 0) : 0;
+  const fin = hc.finishTarget;
+  const brokenFin = FINISH_AB.broken && fin >= 0 && !!world.factions[fin]?.alive && heldShare(world, fin) < FINISH.brokenHeldShare
+    && hc.finishArmyRatio >= FINISH.brokenArmyRatio && ratio >= FINISH.brokenStrongestRatio && hc.fullness >= FINISH.brokenFullness;
+  hc.finisher = strongest > 0 && (brokenFin || (hc.finisher ? ratio >= FINISH.offRatio : ratio >= FINISH.popRatio && rich));
 }
 
 /** This group is the finisher's storm on its finish target, with the army to force it. */

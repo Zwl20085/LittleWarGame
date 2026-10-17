@@ -244,7 +244,7 @@ describe('permanent works (2.1)', () => {
     expect(pill.weapon).toBe('pillbox_mg');
     expect([mg.range, mg.damage, mg.interval, mg.suppression]).toEqual([200, 90, 1, 24]);
     expect([pill.cost_p, pill.cost_m, pill.work_seconds, pill.max_hp]).toEqual([6, 50, 60, 2750]);
-    expect([bunker.cost_p, bunker.cost_m, bunker.work_seconds, bunker.max_hp]).toEqual([12, 100, 100, 5625]);
+    expect([bunker.cost_p, bunker.cost_m, bunker.work_seconds, bunker.max_hp]).toEqual([12, 100, 100, 7000]);
     const { p, facing } = siteNearHome(w);
     const fort = placeStructure(w, 0, 'bunker', p, facing)!;
     expect(fort.progress).toBe(1);
