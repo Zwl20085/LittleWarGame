@@ -14,12 +14,20 @@ its own note in this folder (`WP-*.md`) on its worktree branch `worktree-agent-<
 - WP-K camera (worktree-agent-a8fe6761be36037cd) — merge d76f083 (battle cam respects fog, depth blur off by default; close-in low-angle view 4.4 ms vs 4 ms budget → WP-M).
 - WP-I challenge diversity (worktree-agent-a00de1da53255b7d4) — merge 081b993. Baseline: only shadow_strike (open info) takes AI capitals; supply-starved share ~50 % everywhere (band miss); doctrine_* strategies wait for WP-A.
 
+- WP-B/C fronts+compliance (worktree-agent-aa55ed9ace45ae466) — merged (see git log). Fronts/faction mid-war 3.9→6.6, mean size 31.6→17.7 (accepted), compliance threshold 0.4, challenge 21/21.
+- WP-I anomaly (worktree-agent-a975a400ec14180f9) — merge efd2f03: convoy fix halves ammo-starved clusters (156→106 episodes).
+
+## Wave 2 running
+| WP | branch | status |
+|---|---|---|
+| E infiltration/ZOC/pickets | worktree-agent-aa578224f6cc603a0 | running |
+| A doctrines + music wiring + doctrine_* strategies | worktree-agent-ac07b57b1ae15b872 | running |
+
 ## Wave 1 agents still running (merge each when reported; typecheck + tests after every merge)
 | WP | branch | status |
 |---|---|---|
 | D roads/rail | worktree-agent-ab63c300467793cd5 | running |
-| B+C fronts/compliance | worktree-agent-aa55ed9ace45ae466 | running labs |
-| I anomaly lab + ammo fix | worktree-agent-a975a400ec14180f9 | running |
+| I anomaly lab + ammo fix | worktree-agent-a975a400ec14180f9 | merged efd2f03; fixing tests/fronts.test.ts 'binds a defend order' (0.9 vs >0.9) on its branch → re-merge |
 | F+G econ zones + works | worktree-agent-a7cde76b4ad393c3f | running |
 
 Merge order when several are ready: D → B+C → F+G → I-anomaly → K → I-challenge (K and I-challenge
