@@ -37,8 +37,14 @@ function report(tick: number, ms: number, p: Profile): void {
   const self = new Map<string, number>();
   let total = 0;
   const name = (n: ProfileNode): string => `${n.callFrame.functionName || '(anon)'} ${n.callFrame.url.replace(/^.*\/src\//, '')}:${n.callFrame.lineNumber + 1}`;
+  // Only samples inside step() (the inspector's own dispatch is not the tick's cost).
+  const inStep = (id: number): boolean => {
+    for (let cur: number | undefined = id; cur !== undefined; cur = parent.get(cur)) if (byId.get(cur)!.callFrame.functionName === 'step') return true;
+    return false;
+  };
   p.samples.forEach((id, i) => {
     const d = p.timeDeltas[i] ?? 0;
+    if (!inStep(id) && byId.get(id)!.callFrame.functionName !== '(garbage collector)') return;
     total += d;
     const n = byId.get(id)!;
     self.set(name(n), (self.get(name(n)) ?? 0) + d);

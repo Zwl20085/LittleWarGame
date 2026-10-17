@@ -55,6 +55,9 @@ async function measure(label, setup) {
       part('counters', r.counters, 'draw'), part('labels', r.labels, 'draw'), part('opArrows', r.opArrows, 'sync'),
       part('projectiles', r.effects, 'syncProjectiles'), part('forts', r, 'syncForts'), part('objectives', r, 'syncObjectives'),
       part('overlays', r, 'drawOverlays'), part('fxHandle', r.effects, 'handle'), part('rig', r.rig, 'update'),
+      // 3.0 parts: rails / trains, time of day, order ribbons, front lines, haze.
+      part('rails', r.railField, 'update'), part('day', r.day, 'update'), part('orderLines', r.orderLines, 'sync'),
+      part('orderLabels', r.orderLines, 'drawLabels'), part('frontLines', r.frontLines, 'update'), part('haze', r.haze, 'update'),
     ];
     const info = r.renderer.info;
     info.autoReset = true;
