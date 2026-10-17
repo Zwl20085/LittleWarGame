@@ -2,9 +2,9 @@
 // module scripts and the simulation Web Worker load exactly as they do on a web server.
 const { app, BrowserWindow, Menu, ipcMain, net, protocol, session, shell } = require('electron');
 const path = require('node:path');
-const { pathToFileURL } = require('node:url');
 
 const { createUpdater } = require('./updater.cjs');
+const { handleAppRequest } = require('./appProtocol.cjs');
 
 const BUILTIN_ROOT = path.join(__dirname, '..', 'dist');
 // Dev-only: a throwaway profile for the updater end-to-end test (scripts/release/updater-e2e.mjs).
@@ -32,24 +32,7 @@ protocol.registerSchemesAsPrivileged([
 
 /** Serves the built-in dist/ or, after a verified hot update, userData/bundles/<ver>/. */
 function serveGame() {
-  protocol.handle('app', (req) => {
-    const root = updater.root();
-    let file;
-    try {
-      file = path.normalize(path.join(root, decodeURIComponent(new URL(req.url).pathname)));
-    } catch {
-      return new Response('Bad request', { status: 400 });
-    }
-    // Never serve anything outside the game bundle.
-    const rel = path.relative(root, file);
-    if (rel.startsWith('..') || path.isAbsolute(rel)) return new Response('Forbidden', { status: 403 });
-    return net.fetch(pathToFileURL(file).toString()).catch(() => new Response('Not found', { status: 404 })).then((res) => {
-      if (!file.endsWith('.html')) return res;
-      const headers = new Headers(res.headers);
-      headers.set('Content-Security-Policy', CSP);
-      return new Response(res.body, { status: res.status, headers });
-    });
-  });
+  protocol.handle('app', (req) => handleAppRequest(req, { root: updater.root(), fetchFile: (u) => net.fetch(u), csp: CSP }));
 }
 
 /** https://github.com/… only (no credentials, no other host or port). */
@@ -104,15 +87,27 @@ function createWindow() {
   win.webContents.on('will-redirect', stayHome);
   updater.attach(win);
   win.loadURL('app://game/index.html');
+  return win;
 }
 
 Menu.setApplicationMenu(null);
-app.whenReady().then(() => {
-  // No camera, microphone, geolocation, notifications etc. are ever needed.
-  session.defaultSession.setPermissionRequestHandler((_wc, _perm, cb) => cb(false));
-  updater.init();
-  updater.registerIpc();
-  serveGame();
-  createWindow();
-});
-app.on('window-all-closed', () => app.quit());
+// One game at a time: two shells would race on the same bundles/ state and downloads.
+if (!app.requestSingleInstanceLock()) {
+  app.quit();
+} else {
+  let mainWin = null;
+  app.on('second-instance', () => {
+    if (!mainWin || mainWin.isDestroyed()) return;
+    if (mainWin.isMinimized()) mainWin.restore();
+    mainWin.focus();
+  });
+  app.whenReady().then(() => {
+    // No camera, microphone, geolocation, notifications etc. are ever needed.
+    session.defaultSession.setPermissionRequestHandler((_wc, _perm, cb) => cb(false));
+    updater.init();
+    updater.registerIpc();
+    serveGame();
+    mainWin = createWindow();
+  });
+  app.on('window-all-closed', () => app.quit());
+}
