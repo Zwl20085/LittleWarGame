@@ -122,3 +122,8 @@ export function applyOverrides(data: DataText, overrides: readonly Override[]): 
   }
   return { units, weapons, rules };
 }
+
+/** Overrides from the LAB_SET environment variable (`a.b=1;unit.x.cost_p*=1.1`), for tuning A/B runs of any lab. */
+export function envOverrides(): Override[] {
+  return (process.env.LAB_SET ?? '').split(';').map((s) => s.trim()).filter(Boolean).map(parseOverride);
+}

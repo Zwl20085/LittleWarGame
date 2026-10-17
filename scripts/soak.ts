@@ -13,6 +13,7 @@
  */
 import { readFileSync } from 'node:fs';
 import { buildGameData } from '../src/data/loader';
+import { applyOverrides, envOverrides } from './lab/overrides';
 import { createMatch, step } from '../src/sim/sim';
 import type { Unit } from '../src/sim/types';
 import { dist } from '../src/sim/vec';
@@ -43,8 +44,10 @@ if (process.env.THEATRE === '0') STRATEGY_AI.theatre = false;
 for (const k of (process.env.THEATRE_OFF ?? '').split(',')) if (k === 'stances' || k === 'structure' || k === 'counter') THEATRE_AB[k] = false;
 
 // UPGRADES=0 → 3.0 unit upgrades off (A/B).
-const rulesText = readFileSync('docs/data/rules.json', 'utf8');
-const data = buildGameData(readFileSync('docs/data/units.csv', 'utf8'), readFileSync('docs/data/weapons.csv', 'utf8'),
+// LAB_SET="a.b=1;unit.x.cost_p*=1.1": rules / csv overrides for tuning A/B runs (scripts/lab/overrides.ts).
+const labText = applyOverrides({ units: readFileSync('docs/data/units.csv', 'utf8'), weapons: readFileSync('docs/data/weapons.csv', 'utf8'), rules: readFileSync('docs/data/rules.json', 'utf8') }, envOverrides());
+const rulesText = labText.rules;
+const data = buildGameData(labText.units, labText.weapons,
   process.env.UPGRADES === '0' ? JSON.stringify({ ...JSON.parse(rulesText), upgrades: { ...JSON.parse(rulesText).upgrades, enabled: false } }) : rulesText);
 const minutes = Number(process.argv[2] ?? 60);
 const seeds = (process.argv[3] ?? '7,11,13').split(',').map(Number);
@@ -113,6 +116,8 @@ for (const seed of seeds) {
     for (const f of w.forts) if (f.occupant !== null && !w.unitAlive(f.occupant)) note(`t=${Math.round(w.time)}s fort#${f.id} occupant ${f.occupant} is dead`);
   }
   if (win.length) report(win);
+  const elim = w.factions.filter((f) => f.eliminatedAt !== null);
+  console.log(`ELIMINATIONS ${elim.length} at [${elim.map((f) => ((f.eliminatedAt ?? 0) / 60).toFixed(1)).join(',')}] min`);
   const r = w.result;
   if (r) console.log(`RESULT: ${r.reason} winners [${r.winners.join(',')}] at ${(r.tick / w.tickHz / 60).toFixed(1)} min`);
   else console.log(`RESULT: no result after ${minutes} min (alive: ${w.factions.filter((f) => f.alive).map((f) => f.id).join(',')}; held ${w.factions.map((f) => w.objectives.filter((o) => o.owner === f.id).length).join('/')})`);

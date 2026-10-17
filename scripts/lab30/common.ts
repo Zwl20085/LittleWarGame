@@ -17,7 +17,7 @@ import { buildGameData } from '../../src/data/loader';
 import type { GameData } from '../../src/data/types';
 import { createMatch, step, type Match } from '../../src/sim/sim';
 import type { MatchConfig } from '../../src/sim/types';
-import { applyOverrides, parseOverride, type DataText } from '../lab/overrides';
+import { applyOverrides, envOverrides, parseOverride, type DataText } from '../lab/overrides';
 
 export type Args = Record<string, string[]>;
 
@@ -51,7 +51,7 @@ export function dataText(dir = 'docs/data'): DataText {
 
 /** Game data with `--set` overrides applied (e.g. `transport.enabled=false`). */
 export function loadData(sets: readonly string[] = [], dir = 'docs/data'): GameData {
-  const t = applyOverrides(dataText(dir), sets.map(parseOverride));
+  const t = applyOverrides(dataText(dir), [...envOverrides(), ...sets.map(parseOverride)]);
   return buildGameData(t.units, t.weapons, t.rules);
 }
 

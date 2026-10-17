@@ -3,6 +3,7 @@
 // 3.0 lab runner helpers (V30_SPEC §0, §2): match creation from a (possibly frozen) source tree,
 // stepping with a per-second hook, child-process jobs and the JSON + Markdown report writer.
 // Kept small and plain so other lab30 suites can reuse it.
+import { applyOverrides, envOverrides } from '../lab/overrides';
 import { fork } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -58,7 +59,9 @@ export async function createLabMatch(spec: MatchSpec): Promise<LabMatch> {
   const create = sim.createMatch as (d: GameData, c: Record<string, unknown>) => { world: World };
   const stepFn = sim.step as (m: { world: World }) => void;
   const rd = (f: string): string => readFileSync(resolve(spec.data, f), 'utf8');
-  const data = build(rd('units.csv'), rd('weapons.csv'), rd('rules.json'));
+  // LAB_SET env: rules / csv overrides for tuning A/B runs.
+  const t = applyOverrides({ units: rd('units.csv'), weapons: rd('weapons.csv'), rules: rd('rules.json') }, envOverrides());
+  const data = build(t.units, t.weapons, t.rules);
   const m = create(data, {
     mapId: 'generated', mapSize: spec.mapSize, factions: spec.factions, infoMode: 'open', seed: spec.seed,
     difficulty: 'normal', playerSlot: 0, spectate: true, ...(spec.config ?? {}),
