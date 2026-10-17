@@ -2,6 +2,7 @@ import type { ComplianceRules } from '../data/frontRules';
 import { noteResponse } from './events';
 import { RESPONSE, setResponse, type DirectiveCtx } from './frontresponse';
 import { Rng } from './rng';
+import { temperamentBias } from './doctrines';
 import { centroid, enemyNear, sumValue } from './theatreq';
 import type { Directive, DirectiveKind, Faction, Front, Unit } from './types';
 import { dist, type V2 } from './vec';
@@ -103,7 +104,7 @@ export function complianceOf(world: World, f: Faction, s: Front, combat: Unit[],
   const distM = dist(at, world.hqPos(f.id));
   const prox = 1 - Math.max(0, Math.min(1, (distM - c.near_m) / (c.far_m - c.near_m)));
   const risk = riskOf(world, f, s, combat, ctx, at);
-  const value = Math.max(0, Math.min(1, c.base + c.proximity_weight * prox + c.temperament_weight * (temperament(world, f, s) - 0.5) - c.risk_weight * risk.risk));
+  const value = Math.max(0, Math.min(1, c.base + c.proximity_weight * prox + c.temperament_weight * (temperament(world, f, s) - 0.5 + temperamentBias(world, f)) -c.risk_weight * risk.risk));
   return { value, distM, risk };
 }
 

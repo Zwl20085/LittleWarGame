@@ -5,6 +5,7 @@ import { populationCap, populationOf } from './production';
 import { placeEfficiency, placeOwner, placeContested } from './settlements';
 import type { Faction, Place } from './types';
 import { refund } from './economy';
+import { investWeight } from './doctrines';
 import { dist } from './vec';
 import type { World } from './world';
 
@@ -124,7 +125,8 @@ export function releaseFund(world: World, f: Faction): void {
 export function thinkInvestment(world: World, f: Faction): void {
   if (!econRules(world) || !f.autoInvest || !f.alive) return;
   const fund = f.econFund;
-  const { appetite, safe } = investAppetite(world, f);
+  const { appetite: base, safe } = investAppetite(world, f);
+  const appetite = base * investWeight(world, f); // 3.0: the doctrine's invest share (doctrines.ts)
   appetites.set(f, appetite);
   // Threatened: the money set aside goes back to the army.
   if (appetite <= 0) releaseFund(world, f);

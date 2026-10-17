@@ -1,3 +1,4 @@
+import type { DoctrineRules } from './doctrineRules';
 import type { ComplianceRules, FrontRules } from './frontRules';
 export type UnitKind = 'infantry' | 'crew' | 'vehicle';
 export type Facility = 'barracks' | 'vehicle' | 'support';
@@ -309,6 +310,8 @@ export interface Rules {
   };
   /** 3.0 fronts: tiers, theatre front counts, soft cap (frontTiers.ts). */
   readonly fronts: FrontRules;
+  /** 3.0 AI doctrines (sim/doctrines.ts); absent = doctrines off. */
+  readonly doctrines?: DoctrineRules;
   /** Engineer construction; `defensive` = 2.0 pillboxes / bunkers (structures.ts, BALANCE_SPEC §10). */
   readonly construction: {
     readonly defensive: DefensiveRules;

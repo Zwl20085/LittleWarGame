@@ -1,4 +1,5 @@
 import { parseCsv, num, bool, type CsvRow } from './csv';
+import { validateDoctrineRules } from './doctrineRules';
 import { validateFrontRules } from './frontRules';
 import type { DefensiveRules, FireMode, GameData, Rules, UnitDef, UnitKind, WeaponDef, Facility } from './types';
 
@@ -103,6 +104,7 @@ export function buildGameData(unitsCsv: string, weaponsCsv: string, rulesJson: s
   validateDefensive(rules.construction?.defensive, units, weapons);
   validateLogistics(rules);
   validateFrontRules(rules.fronts, rules.command.compliance_threshold, rules.command.compliance);
+  validateDoctrineRules(rules.doctrines, new Set(units.keys()));
   // 2.2 endurance (V22_SPEC §3.1): one documented lever, every weapon's ammo cost × multiplier.
   const ammoMul = rules.logistics?.ammo_cost_multiplier ?? 1;
   const effWeapons = ammoMul === 1 ? weapons : new Map([...weapons].map(([id, w]) => [id, { ...w, ammoCost: w.ammoCost * ammoMul }]));

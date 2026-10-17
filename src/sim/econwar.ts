@@ -3,6 +3,7 @@ import { boundOrder } from './frontref';
 import { selectTarget } from './combat';
 import { moveTo, stop } from './movement';
 import { isCommander } from './formulas';
+import { raidIntervalMul, raidsOnDefence } from './doctrines';
 import type { EconBuilding, Faction, Unit } from './types';
 import { dist, type V2 } from './vec';
 import type { World } from './world';
@@ -165,9 +166,10 @@ export function planEconRaids(world: World, f: Faction): void {
   if (!ECON_WAR_AB.raids || f.isPlayer || !f.alive || !econRules(world) || world.econ.length === 0) return;
   if (liveParty(world, f)) return;
   if (world.time < Math.max(ECON_WAR.firstS, nextAt.get(f) ?? 0)) return;
-  nextAt.set(f, world.time + ECON_WAR.everyS);
+  // 3.0: the doctrine's raid cadence (attrition interdicts often, also while it holds its line).
+  nextAt.set(f, world.time + ECON_WAR.everyS * raidIntervalMul(world, f, 'econ'));
   const k = f.directive.kind;
-  if (f.command.finisher || k === 'defend' || k === 'contract' || k === 'fortify') return why('directive');
+  if (f.command.finisher || k === 'contract' || ((k === 'defend' || k === 'fortify') && !raidsOnDefence(world, f))) return why('directive');
   if (f.command.fullness < ECON_WAR.minFullness) return why('thin');
   // The real alert (an attack actually coming), not the readiness alarm that is on most of the time.
   if (f.command.homeThreat.alert) return why('alert');

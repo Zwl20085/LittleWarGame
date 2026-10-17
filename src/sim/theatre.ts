@@ -12,6 +12,7 @@ import { stormOn, STRATEGY_AI } from './strategyai';
 import { isStructure } from './structures';
 import { combatCount, scaleFronts, strayCluster } from './frontTiers';
 import { answerDirective } from './compliance';
+import { frontDensity } from './doctrines';
 import type { Faction, Front, FrontOrder, Objective, Unit, Zone } from './types';
 import { angleDiff, DEG, dist, headingTo, type V2 } from './vec';
 import type { World } from './world';
@@ -307,7 +308,8 @@ function mergeable(world: World, f: Faction, s: Front): boolean {
 function restructure(world: World, f: Faction, combat: Map<number, Unit[]>, groups: ReadonlyMap<number, Unit[]>): boolean {
   // 2.1: zone garrisons are counted apart (they hold a fixed line, not an axis).
   const field = f.fronts.filter((s) => !zoneGarrisons.has(s));
-  const total = [...combat.values()].reduce((a, c) => a + c.length, 0);
+  // 3.0: a doctrine's front density counts troops as fewer (attrition / maneuver: fewer, denser fronts).
+  const total = [...combat.values()].reduce((a, c) => a + c.length, 0) / frontDensity(world, f);
   const axes = theatreAxes(world, f);
   // 3.0: the army and the frontage ask for more fronts (frontTiers.scaleFronts; keep side with 1/0.75 slack).
   const want = desiredFronts(world, axes, total, undefined, undefined, undefined, scaleFronts(world, f, total));

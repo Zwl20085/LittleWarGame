@@ -16,6 +16,8 @@ export type MoraleState = 'normal' | 'suppressed' | 'pinned';
 export type InfoMode = 'open' | 'fog';
 /** Force doctrine: production mix and preferred battle operations. */
 export type Personality = 'armor' | 'infantry' | 'artillery' | 'balanced' | 'mechanized';
+/** 3.0 AI war doctrine (作战风格, doctrines.ts): builder 优先发育, blitz 一波直捣黄龙, attrition 稳扎稳打, maneuver 寻机决战. */
+export type DoctrineId = 'builder' | 'blitz' | 'attrition' | 'maneuver';
 export type Difficulty = 'easy' | 'normal' | 'hard';
 
 export type ManualTask =
@@ -346,6 +348,10 @@ export interface Faction {
   readonly isPlayer: boolean;
   readonly cityIdx: number;
   readonly personality: Personality;
+  /** 3.0: the supreme HQ's war doctrine (doctrines.ts); steers AI factions only. */
+  readonly doctrine: DoctrineId;
+  /** 3.0: match time of the first battle with each faction (index = faction id, -1 = none yet; HUD doctrine reveal). */
+  contactAt: number[];
   readonly difficulty: Difficulty;
   alive: boolean;
   eliminatedAt: number | null;
@@ -502,6 +508,8 @@ export interface MatchConfig {
   readonly seed: number;
   readonly difficulty: Difficulty;
   readonly personalities?: Personality[];
+  /** 3.0 doctrine per faction slot ('random' or absent = drawn from the seed, all different while they last). */
+  readonly doctrines?: readonly (DoctrineId | 'random')[];
   readonly playerSlot: number;
   readonly spectate?: boolean;
 }

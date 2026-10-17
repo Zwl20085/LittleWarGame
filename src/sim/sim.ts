@@ -2,6 +2,7 @@ import type { GameData } from '../data/types';
 import { thinkUnit } from './behavior';
 import { majorityBleed, hqCaptured, updateHq, updateObjective } from './capture';
 import { personalityWeights, thinkCity } from './cityai';
+import { assignDoctrines, doctrineCaps, doctrinesOn } from './doctrines';
 import { updateProjectiles, updateWeapons } from './combat';
 import { AI } from './config';
 import { applyIncome, economyRates, nodeBonus, stewardStep } from './economy';
@@ -40,16 +41,19 @@ export interface Match {
 function makeFaction(world: World, id: number, isPlayer: boolean): Faction {
   const e = world.data.rules.economy;
   const personalities = world.config.personalities;
-  const personality = personalities?.[id] ?? (['balanced', 'armor', 'infantry', 'mechanized', 'artillery'] as const)[id % 5];
+  // 3.0: every slot gets a doctrine (seeded, all different in a 4-FFA); an AI's production flavour follows it.
+  const doctrine = assignDoctrines(world.config.seed, world.hostile.length, world.config.doctrines)[id];
+  const flavour = !isPlayer && doctrinesOn(world) ? world.data.rules.doctrines?.profiles[doctrine]?.personality : undefined;
+  const personality = personalities?.[id] ?? flavour ?? (['balanced', 'armor', 'infantry', 'mechanized', 'artillery'] as const)[id % 5];
   // The player's chosen doctrine sets the starting production mix too (balanced = spec defaults).
   const weights = isPlayer && !personalities?.[id] ? { ...world.data.rules.proposed_defaults.production_unit_weights } : personalityWeights(world, personality);
   return {
-    id, color: FACTION_COLORS[id], roman: ROMAN[id], isPlayer, cityIdx: id, personality, difficulty: world.config.difficulty,
+    id, color: FACTION_COLORS[id], roman: ROMAN[id], isPlayer, cityIdx: id, personality, doctrine, contactAt: world.hostile.map(() => -1), difficulty: world.config.difficulty,
     alive: true, eliminatedAt: null, p: e.starting_p, m: e.starting_m,
     alloc: [...e.allocation_default] as [number, number, number], locks: [false, false, false], autoEconomy: true, autoInvest: true,
     stewardHoldUntil: 0, stewardLastDir: -1, stewardReason: 'steward.default', stewardParams: {},
     resolve: world.data.rules.victory.initial_resolve, popPresent: 0, popReserved: 0, logistics: 0, supplyDemand: 0,
-    weights, caps: { ...world.data.rules.proposed_defaults.production_unit_caps }, paused: {},
+    weights, caps: doctrineCaps(world, { isPlayer, doctrine }, world.data.rules.proposed_defaults.production_unit_caps), paused: {},
     spent: [], protectedOrder: null, protectRetryAt: 0, nextRaidAt: 240, command: createHighCommand(), depot: 0, econP: 0, econM: 0, econFund: { p: 0, m: 0, active: false }, econInvested: 0, lastWorksAt: -999, orders: [], manualQueue: [], fronts: [], directive: initialDirective(isPlayer), mainFront: 0, frontSeq: 0, zones: [], zoneSeq: 0,
     incomeP: 0, incomeM: 0, overflowWarnAt: -1e9, hqProgress: {}, lostUnits: 0, producedUnits: 0,
     spentTotalP: 0, spentTotalM: 0, aiThinkAt: id * 0.7, trucksUnderFire: [],

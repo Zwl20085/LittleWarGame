@@ -4,6 +4,7 @@ import { enemyDistance } from './frontai';
 import { EAGER, eagerOn, stormOn } from './strategyai';
 import { navPost } from './crewai';
 import { boundOrder } from './frontref';
+import { raidIntervalMul } from './doctrines';
 import type { World } from './world';
 
 /** Query scratch for crowding() (called per blast victim). */
@@ -171,7 +172,8 @@ export function planOperations(world: World, f: Faction): void {
   }
   // Raids through the weakest front stretch toward the enemy rear.
   if (!contact || finisher || world.time < f.nextRaidAt) return;
-  f.nextRaidAt = world.time + OPS.raidEverySeconds;
+  // 3.0: the doctrine's convoy-raid cadence (doctrines.ts; Infinity = never).
+  f.nextRaidAt = world.time + OPS.raidEverySeconds * raidIntervalMul(world, f, 'convoy');
   const cells = world.frontInfo[f.id].cells;
   const gap = weakestPoint(world, f.id, cells);
   if (!gap) return;

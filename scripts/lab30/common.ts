@@ -18,6 +18,8 @@ export interface MatchSpec {
   readonly factions: number;
   readonly src: string;
   readonly data: string;
+  /** Extra MatchConfig fields (e.g. `doctrines`). */
+  readonly config?: Readonly<Record<string, unknown>>;
 }
 
 export interface LabMatch {
@@ -57,7 +59,7 @@ export async function createLabMatch(spec: MatchSpec): Promise<LabMatch> {
   const data = build(rd('units.csv'), rd('weapons.csv'), rd('rules.json'));
   const m = create(data, {
     mapId: 'generated', mapSize: spec.mapSize, factions: spec.factions, infoMode: 'open', seed: spec.seed,
-    difficulty: 'normal', playerSlot: 0, spectate: true,
+    difficulty: 'normal', playerSlot: 0, spectate: true, ...(spec.config ?? {}),
   });
   return { world: m.world, step: () => { stepFn(m); m.world.fx.length = 0; } };
 }

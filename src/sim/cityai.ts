@@ -11,6 +11,7 @@ import type { World } from './world';
 import { thinkInvestment } from './econai';
 import { concentrateArmour } from './armour';
 import { frontReinforceWeight } from './frontTiers';
+import { doctrineWeights, mainShareMul } from './doctrines';
 
 const PERSONALITY_MUL: Record<Personality, Record<string, number>> = {
   balanced: {},
@@ -47,7 +48,8 @@ function knownEnemyMix(world: World, f: number): { armor: number; total: number 
 export function thinkCity(world: World, f: Faction): void {
   if (!f.alive) return;
   if (!f.isPlayer) {
-    const w = personalityWeights(world, f.personality);
+    // 3.0: the doctrine scales the personality mix (doctrines.ts).
+    const w = doctrineWeights(world, f, personalityWeights(world, f.personality));
     const mix = knownEnemyMix(world, f.id);
     if (mix.total > 0 && mix.armor / mix.total > 0.2) {
       w.at_gun = (w.at_gun ?? 0) * 1.6;
@@ -119,7 +121,7 @@ function orderPosture(s: Front): Posture | null {
  * a quiet front also sends up to 10 % of its line troops to a clearly outmatched one.
  */
 function balanceReserves(world: World, f: Faction, strength: ReadonlyMap<number, number>, axisMain: boolean): void {
-  const mainMul = axisMain ? RESPONSE.shareMainAxis : THEATRE.shareMain;
+  const mainMul = (axisMain ? RESPONSE.shareMainAxis : THEATRE.shareMain) * mainShareMul(world, f);
   if (f.fronts.length === 0) return;
   const pressure = new Map<number, number>();
   let total = 0;
