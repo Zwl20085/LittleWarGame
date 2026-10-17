@@ -25,11 +25,15 @@ its own note in this folder (`WP-*.md`) on its worktree branch `worktree-agent-<
 - WP-X seams (worktree-agent-a8abcce555234e8cf) — merged.
 - WP-E infiltration (worktree-agent-aa578224f6cc603a0) — merged. 0 % undetected crossings, challenge 42/42, cost +5–10 %. Open: pickets rarely trigger (hollow AI fronts) → theatre picket quota is a follow-up; fog: more raiders reach the 700 m ring with system on (40 % vs 21 %) → tuning pass.
 
+- WP-A doctrines (worktree-agent-ac07b57b1ae15b872) — merge 40ca104. Win matrix inside 25–75 %, fingerprints 71–77 % identifiable; pacing 0.89 elim/h on the merged tree (same with doctrines off; 2.2 was 1.33–1.78) → tuning pass. Open: backdoor 67 % (attrition seed 11) → WP-Y. Security review: no CRITICAL/HIGH; follow-ups not done: L3 per-file bundle re-verification, L6 Electron fuses, L9 key passphrase.
+
 ## Wave 2 running
 | WP | branch | status |
 |---|---|---|
 | H unit upgrades | worktree-agent-a355e4433af39a02b | running |
-| A doctrines + music wiring + doctrine_* strategies | worktree-agent-ac07b57b1ae15b872 | running |
+| Y doctrine seams (rail raids, picket gap) + backdoor regression fix | (launched after A merge) | running |
+| SEC security-review fixes (M1–M4, L1,L2,L4,L5,L7,L8,L10–L12) | worktree-agent-af59da2c7d0e452ce | running (Sonnet) |
+| code review (read-only) of merged packages | worktree-agent-a1d3da2905d495183 | running |
 
 ## Wave 1 agents still running (merge each when reported; typecheck + tests after every merge)
 | WP | branch | status |
