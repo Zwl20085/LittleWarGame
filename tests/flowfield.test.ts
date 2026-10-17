@@ -36,8 +36,8 @@ function costGrid(nx: number, nz: number, seed: number): Float32Array {
   return c;
 }
 
-describe('sparse flow field (WP-M2)', () => {
-  it('settles to the same distances as an eager dense Dijkstra, partially and fully', () => {
+describe('hot / cold flow field (WP-M2)', () => {
+  it('settles to the same distances as an eager dense Dijkstra, partially, cooled and warmed again', () => {
     const nx = 70;
     const nz = 45;
     const n = nx * nz;
@@ -51,7 +51,13 @@ describe('sparse flow field (WP-M2)', () => {
         const v = f.value(k);
         if (v !== FIELD_INF) expect(v).toBe(ref[k]);
       }
+      // Cold (compact) form reads the same; expanding again warms it.
+      const hot = Array.from({ length: n }, (_, k) => f.at(k));
+      f.cool();
+      expect(f.dense).toBeNull();
+      for (let k = 0; k < n; k++) expect(f.at(k)).toBe(hot[k]);
       f.settle(n - 1);
+      if (f.dense) f.cool();
       f.settle(0);
       for (let k = 0; k < n; k++) {
         f.settle(k);

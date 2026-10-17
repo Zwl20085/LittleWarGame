@@ -75,7 +75,7 @@ for (let i = 1; i <= secs * w.tickHz; i++) {
     per.push(`${h.label} ${h.fields.size}f ${h.builds}b ${h.rebuilds}rb ${cells ? Math.round((100 * settled) / cells) : 0}%touched`);
   }
   const mu = process.memoryUsage();
-  console.log(`t=${Math.round(w.time)}s units ${w.units.size} arrayBuffers ${mb(mu.arrayBuffers)} MB heap ${mb(mu.heapUsed)} MB rss ${mb(mu.rss)} MB | fields ${cached} (${mb(fieldBytes)} MB) builds ${builds} rebuilds ${rebuilds} (${builds ? Math.round((100 * rebuilds) / builds) : 0} %) | ${(ms / (300 * w.tickHz)).toFixed(2)} ms/tick`);
+  console.log(`t=${Math.round(w.time)}s units ${w.units.size} arrayBuffers ${mb(mu.arrayBuffers)} MB heap ${mb(mu.heapUsed)} MB rss ${mb(mu.rss)} MB | fields ${cached} (${mb(fieldBytes)} MB) builds ${builds} rebuilds ${rebuilds} (${builds ? Math.round((100 * rebuilds) / builds) : 0} %) | warms ${(NavGrid as unknown as { fieldWarms?: number }).fieldWarms ?? "-"} | ${(ms / (300 * w.tickHz)).toFixed(2)} ms/tick`);
   console.log(`  ${per.join(' | ')}`);
   ms = 0;
 }

@@ -65,7 +65,7 @@ console.log(`units ${w.units.size} perTick ${((performance.now() - t0) / (20 * s
   // The slowest ticks with their phase in the 2 s / 1 s schedules (which periodic job spiked).
   const worst = Array.from(tickMs).map((ms, i) => ({ ms, i })).filter((x) => x.i >= 1200).sort((a, b) => b.ms - a.ms).slice(0, 10);
   console.log('slowest ticks:', worst.map((x) => `#${x.i} ${x.ms.toFixed(1)}ms (t%40=${x.i % 40} t%20=${x.i % 20})`).join(', '));
-  console.log('field cache: builds', NavGrid.builds, 'evictions', NavGrid.evictions, 'rebuilds of evicted', NavGrid.rebuilds, `(${(100 * NavGrid.rebuilds / Math.max(1, NavGrid.builds)).toFixed(0)} %)`, 'distinct goals', NavGrid.goalCells.size);
+  console.log('field cache: builds', NavGrid.builds, 'evictions', NavGrid.evictions, 'rebuilds of evicted', NavGrid.rebuilds, `(${(100 * NavGrid.rebuilds / Math.max(1, NavGrid.builds)).toFixed(0)} %)`, 'distinct goals', NavGrid.goalCells.size, 'warms', (NavGrid as unknown as { fieldWarms?: number }).fieldWarms ?? '-');
 }
 const trucks = [...w.units.values()].filter((u) => u.def.id === 'supply_truck');
 const states: Record<string, number> = {};
