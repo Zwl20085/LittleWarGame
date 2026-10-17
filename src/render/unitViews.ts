@@ -647,7 +647,8 @@ export class UnitViews {
       let v = this.views.get(u.id);
       if (!v) v = this.create(u);
       v.seen = frame;
-      v.visible = !(fogOn && u.owner !== playerId && !w.visibleTo[playerId]?.has(u.id));
+      // 3.0: units aboard a train are hidden (the train is drawn by railField.ts).
+      v.visible = !(fogOn && u.owner !== playerId && !w.visibleTo[playerId]?.has(u.id)) && u.rail?.stage !== 'aboard';
       v.x = u.prev.x + (u.pos.x - u.prev.x) * alpha;
       v.z = u.prev.z + (u.pos.z - u.prev.z) * alpha;
       this.interpolateFacing(v, u, alpha, dt, w.tick);

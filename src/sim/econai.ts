@@ -5,7 +5,8 @@ import { populationCap, populationOf } from './production';
 import { placeEfficiency, placeOwner, placeContested } from './settlements';
 import type { Faction, Place } from './types';
 import { refund } from './economy';
-import { investWeight } from './doctrines';
+import { investWeight, profileOf } from './doctrines';
+import { setInvestStyle, thinkZones } from './econZoneAi';
 import { dist } from './vec';
 import type { World } from './world';
 
@@ -126,8 +127,12 @@ export function thinkInvestment(world: World, f: Faction): void {
   if (!econRules(world) || !f.autoInvest || !f.alive) return;
   const fund = f.econFund;
   const { appetite: base, safe } = investAppetite(world, f);
-  const appetite = base * investWeight(world, f); // 3.0: the doctrine's invest share (doctrines.ts)
+  const weight = investWeight(world, f); // 3.0: the doctrine's invest share (doctrines.ts)
+  const appetite = base * weight;
+  if (profileOf(world, f)) setInvestStyle(f, weight); // zones: the doctrine is the investment style
   appetites.set(f, appetite);
+  // 3.0: economic zones (econZoneAi.ts) — rebuild, raise or found one per think.
+  thinkZones(world, f, base, safe);
   // Threatened: the money set aside goes back to the army.
   if (appetite <= 0) releaseFund(world, f);
   const maxSites = appetite >= 1.1 ? ECON_AI.maxSites + 1 : appetite >= 0.5 ? ECON_AI.maxSites : appetite > 0 ? 1 : 0;

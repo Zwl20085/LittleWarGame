@@ -4,6 +4,8 @@ import type {
   Behavior, EconBuilding, Faction, Fort, FxEvent, LogEntry, ManualTask, MatchResult, MoraleState, Objective, Projectile, SetupState, Unit,
 } from './types';
 import type { V2 } from './vec';
+import { applyTransport, mirrorRide, packTransport, type TransportSnap } from './transportsnap';
+import type { EconZone } from './econZones';
 
 /**
  * Worker → main-thread state transfer. The worker owns the authoritative simulation; the main
@@ -44,6 +46,8 @@ export interface Snapshot {
   readonly placeStock: Float32Array;
   readonly placeContestedSince: Float32Array;
   readonly econ: EconBuilding[];
+  /** 3.0 economic zones (econZones.ts; render + zone panel). */
+  readonly econZones: EconZone[];
   readonly fx: FxEvent[];
   readonly log: LogEntry[];
   /** Observer's visible enemy ids and memory (fog mode only; null in open mode). */
@@ -54,6 +58,8 @@ export interface Snapshot {
   /** Null on most snapshots (sent with the faction records; only the supply layer reads it). */
   readonly supplyNodes: SupplyNode[][] | null;
   readonly result: MatchResult | null;
+  /** 3.0 roads and railways (transportsnap.ts): line state and trains every snapshot, geometry when it changed. */
+  readonly transport: TransportSnap | null;
 }
 
 /** Per-consumer cursor so only new log entries / changed fields are sent. */
@@ -69,6 +75,8 @@ export interface SnapshotCursor {
   defIndex: Map<string, number> | null;
   /** Number of works in the last fort list sent (-1 = never sent). */
   fortCount?: number;
+  /** transport.version last sent (-1 = never). */
+  transportVersion?: number;
 }
 
 export const newCursor = (): SnapshotCursor => ({ lastLog: null, frontVersion: -1, viewVersion: -1, statusIndex: new Map(), statusSent: 0, sent: 0, defIndex: null });
@@ -118,7 +126,7 @@ export function makeSnapshot(match: Match, cur: SnapshotCursor, observer: number
     buf[o + F.heading] = u.heading; buf[o + F.turret] = u.turret; buf[o + F.hp] = u.hp; buf[o + F.morale] = u.morale;
     buf[o + F.supp] = u.suppression; buf[o + F.ammo] = u.ammo; buf[o + F.supplyRatio] = u.supplyRatio;
     buf[o + F.setup] = SETUP.indexOf(u.setup);
-    buf[o + F.flags] = (u.moving ? 1 : 0) | (u.routing ? 2 : 0) | (u.wavering ? 4 : 0) | (u.supplied ? 8 : 0) | (u.fixed ? 16 : 0) | (u.pathFailed ? 32 : 0) | (u.mounted ? 64 : 0);
+    buf[o + F.flags] = (u.moving ? 1 : 0) | (u.routing ? 2 : 0) | (u.wavering ? 4 : 0) | (u.supplied ? 8 : 0) | (u.fixed ? 16 : 0) | (u.pathFailed ? 32 : 0) | (u.mounted ? 64 : 0) | (u.rail?.stage === 'aboard' ? 128 : 0);
     buf[o + F.moraleState] = MORALE.indexOf(u.moraleState); buf[o + F.behavior] = BEHAVIOR.indexOf(u.behavior);
     buf[o + F.target] = u.targetId ?? -1; buf[o + F.front] = u.frontId; buf[o + F.cargo] = u.cargo;
     buf[o + F.truck] = TRUCK.indexOf(u.truckState); buf[o + F.fort] = u.fortId ?? -1; buf[o + F.cover] = u.cover;
@@ -158,6 +166,7 @@ export function makeSnapshot(match: Match, cur: SnapshotCursor, observer: number
     placeStock: Float32Array.from(w.places, (p) => p.stock),
     placeContestedSince: Float32Array.from(w.places, (p) => p.contestedSince),
     econ: w.econ,
+    econZones: w.econZones,
     fx,
     log,
     // Only the observer's visibility matters on the main thread, and only in fog mode.
@@ -167,6 +176,7 @@ export function makeSnapshot(match: Match, cur: SnapshotCursor, observer: number
     frontView,
     supplyNodes: slow || cur.sent === 1 ? match.supplyNodes : null,
     result: w.result,
+    transport: packTransport(w, cur),
   };
 }
 
@@ -194,6 +204,7 @@ export function applySnapshot(match: Match, snap: Snapshot, observer: number): v
     u.setup = SETUP[buf[o + F.setup]] ?? 'packed';
     const fl = buf[o + F.flags];
     u.moving = (fl & 1) !== 0; u.routing = (fl & 2) !== 0; u.wavering = (fl & 4) !== 0; u.supplied = (fl & 8) !== 0; u.pathFailed = (fl & 32) !== 0; u.mounted = (fl & 64) !== 0;
+    u.rail = (fl & 128) !== 0 ? (u.rail ?? mirrorRide(u)) : null;
     u.moraleState = MORALE[buf[o + F.moraleState]] ?? 'normal'; u.behavior = BEHAVIOR[buf[o + F.behavior]] ?? 'advance';
     u.targetId = buf[o + F.target] < 0 ? null : buf[o + F.target]; u.frontId = buf[o + F.front]; u.cargo = buf[o + F.cargo];
     u.truckState = TRUCK[buf[o + F.truck]] ?? 'load'; u.fortId = buf[o + F.fort] < 0 ? null : buf[o + F.fort];
@@ -236,6 +247,7 @@ export function applySnapshot(match: Match, snap: Snapshot, observer: number): v
     w.places[i].contestedSince = snap.placeContestedSince[i];
   }
   replace(w.econ, snap.econ);
+  replace(w.econZones, snap.econZones ?? []);
   for (const e of snap.fx) w.fx.push(e);
   if (w.fx.length > 4000) w.fx.splice(0, w.fx.length - 4000);
   for (const l of snap.log) w.log.push(l);
@@ -260,6 +272,7 @@ export function applySnapshot(match: Match, snap: Snapshot, observer: number): v
   }
   if (snap.supplyNodes) match.supplyNodes = snap.supplyNodes;
   w.result = snap.result;
+  if (snap.transport) applyTransport(w, snap.transport);
   w.spatial.rebuild(w.aliveUnits);
 }
 

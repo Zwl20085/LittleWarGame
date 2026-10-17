@@ -1,5 +1,5 @@
 // Doctrine lab report (scripts/lab30/doctrine.ts): win matrix, curves, distinctiveness, pacing.
-import { mdTable } from './common';
+import { mdTable } from './runner';
 
 const DOCTRINES = ['builder', 'blitz', 'attrition', 'maneuver'] as const;
 const CURVE_MIN = [5, 10, 15, 20, 25, 30, 35, 40, 45];

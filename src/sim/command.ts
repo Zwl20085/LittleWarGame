@@ -1,3 +1,4 @@
+import { thinkTransport } from './transportjobs';
 import { selectTarget } from './combat';
 import { enemyDistance } from './frontai';
 import { dig, openWork, startLine } from './works';
@@ -221,6 +222,8 @@ export function thinkHighCommand(world: World, f: Faction): void {
   const hc = f.command;
   if (eagerOn()) assessMood(world, f);
   thinkHomeDefence(world, f);
+  // 3.0: road links / rail repair by the engineers (extra sites: WP-F economic zones, when econZones lands).
+  thinkTransport(world, f);
   const dirs: Directive[] = [];
   const bias: Record<string, number> = {};
   const hq = world.hqPos(f.id);

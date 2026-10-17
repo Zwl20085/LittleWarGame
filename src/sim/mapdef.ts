@@ -70,6 +70,19 @@ export interface RiverDef {
   readonly fords: V2[];
 }
 
+/** 3.0 railway station: `placeIdx` = objective index of its settlement, or −1 − cityIdx for a capital. */
+export interface RailStationDef {
+  readonly pos: V2;
+  readonly placeIdx: number;
+}
+
+/** 3.0 railway line between two stations (indices into `MapDef.stations`), as a polyline a → b. */
+export interface RailLineDef {
+  readonly a: number;
+  readonly b: number;
+  readonly pts: V2[];
+}
+
 export interface MapDef {
   readonly id: string;
   readonly name: { zh: string; en: string };
@@ -95,4 +108,7 @@ export interface MapDef {
    * When present it replaces hills/ridges/noise. Generated maps use this.
    */
   readonly heightfield?: Float32Array;
+  /** 3.0 railways (railgen.ts; generated maps only): a data layer beside the roads, not a ground type. */
+  readonly rails?: RailLineDef[];
+  readonly stations?: RailStationDef[];
 }

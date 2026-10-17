@@ -1,5 +1,5 @@
 import { garrisonsZone } from './theatre';
-import { frontById } from './frontref';
+import { boundLine, frontById } from './frontref';
 import { massSlot } from './frontslots';
 import { armourMainShare } from './doctrines';
 import type { Faction, Front, Unit } from './types';
@@ -34,6 +34,8 @@ export const ARMOUR = {
   leadM: 45,
   /** Holding / assembling: the block waits this far behind the line centre (m). */
   reserveBackM: 90,
+  /** … but on a binding defend / fortify / fall-back line the reserve stays inside the line's depth. */
+  lineReserveBackM: 50,
   /** Infantry squads needed to lead an infantry attack with fewer than minGroup tanks. */
   supportMinFoot: 2,
   /** Spearhead / manoeuvre: a tank at most this far ahead of the group's leading foot (m). */
@@ -65,11 +67,14 @@ export interface ArmourPlan {
   readonly facing: number;
   /** The front attacks (push / an attack line / the approach march to its objective). */
   readonly pushing: boolean;
+  /** Reserve depth behind the line (m; absent = ARMOUR.reserveBackM). */
+  readonly reserveBackM?: number;
 }
 
 /** Where the block goes and why (pure; exported for the tests). */
 export function blockGoal(tanks: readonly Unit[], foot: readonly Unit[], plan: ArmourPlan, st: BlockState, now: number): { pos: V2; mode: 'reserve' | 'assemble' | 'lead' } {
-  const reserve = along(plan.front, -ARMOUR.reserveBackM, plan.facing);
+  const back = plan.reserveBackM ?? ARMOUR.reserveBackM;
+  const reserve = along(plan.front, -back, plan.facing);
   const n = tanks.length;
   if (!plan.pushing || n === 0) {
     st.committed = false;
@@ -90,7 +95,7 @@ export function blockGoal(tanks: readonly Unit[], foot: readonly Unit[], plan: A
       } else {
         // Assemble where the block already is when it is behind the line, else behind the line.
         const ahead = (c.x - plan.front.x) * Math.cos(plan.facing) + (c.z - plan.front.z) * Math.sin(plan.facing);
-        return { pos: ahead < -ARMOUR.reserveBackM * 0.5 ? c : reserve, mode: 'assemble' };
+        return { pos: ahead < -back * 0.5 ? c : reserve, mode: 'assemble' };
       }
     }
   }
@@ -118,7 +123,8 @@ export function armourSlots(world: World, s: Front, liners: readonly Unit[], slo
     st = { assembleSince: -1, committed: false };
     blocks.set(s, st);
   }
-  const goal = blockGoal(tanks, foot, plan, st, world.time);
+  // An ordered line is held by every unit on it, the armour reserve included (fronts.test "binds a defend order").
+  const goal = blockGoal(tanks, foot, boundLine(s) ? { ...plan, reserveBackM: ARMOUR.lineReserveBackM } : plan, st, world.time);
   tanks.forEach((u, i) => {
     const p = massSlot(goal.pos, plan.facing, i, tanks.length, 0, ARMOUR.spacing);
     slots[u.id] = world.navFor(u).nearestPassable(p, 40) ?? p;

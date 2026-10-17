@@ -13,6 +13,7 @@ import { availableM } from './production';
 import { thinkConvoyTruck } from './convoy';
 import { thinkBridgeBuilder } from './engineering';
 import { structureDuty } from './structures';
+import { transportDuty } from './transportjobs';
 import { enemyDistance, safeRear } from './frontai';
 import { enemyConvoyTargets } from './operations';
 import { EAGER, eagerOn, stormOn } from './strategyai';
@@ -141,6 +142,8 @@ export function thinkUnit(world: World, u: Unit): void {
   }
   if (u.opRole === 'garrison' && hqDuty(world, u)) return;
   if (u.def.id !== 'supply_truck' && structureDuty(world, u, s)) return;
+  // 3.0: an engineer assigned to a road / rail job (transportjobs.ts).
+  if (transportDuty(world, u)) return;
   // 2.2: shelled in the open → the nearest free building's lee wall until the shelling stops (shelter.ts).
   // (2.2 wave 2: a raid party keeps moving under fire — getting through is its job.)
   if (u.opRole !== 'raid' && takeShelter(world, u)) return;

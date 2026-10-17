@@ -16,6 +16,9 @@ import { convoySecond } from './convoy';
 import { drawSecond, initPlaces, logisticsDemand, seedStocks, stockSecond } from './settlements';
 import { econIncome, econSecond } from './econ';
 import { fundSecond } from './econai';
+import { econZonesSecond, zoneIncome } from './econZones';
+import { minefieldSecond } from './minefields';
+import { capitalDefenceSecond, initCapitalDefence, observeCapital } from './capitalDefence';
 import { createHighCommand, thinkHighCommand } from './command';
 import { initialDirective } from './directive';
 import { buildFrontInfoFor } from './frontai';
@@ -27,6 +30,8 @@ import { FACTION_COLORS, ROMAN, World } from './world';
 import { scaledData } from './scale';
 import { sampleStats, STATS_SAMPLE_SECONDS } from './stats';
 import { battleSecond } from './events';
+import { aboard, initTransport, railSecond, railTick } from './rail';
+import { transportSecond } from './transportjobs';
 import { canSpot, observerOf } from './terrainrules';
 import type { V2 } from './vec';
 
@@ -103,6 +108,8 @@ export function createMatch(baseData: GameData, config: MatchConfig): Match {
       if (!placeStructure(world, f.id, 'pillbox', sp.pos, sp.facingDeg * DEG)) world.spawnUnit(f.id, 'mg', sp.pos, f.mainFront, { fixed: true, facingDeg: sp.facingDeg });
     }
   }
+  // 3.0: absolute defence perimeter + artillery position at every capital (capitalDefence.ts).
+  initCapitalDefence(world);
   // Starting territory: settlements near each capital (and closer to it than to any other).
   const initR = data.rules.territory?.initial_radius_m ?? 0;
   for (const o of world.objectives) {
@@ -118,6 +125,8 @@ export function createMatch(baseData: GameData, config: MatchConfig): Match {
   // 2.2: production / supply places and their starting stocks (settlements.ts).
   initPlaces(world);
   seedStocks(world);
+  // 3.0 road graph, rail lines and stations (rail.ts).
+  initTransport(world);
   for (const u of world.units.values()) updateHeight(world, u);
   world.spatial.rebuild(world.aliveUnits);
   const front = new FrontlineField(world, null);
@@ -149,6 +158,8 @@ export function updateVisibility(world: World): void {
       }
     }
     // Owned observation points add an observer with 180 m radius.
+    // 3.0: the capital observation ring (fog mode).
+    observeCapital(world, f.id, vis);
     for (const o of world.objectives) {
       if (o.owner !== f.id || o.type !== 'observation') continue;
       const y = world.terrain.heightAt(o.pos.x, o.pos.z) + 6;
@@ -226,6 +237,9 @@ function economySecond(match: Match): void {
     }
     // 2.2 economic buildings (econ.ts) add to the territory output.
     const econ = econIncome(world, f.id, (fi, p) => inSupply(match, fi, p));
+    const zinc = zoneIncome(world, f.id);
+    econ.p += zinc.p;
+    econ.m += zinc.m;
     f.econP = econ.p;
     f.econM = econ.m;
     const rates = economyRates(f.alloc, rules, bonus.p + econ.p, bonus.m + econ.m, cityShare);
@@ -260,6 +274,10 @@ function economySecond(match: Match): void {
   stockSecond(world, (fi, p) => inSupply(match, fi, p));
   drawSecond(world);
   econSecond(world);
+  // 3.0: economic zones, minefields, the capital perimeter crews.
+  econZonesSecond(world, (p) => match.front.ownerAt(p));
+  minefieldSecond(world);
+  capitalDefenceSecond(world);
   for (const u of world.units.values()) {
     if (u.hp <= 0) continue;
     supplyTick(world, u, 1);
@@ -360,7 +378,7 @@ export function step(match: Match): void {
       u.hp = 0;
       continue;
     }
-    if (world.time >= u.thinkAt) {
+    if (world.time >= u.thinkAt && !aboard(u)) {
       thinkUnit(world, u);
       const slow = u.def.id === 'howitzer' || u.def.id === 'mortar' ? 1 : 0.4;
       u.thinkAt = world.time + slow + ((u.id * 7) % 10) / 50;
@@ -373,6 +391,7 @@ export function step(match: Match): void {
     updateMovement(world, u);
     updateHeight(world, u);
   }
+  railTick(world);
   if (world.tick % Math.round(hz / 2) === 0) updateVisibility(world);
   if (world.tick % (2 * hz) === 0) {
     match.supplyNodes = world.factions.map((f) => (f.alive ? convoyNodes(world, f.id) : []));
@@ -384,6 +403,8 @@ export function step(match: Match): void {
   world.removeDead();
   if (world.tick % hz === 0) {
     economySecond(match);
+    railSecond(world, match.front);
+    transportSecond(world);
     battleSecond(world);
   }
   // Front field every 2 s, then one faction's front info per tick: the ~10 ms burst of doing
@@ -408,7 +429,7 @@ export function step(match: Match): void {
   if (world.tick % (10 * hz) === 0) {
     for (let i = world.forts.length - 1; i >= 0; i--) {
       const f = world.forts[i];
-      if (f.hp <= 0 && f.kind !== 'pontoon') world.forts.splice(i, 1);
+      if (f.hp <= 0 && f.kind !== 'pontoon' && !f.permanent) world.forts.splice(i, 1);
       else if (f.occupant !== null && !world.unitAlive(f.occupant)) f.occupant = null;
       if (f.occupants && f.occupants.some((id) => !world.unitAlive(id))) f.occupants = f.occupants.filter((id) => world.unitAlive(id));
     }

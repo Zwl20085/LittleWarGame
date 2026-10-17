@@ -150,7 +150,7 @@ export class TownPanel {
     const add = h('div', { class: 'tadd' });
     for (const id of w.data.unitOrder) {
       const def = w.data.units.get(id)!;
-      if (id === w.data.rules.command.commander_unit || !facs.has(def.facility as (typeof FACILITIES)[number])) continue;
+      if (id === w.data.rules.command.commander_unit || !def.producible || !facs.has(def.facility as (typeof FACILITIES)[number])) continue;
       const locked = w.time < def.unlockSeconds;
       add.append(h('button', {
         class: 'btn tunit', disabled: locked, title: `${unitShortName(id)} · ${def.costP}P ${def.costM}M`,

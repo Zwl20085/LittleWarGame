@@ -139,6 +139,21 @@ export interface Unit {
   rearming: boolean;
   /** 2.2: earliest time to search for a rearm point again after none was found. */
   rearmAt: number;
+  /** 3.0: rail trip in progress (rail.ts): walking to the station, waiting, or aboard (hidden). */
+  rail: RailRide | null;
+}
+
+/** 3.0 rail trip of one unit: board at station `from`, ride to `to`, then walk on to `dest`. */
+export interface RailRide {
+  stage: 'toStation' | 'waiting' | 'aboard';
+  readonly from: number;
+  readonly to: number;
+  /** Final destination (updated when a new order arrives while aboard). */
+  dest: V2;
+  /** Train carrying the unit (−1 until boarded). */
+  trainId: number;
+  /** When the current stage began (a walk to the station that takes too long is abandoned). */
+  since: number;
 }
 
 /** 正面推进 / 侧面迂回 / 钳形攻势 / 武装渗透 / 筑垒围攻. */
@@ -455,7 +470,9 @@ export interface Projectile {
 }
 
 /** 2.0: pillbox (炮楼) and bunker (堡垒) are engineer-built defensive buildings manned by squads. */
-export type FortKind = 'field_cover' | 'mg_bunker' | 'trench' | 'sandbag' | 'pontoon' | 'pillbox' | 'bunker';
+export type FortKind = 'field_cover' | 'mg_bunker' | 'trench' | 'sandbag' | 'pontoon' | 'pillbox' | 'bunker'
+  /** 3.0 (V30 §8, worksTiers.ts / capitalDefence.ts). */
+  | 'fortress' | 'at_emplacement' | 'strongpoint' | 'minefield';
 
 export interface Fort {
   readonly id: number;
@@ -465,8 +482,9 @@ export interface Fort {
    * trench: dug line from start to end (siege works / field lines; many squads along it).
    * sandbag: barricade wall across a street or town edge, start to end (town defence).
    * pontoon: engineer bridge (start/end = banks).
+   * 3.0: changes in place when engineers upgrade it (pillbox → bunker → fortress).
    */
-  readonly kind: FortKind;
+  kind: FortKind;
   readonly pos: V2;
   readonly facing: number;
   /** Pontoon bridges: span endpoints (bank to bank) and deck length. */
@@ -474,12 +492,16 @@ export interface Fort {
   readonly end?: V2;
   readonly length?: number;
   hp: number;
-  readonly maxHp: number;
+  maxHp: number;
   progress: number;
   occupant: number | null;
   /** Defensive buildings: squads it can hold (default 1); occupants beyond `occupant` (bunkers). */
-  readonly capacity?: number;
+  capacity?: number;
   occupants?: number[];
+  /** 3.0: trench tier (1 = fortified trench); an engineer upgrade in progress; perimeter works are never cleared. */
+  tier?: number;
+  upgrade?: { readonly to: FortKind; progress: number } | null;
+  permanent?: boolean;
 }
 
 export type FxEvent =

@@ -4,7 +4,7 @@ import { selectTarget } from './combat';
 import { moveTo, stop } from './movement';
 import { isCommander } from './formulas';
 import { raidIntervalMul, raidsOnDefence } from './doctrines';
-import type { EconBuilding, Faction, Unit } from './types';
+import type { Faction, Unit } from './types';
 import { dist, type V2 } from './vec';
 import type { World } from './world';
 
@@ -58,13 +58,28 @@ const why = (k: string): void => { ECON_WAR_STATS[k] = (ECON_WAR_STATS[k] ?? 0) 
 export const ECON_WAR_AB = { raids: true };
 
 const RAIDER_IDS = new Set(['recon', 'infantry', 'motor_inf', 'engineer']);
-const KIND_VALUE: Record<string, number> = { factory: 1, recruit: 0.9, depot: 0.75 };
+const KIND_VALUE: Record<string, number> = { factory: 1, recruit: 0.9, depot: 0.75, ezone1: 0.6, ezone2: 0.95, ezone3: 1.3 };
+
+/** What a raid can target: a 2.2 economic building or (3.0) an economic zone (econZones.ts). */
+export interface Raidable {
+  readonly id: number;
+  readonly kind: string;
+  readonly pos: V2;
+  readonly owner: number;
+  readonly hp: number;
+  readonly maxHp: number;
+  readonly progress: number;
+  readonly ruined: boolean;
+  readonly placeId?: string;
+}
+
+const raidables = (world: World): Raidable[] => (world.econZones.length ? [...world.econ, ...world.econZones] : world.econ);
 
 interface Party { readonly target: number; readonly ids: number[]; readonly until: number }
 const parties = new WeakMap<Faction, Party>();
 const nextAt = new WeakMap<Faction, number>();
 
-export const econTag = (b: EconBuilding): string => `econ:${b.id}`;
+export const econTag = (b: Raidable): string => `econ:${b.id}`;
 const tagId = (tag: string | null): number => (tag && tag.startsWith('econ:') ? Number(tag.slice(5)) : -1);
 
 const valueOf = (u: Unit): number => (u.def.costP + u.def.costM) * (u.hp / u.def.maxHp);
@@ -101,11 +116,11 @@ function nearestCell(world: World, f: number, p: V2): { cell: V2 | null; d: numb
 }
 
 /** Worth of a building to a raider: its kind, its state (a site is worth half) and its HP. */
-export function raidValue(b: EconBuilding): number {
+export function raidValue(b: Raidable): number {
   return (KIND_VALUE[b.kind] ?? 0.7) * (b.progress >= 1 ? 1 : 0.5) * (0.4 + 0.6 * (b.hp / Math.max(1, b.maxHp)));
 }
 
-export interface RaidPick { readonly b: EconBuilding; readonly defence: number; readonly score: number; readonly cell: V2 }
+export interface RaidPick { readonly b: Raidable; readonly defence: number; readonly score: number; readonly cell: V2 }
 
 /**
  * Best enemy economic building to raid: value ÷ (defence and distance from our front), only within
@@ -113,7 +128,7 @@ export interface RaidPick { readonly b: EconBuilding; readonly defence: number; 
  */
 export function pickRaidTarget(world: World, f: Faction, partyValue: number): RaidPick | null {
   let best: RaidPick | null = null;
-  for (const b of world.econ) {
+  for (const b of raidables(world)) {
     if (b.ruined || b.owner < 0 || !world.isHostile(f.id, b.owner) || !world.factions[b.owner]?.alive) continue;
     const { cell, d } = nearestCell(world, f.id, b.pos);
     if (!cell || d > ECON_WAR.rangeM) continue;
@@ -163,7 +178,7 @@ function endRaid(u: Unit): void {
  * or a thin army.
  */
 export function planEconRaids(world: World, f: Faction): void {
-  if (!ECON_WAR_AB.raids || f.isPlayer || !f.alive || !econRules(world) || world.econ.length === 0) return;
+  if (!ECON_WAR_AB.raids || f.isPlayer || !f.alive || !econRules(world) || (world.econ.length === 0 && world.econZones.length === 0)) return;
   if (liveParty(world, f)) return;
   if (world.time < Math.max(ECON_WAR.firstS, nextAt.get(f) ?? 0)) return;
   // 3.0: the doctrine's raid cadence (attrition interdicts often, also while it holds its line).
@@ -212,7 +227,7 @@ export function planEconRaids(world: World, f: Faction): void {
     u.opUntil = until;
   }
   parties.set(f, { target: pick.b.id, ids: party.map((u) => u.id), until });
-  world.note(f.id, 'log.econRaid', { n: party.length, bld: pick.b.kind, point: pick.b.placeId }, 'info');
+  world.note(f.id, 'log.econRaid', { n: party.length, bld: pick.b.kind, point: pick.b.placeId ?? '' }, 'info');
 }
 
 const rank = (u: Unit): number => (u.def.id === 'engineer' ? 0 : u.def.id === 'recon' ? 1 : 2);
@@ -243,10 +258,10 @@ function rearmost(world: World, u: Unit, goal: V2, mine: number): number {
 }
 
 /** Next hostile building within nextR of `p` (the party moves on once its target is down). */
-function nextBuilding(world: World, f: number, p: V2): EconBuilding | null {
-  let best: EconBuilding | null = null;
+function nextBuilding(world: World, f: number, p: V2): Raidable | null {
+  let best: Raidable | null = null;
   let bd: number = ECON_WAR.nextR;
-  for (const b of world.econ) {
+  for (const b of raidables(world)) {
     if (b.ruined || b.owner < 0 || !world.isHostile(f, b.owner)) continue;
     const d = dist(b.pos, p);
     if (d < bd) { bd = d; best = b; }
@@ -264,7 +279,8 @@ export function thinkEconRaid(world: World, u: Unit): boolean {
     endRaid(u);
     return false;
   }
-  let b = world.econ.find((x) => x.id === tagId(u.opObjective)) ?? null;
+  const tag = tagId(u.opObjective);
+  let b: Raidable | null = world.econ.find((x) => x.id === tag) ?? world.econZones.find((x) => x.id === tag) ?? null;
   if (!b || b.ruined || b.owner < 0 || !world.isHostile(u.owner, b.owner)) {
     b = nextBuilding(world, u.owner, u.pos);
     if (!b) {

@@ -2,7 +2,7 @@
 // ammunition lines and the 10 worst episodes with their timelines.
 import { CLASSES, episodeScore, type AnomalyClass, type Episode } from './anomalyProbe';
 import type { AnomalyRun } from './anomaly';
-import { mdTable } from './common';
+import { mdTable } from './runner';
 
 const mmss = (t: number): string => `${Math.floor(t / 60)}:${String(Math.round(t % 60)).padStart(2, '0')}`;
 const pct = (a: number, b: number): string => (b > 0 ? `${((100 * a) / b).toFixed(1)} %` : '-');

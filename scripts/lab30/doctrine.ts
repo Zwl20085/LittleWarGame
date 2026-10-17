@@ -13,7 +13,7 @@
 import { readFileSync, writeFileSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createLabMatch, parseArgs, runJobs, runMatch, serveWorker, stamp, writeReport, type MatchSpec } from './common';
+import { createLabMatch, parseArgs, runJobs, runMatch, serveWorker, stamp, writeReport, type MatchSpec } from './runner';
 import { analyse, type MatchOut, type Sample } from './doctrineReport';
 import type { World } from '../../src/sim/world';
 
