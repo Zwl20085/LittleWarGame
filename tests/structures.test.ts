@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { loadGameData } from '../src/data';
+import { perimeterPosts } from '../src/sim/capitalDefence';
 import { createMatch, step } from '../src/sim/sim';
 import { coverAgainst } from '../src/sim/damage';
 import { populationOf } from '../src/sim/production';
@@ -223,7 +224,9 @@ describe('permanent works (2.1)', () => {
       const city = w.cityOf(f.id);
       const hq = w.hqPos(f.id);
       const pills = w.forts.filter((x) => x.owner === f.id && x.kind === 'pillbox' && x.progress >= 1 && dist(x.pos, hq) < 250);
-      const fixed = [...w.units.values()].filter((u) => u.owner === f.id && u.fixed);
+      // 3.0: the perimeter's fixed crews (capitalDefence.ts) are not strongpoint MGs.
+      const crews = new Set(perimeterPosts(w).map((p) => p.crewId));
+      const fixed = [...w.units.values()].filter((u) => u.owner === f.id && u.fixed && !crews.has(u.id));
       // Every strongpoint is a pillbox (or, with no buildable ground near it, the old fixed MG).
       expect(pills.length + fixed.length).toBe(city.strongpoints.length);
       expect(pills.length).toBeGreaterThan(0);
