@@ -18,6 +18,6 @@ Branch `worktree-agent-a355e4433af39a02b` (based on feat/v3.0 1344bd5). Spec `do
   `src/ui/i18n-upgrades.ts` (zh + en).
 
 ## Next
-- Render visuals (skirts, long barrel, gun team, motorized trucks already drawn by mounted flag).
+- Render visuals done (src/render/upgradeModels.ts: skirts, barrel extension, gun team; motorized squads use the mounted truck column). Needs a screenshot check.
 - tests/upgrades.test.ts, lab scripts/lab30/upgrade.ts, docs/UPGRADES.md, BALANCE_SPEC block.
 - Challenge 21/21 and soak check.
