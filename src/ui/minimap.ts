@@ -168,6 +168,37 @@ export class MinimapPanel {
     g.restore();
   }
 
+  /** 3.0 railways: each line in its running faction's colour; a cut line is red and dashed; stations are small ticks. */
+  private drawRail(g: CanvasRenderingContext2D): void {
+    const st = this.ctx.match.world.transport;
+    if (!st) return;
+    const w = this.ctx.match.world;
+    const k = this.scale;
+    g.save();
+    g.lineCap = 'butt';
+    for (const l of st.lines) {
+      g.beginPath();
+      l.pts.forEach((p, i) => (i === 0 ? g.moveTo(p.x * k, p.z * k) : g.lineTo(p.x * k, p.z * k)));
+      g.setLineDash([]);
+      g.strokeStyle = 'rgba(31, 35, 30, 0.8)';
+      g.lineWidth = 2.6;
+      g.stroke();
+      g.strokeStyle = l.cut ? '#d4493a' : l.owner >= 0 ? w.factions[l.owner].color : '#cfc8b4';
+      g.lineWidth = 1.4;
+      g.setLineDash(l.cut ? [2.5, 2.5] : []);
+      g.stroke();
+    }
+    g.setLineDash([]);
+    g.fillStyle = '#f4ecd9';
+    g.strokeStyle = '#1f231e';
+    g.lineWidth = 1;
+    for (const s of st.stations) {
+      g.fillRect(s.pos.x * k - 2, s.pos.z * k - 2, 4, 4);
+      g.strokeRect(s.pos.x * k - 2, s.pos.z * k - 2, 4, 4);
+    }
+    g.restore();
+  }
+
   private readonly frontLayer = document.createElement('canvas');
   private frontVersion = -1;
 
@@ -220,6 +251,7 @@ export class MinimapPanel {
       g.fill();
       g.stroke();
     }
+    this.drawRail(g);
     for (const f of w.factions) {
       const c = w.cityOf(f.id).hq;
       g.fillStyle = f.alive ? f.color : '#555';

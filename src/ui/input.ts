@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { ORDER_COLOR } from '../render/orderLines';
 import { nearestFront } from '../sim/fronts';
+import { stationOwner } from '../sim/rail';
 import type { DirectiveKind, Unit } from '../sim/types';
 import type { V2 } from '../sim/vec';
 import type { GameContext } from './context';
@@ -9,7 +10,7 @@ import type { Hud } from './hud';
 import { t } from './i18n';
 import { TerrainTip } from './terrainTip';
 
-/** 2.2 directive hotkeys (A/H/R/G/F/U/Q/E/W/S/D/Tab/Space/1-8 are taken). */
+/** 2.2 directive hotkeys (A/H/R/G/F/U/Q/E/W/S/D/I/K/O/Tab/Space/1-8 are taken). */
 export const DIRECTIVE_KEYS: Record<string, DirectiveKind> = { z: 'offensive', x: 'advance', c: 'defend', v: 'fortify', b: 'contract' };
 
 /** Mouse/keyboard → camera moves and CommandBus commands. Never mutates the sim directly. */
@@ -23,6 +24,8 @@ export class InputController {
   private readonly terrainTip: TerrainTip;
   /** Directive place being picked: mousedown point (screen + ground); drag = line (fortify). */
   private orderDrag: { x: number; y: number; a: V2 } | null = null;
+  /** 3.0 engineering pick: the press point of a map click / drag. */
+  private engDrag: { x: number; y: number; p: V2 } | null = null;
   private previewOn = false;
 
   constructor(private readonly canvas: HTMLCanvasElement, private readonly ctx: GameContext, private readonly hud: Hud) {
@@ -73,6 +76,12 @@ export class InputController {
         const a = this.ctx.renderer.groundAt(this.ndc(e));
         // Never fail silently: a press off the terrain says so and keeps the mode for another try.
         if (a) this.orderDrag = { x: e.clientX, y: e.clientY, a };
+        else this.ctx.toast(t('fail.noGround'), 'warn');
+        return;
+      }
+      if (this.ctx.mode.kind === 'engineer') {
+        const p = this.ctx.renderer.groundAt(this.ndc(e));
+        if (p) this.engDrag = { x: e.clientX, y: e.clientY, p };
         else this.ctx.toast(t('fail.noGround'), 'warn');
         return;
       }
@@ -149,6 +158,55 @@ export class InputController {
     this.hud.fronts.previewTarget = null;
   }
 
+  /**
+   * 3.0 engineering picks. Road: a click starts, a second click ends it (or press-drag a segment);
+   * extend rail: click an own station, then an own town / city. The command bus validates; a
+   * refusal comes back as a toast (game.ts).
+   */
+  private finishEngineer(e: MouseEvent): void {
+    const drag = this.engDrag;
+    this.engDrag = null;
+    const m = this.ctx.mode;
+    if (!drag || m.kind !== 'engineer') return;
+    const w = this.ctx.match.world;
+    const me = this.ctx.playerId;
+    if (m.tool === 'road') {
+      const end = Math.hypot(e.clientX - drag.x, e.clientY - drag.y) >= InputController.LINE_DRAG_PX ? this.ctx.renderer.groundAt(this.ndc(e)) : null;
+      const a = end ? drag.p : m.a;
+      const b = end ?? (m.a ? drag.p : null);
+      if (a && b) {
+        this.ctx.issue({ type: 'buildRoad', a, b });
+        this.ctx.renderer.orderMarker(a, '#d9c27a');
+        this.ctx.renderer.orderMarker(b, '#d9c27a');
+        this.ctx.mode = e.shiftKey ? { kind: 'engineer', tool: 'road', a: null } : { kind: 'normal' };
+      } else {
+        this.ctx.mode = { kind: 'engineer', tool: 'road', a: drag.p };
+        this.ctx.renderer.orderMarker(drag.p, '#d9c27a');
+      }
+      return;
+    }
+    const st = w.transport;
+    if (!st) return;
+    if (m.station === null) {
+      const near = st.stations.filter((s) => stationOwner(w, s) === me && Math.hypot(s.pos.x - drag.p.x, s.pos.z - drag.p.z) < 140).sort((p, q) => Math.hypot(p.pos.x - drag.p.x, p.pos.z - drag.p.z) - Math.hypot(q.pos.x - drag.p.x, q.pos.z - drag.p.z))[0];
+      if (!near) this.ctx.toast(t('eng.noStationHere'), 'warn');
+      else this.ctx.mode = { kind: 'engineer', tool: 'extend', station: near.id };
+      return;
+    }
+    let best = -1;
+    let bd = 220;
+    w.objectives.forEach((o, i) => {
+      const d = Math.hypot(o.pos.x - drag.p.x, o.pos.z - drag.p.z);
+      if (o.owner === me && (o.kind === 'town' || o.kind === 'city') && d < bd) { bd = d; best = i; }
+    });
+    if (best < 0) {
+      this.ctx.toast(t('eng.noTownHere'), 'warn');
+      return;
+    }
+    this.ctx.issue({ type: 'extendRail', stationIdx: m.station, to: best });
+    this.ctx.mode = { kind: 'normal' };
+  }
+
   private rightClick(e: MouseEvent): void {
     if (this.ctx.mode.kind !== 'normal') {
       this.ctx.mode = { kind: 'normal' };
@@ -207,6 +265,10 @@ export class InputController {
   private up(e: MouseEvent): void {
     if (e.button === 1) {
       this.panDrag = null;
+      return;
+    }
+    if (e.button === 0 && this.engDrag) {
+      this.finishEngineer(e);
       return;
     }
     if (e.button === 0 && this.orderDrag) {
@@ -288,6 +350,9 @@ export class InputController {
         rig.setElevation(rig.elevationGoal - 5);
         break;
       // Tab (overview), F (follow) and the other camera-mode keys: ui/cameraControls.ts.
+      case 'i':
+        if (!this.ctx.spectator) this.hud.engineering.toggle();
+        break;
       case 'u':
         this.ctx.hudHidden = !this.ctx.hudHidden;
         break;
