@@ -11,6 +11,7 @@ import { isStructure, updateStructureGarrison } from './structures';
 import { pocketExit } from './pocket';
 import { zocMul } from './zoc';
 import { mineSpeedMul } from './minefields';
+import { isMotorized } from './upgradestats';
 
 /** Set a movement destination; path is (re)computed lazily and rate-limited. */
 export function moveTo(world: World, u: Unit, dest: V2, force = false): void {
@@ -153,7 +154,7 @@ export const MOTOR = {
 
 /** Mount/dismount state machine; true while the squad is getting on or off its trucks. */
 function handleMount(world: World, u: Unit, wantsMove: boolean): boolean {
-  if (u.def.id !== 'motor_inf') return false;
+  if (!isMotorized(u)) return false;
   if (world.time < u.mountUntil) return true;
   // Re-evaluated every ~0.5 s per unit (spatial query), not every tick.
   if ((world.tick + u.id) % 10 !== 0 && !(u.mounted && world.time - u.lastDamagedAt < 1)) return false;

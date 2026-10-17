@@ -10,6 +10,7 @@ import { applyWorks } from './worksCommands';
 import { applyDirectiveNow } from './theatre';
 import type { DirectiveKind, Unit } from './types';
 import { startRailExtension, startRailRepair, startRoadJob, type JobResult } from './transportjobs';
+import { cancelResearch, startResearch } from './upgrades';
 import { dist, type V2 } from './vec';
 
 /**
@@ -49,6 +50,9 @@ export type Command =
   | { type: 'layMines'; pos: V2; facing: number }
   | { type: 'unitOrder'; unitIds: number[]; order: 'move' | 'moveHold' | 'attackMove' | 'retreat' | 'hold' | 'resume'; pos?: V2; queue?: boolean }
   | { type: 'focus'; unitIds: number[]; targetId: number }
+  /** 3.0 unit upgrades: pay for and start researching an item at the capital; cancel the research under way. */
+  | { type: 'research'; upgradeId: string }
+  | { type: 'cancelResearch' }
   /** 3.0 engineers: lay a road a -> b (<= road_job.max_len_m; bridges short gaps). */
   | { type: 'buildRoad'; a: V2; b: V2 }
   /** 3.0 engineers: rebuild a cut rail line the faction holds at both ends. */
@@ -60,7 +64,8 @@ export type CommandFail =
   | 'FACTION_DEAD' | 'NOT_OWNER' | 'STALE_TARGET' | 'UNREACHABLE' | 'BAD_VALUE' | 'ROUTING'
   | 'LOCKED' | 'INSUFFICIENT_M' | 'INSUFFICIENT_P' | 'OUT_OF_BOUNDS' | 'NO_ORDER' | 'NO_FRONT' | 'NO_SLOT' | 'CONTESTED'
   | 'LINE_SHORT' | 'LINE_ONLY_FORTIFY' | 'BAD_SITE' | 'MAX_LEVEL' | 'BUSY'
-  | 'TOO_LONG' | 'BAD_TERRAIN' | 'NOT_CUT' | 'JOB_BUSY' | 'NOT_HELD' | 'HAS_STATION' | 'TRANSPORT_OFF';
+  | 'TOO_LONG' | 'BAD_TERRAIN' | 'NOT_CUT' | 'JOB_BUSY' | 'NOT_HELD' | 'HAS_STATION' | 'TRANSPORT_OFF'
+  | 'DISABLED' | 'OWNED' | 'RESEARCH_BUSY' | 'NO_RESEARCH';
 
 export interface CommandEnvelope {
   readonly commandId: number;
@@ -160,6 +165,12 @@ function apply(match: Match, env: CommandEnvelope): CommandOutcome {
       return applyWorks(match, f, c);
     case 'cancelOrder':
       return cancelOrder(w, f, c.orderId) ? OK : fail('NO_ORDER');
+    case 'research': {
+      const r = startResearch(w, f, c.upgradeId);
+      return r === null ? OK : fail(r);
+    }
+    case 'cancelResearch':
+      return cancelResearch(w, f) ? OK : fail('NO_RESEARCH');
     case 'setAlloc': {
       if (!Array.isArray(c.alloc) || c.alloc.length !== 3 || c.alloc.some((v) => typeof v !== 'number' || !Number.isFinite(v) || v < 0)) return fail('BAD_VALUE');
       const sum = c.alloc[0] + c.alloc[1] + c.alloc[2];

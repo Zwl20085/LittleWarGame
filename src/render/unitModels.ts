@@ -4,6 +4,7 @@ import { barrel, Kit, ZERO } from './modelKit';
 import { PAL } from './palette';
 import { soldierGeometry, staffGeo, type SoldierKey } from './soldierModels';
 import { tankDeckY, TANKS, vehicleGeometry } from './vehicleModels';
+import { upgradeGeometry } from './upgradeModels';
 
 /**
  * Unit geometry registry and model specs. Merged, vertex-coloured geometries for instancing
@@ -47,6 +48,7 @@ export function unitGeometry(key: string): THREE.BufferGeometry {
   if (SOLDIER_KEYS.has(a)) g = soldierGeometry(a as SoldierKey);
   else if (a === 'bunker') g = bunkerGeo();
   else if (a === 'staff') g = staffGeo();
+  else if (a === 'upg') g = upgradeGeometry(b) ?? undefined;
   else g = vehicleGeometry(a, b) ?? undefined;
   if (!g) throw new Error(`unknown unit geometry ${key}`);
   cache.set(key, g);

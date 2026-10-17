@@ -1,6 +1,7 @@
 import type { DoctrineRules } from './doctrineRules';
 import type { ComplianceRules, FrontRules } from './frontRules';
 import type { InfiltrationRules } from './infiltrationRules';
+import type { UpgradeRules } from './upgradeRules';
 export type UnitKind = 'infantry' | 'crew' | 'vehicle';
 export type Facility = 'barracks' | 'vehicle' | 'support';
 export type FireMode = 'hitscan' | 'direct_projectile' | 'ballistic';
@@ -422,6 +423,8 @@ export interface Rules {
   readonly econ_zones?: EconZoneRules;
   /** 3.0 absolute defence perimeter + capital observation ring (V30 §8). */
   readonly capital_defence?: CapitalDefenceRules;
+  /** 3.0 unit upgrades (V30_SPEC §9, upgrades.ts; optional for old rule sets = no upgrades). */
+  readonly upgrades?: UpgradeRules;
   readonly morale: {
     readonly suppression_enter: number;
     readonly suppression_exit: number;
