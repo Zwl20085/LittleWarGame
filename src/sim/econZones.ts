@@ -401,7 +401,7 @@ export function planZoneJobs(world: World, f: Faction): void {
     const eng: Unit[] = [];
     const rif: Unit[] = [];
     for (const u of world.units.values()) {
-      if (u.owner !== f.id || !freeHand(f, u)) continue;
+      if (u.owner !== f.id || !freeHand(f, u, world)) continue;
       const d = dist(u.pos, z.pos);
       if (u.def.id === 'engineer' && d < ZONES.poolR) eng.push(u);
       else if (u.def.id === 'infantry' && d < ZONES.rifleR && quietLine(f, u)) rif.push(u);

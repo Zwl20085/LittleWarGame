@@ -2,6 +2,7 @@ import { parseCsv, num, bool, type CsvRow } from './csv';
 import { validateDoctrineRules } from './doctrineRules';
 import { validateFrontRules } from './frontRules';
 import { validateInfiltrationRules } from './infiltrationRules';
+import { validateTransportRules } from './transportRules';
 import type { DefensiveRules, FireMode, GameData, Rules, UnitDef, UnitKind, WeaponDef, Facility } from './types';
 
 const KINDS: readonly UnitKind[] = ['infantry', 'crew', 'vehicle'];
@@ -109,6 +110,7 @@ export function buildGameData(unitsCsv: string, weaponsCsv: string, rulesJson: s
   validateFrontRules(rules.fronts, rules.command.compliance_threshold, rules.command.compliance);
   validateInfiltrationRules(rules.infiltration);
   validateZones(rules, units);
+  validateTransportRules(rules.transport, units);
   validateDoctrineRules(rules.doctrines, new Set(units.keys()));
   // 2.2 endurance (V22_SPEC §3.1): one documented lever, every weapon's ammo cost × multiplier.
   const ammoMul = rules.logistics?.ammo_cost_multiplier ?? 1;
@@ -184,7 +186,13 @@ function validateZones(rules: Rules, units: Map<string, UnitDef>): void {
     if (!Array.isArray(z.levels) || z.levels.length < 1) throw new Error('rules.json: econ_zones.levels must list at least one level');
     for (const [i, l] of z.levels.entries()) {
       if (!(l.max_hp > 0) || !(l.work_seconds > 0) || l.cost_p < 0 || l.cost_m < 0) throw new Error(`rules.json: econ_zones.levels[${i}] invalid`);
+      for (const k of ['p_per_min_k', 'm_per_min_k'] as const) {
+        if (typeof l[k] !== 'number' || !(l[k] >= 0)) throw new Error(`rules.json: econ_zones.levels[${i}].${k} must be a number >= 0`);
+      }
     }
+    if (!(z.road_link_m > 0)) throw new Error('rules.json: econ_zones.road_link_m must be > 0');
+    if (!(Number.isInteger(z.max_per_faction) && z.max_per_faction >= 0)) throw new Error('rules.json: econ_zones.max_per_faction must be an integer >= 0');
+    if (z.beaten_output !== undefined && !(z.beaten_output >= 0 && z.beaten_output <= 1)) throw new Error('rules.json: econ_zones.beaten_output must be in [0, 1]');
     if (!(z.unlinked_output >= 0 && z.unlinked_output <= 1)) throw new Error('rules.json: econ_zones.unlinked_output must be in [0, 1]');
     if (!(z.captured_hp_ratio > 0 && z.captured_hp_ratio <= 1)) throw new Error('rules.json: econ_zones.captured_hp_ratio must be in (0, 1]');
   }
@@ -192,5 +200,7 @@ function validateZones(rules: Rules, units: Map<string, UnitDef>): void {
   if (c) {
     if (!units.has(c.crew_unit) || !units.has(c.artillery_unit)) throw new Error('rules.json: capital_defence crew_unit / artillery_unit must name units in units.csv');
     if (!(c.radius_m > 0) || c.strongpoints < 0 || !(c.observation?.radius_m > 0)) throw new Error('rules.json: capital_defence radius / strongpoints / observation invalid');
+    if (!(c.crew_respawn_seconds > 0)) throw new Error('rules.json: capital_defence.crew_respawn_seconds must be > 0');
+    if (!(c.quiet_m >= 0)) throw new Error('rules.json: capital_defence.quiet_m must be >= 0');
   }
 }

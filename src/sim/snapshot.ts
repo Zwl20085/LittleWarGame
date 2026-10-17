@@ -7,6 +7,7 @@ import type { V2 } from './vec';
 import { applyTransport, mirrorRide, packTransport, type TransportSnap } from './transportsnap';
 import type { EconZone } from './econZones';
 import { refit } from './upgradestats';
+import { fogFiltered, knownZones } from './fogview';
 
 /**
  * Worker → main-thread state transfer. The worker owns the authoritative simulation; the main
@@ -167,7 +168,8 @@ export function makeSnapshot(match: Match, cur: SnapshotCursor, observer: number
     placeStock: Float32Array.from(w.places, (p) => p.stock),
     placeContestedSince: Float32Array.from(w.places, (p) => p.contestedSince),
     econ: w.econ,
-    econZones: w.econZones,
+    // Review HIGH 2: in fog the observer gets only the zones it knows (fogview.ts).
+    econZones: fogFiltered(w, observer) ? knownZones(w, observer) : w.econZones,
     fx,
     log,
     // Only the observer's visibility matters on the main thread, and only in fog mode.
@@ -177,7 +179,7 @@ export function makeSnapshot(match: Match, cur: SnapshotCursor, observer: number
     frontView,
     supplyNodes: slow || cur.sent === 1 ? match.supplyNodes : null,
     result: w.result,
-    transport: packTransport(w, cur),
+    transport: packTransport(w, cur, observer),
   };
 }
 

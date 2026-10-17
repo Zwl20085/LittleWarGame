@@ -17,6 +17,7 @@ import { activeSegment, inMass, LINE_ORDER, lineThrough, massSlot, orderAlong, t
 import { boundLine, boundOrder, frontById } from './frontref';
 import { armourSlots, isTank } from './armour';
 import { econWorth, planEconRaids } from './econwar';
+import { planRailRaids } from './railraid';
 import { updateFrontTier } from './frontTiers';
 import { picketSlots } from './pickets';
 
@@ -490,6 +491,8 @@ export function thinkFronts(world: World, f: Faction, chunk?: number): void {
     planOperations(world, f);
     // 2.2: economic raid parties against enemy buildings (econwar.ts).
     planEconRaids(world, f);
+    // 3.0: rail raid parties (doctrine raid_targets.rail; railraid.ts).
+    planRailRaids(world, f);
     planPincer(world, f, groups);
   }
   const slice = chunk === undefined ? f.fronts : f.fronts.slice(chunk * per, (chunk + 1) * per);

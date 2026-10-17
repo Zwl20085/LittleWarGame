@@ -3,6 +3,7 @@ import { loadGameData } from '../src/data';
 import { createMatch, step, type Match } from '../src/sim/sim';
 import { speedOf } from '../src/sim/movement';
 import { infiltrationReports, inRear, reportInfiltrators, threatenedPlaces, updateInfiltration } from '../src/sim/infiltration';
+import { picketGapMul } from '../src/sim/doctrines';
 import { picketGap, picketPoints, picketSlots, reactionGroup, segmentsByProximity } from '../src/sim/pickets';
 import { holdsLine, INFILTRATION_AB, segmentsCross, updateZoc, type ZocContact } from '../src/sim/zoc';
 import type { Front, Unit } from '../src/sim/types';
@@ -167,7 +168,7 @@ describe('pickets and the reaction group (pickets.ts)', () => {
     const group = new Set(reactionGroup(s));
     const line = liners.filter((u) => !group.has(u.id)).map((u) => out[u.id]);
     const worst = Math.max(...seg.map((c) => Math.min(...line.map((q) => dist(c, q)))));
-    expect(worst).toBeLessThanOrEqual(picketGap(r, 0) / 2 + r.picket_lean_m + 30);
+    expect(worst).toBeLessThanOrEqual(picketGap(r, 0, picketGapMul(world, f)) / 2 + r.picket_lean_m + 30);
     const moved = liners.filter((u) => !group.has(u.id) && dist(out[u.id], slots[u.id]) > 1).length;
     expect(moved).toBeGreaterThan(0);
     expect(moved).toBeLessThanOrEqual(Math.floor(20 * r.picket_max_share));

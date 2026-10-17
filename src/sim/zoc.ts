@@ -28,7 +28,9 @@ const NO_ZOC = new Set(['supply_truck', 'howitzer', 'mortar', 'commander']);
 /** A line combat unit of a front: line role, on foot or in its vehicle, not on a manual order or a detachment. */
 export function holdsLine(u: Unit): boolean {
   return u.hp > 0 && !u.fixed && u.opRole === 'line' && !u.manual && !u.spearhead && !u.routing && !u.mounted
-    && u.behavior === 'advance' && u.primary !== null && !NO_ZOC.has(u.def.id) && !isCommander(u.def);
+    && u.behavior === 'advance' && u.primary !== null && !NO_ZOC.has(u.def.id) && !isCommander(u.def)
+    // Review MEDIUM 4: riders aboard a train are hidden and hold no ground.
+    && u.rail?.stage !== 'aboard';
 }
 
 /** One zone-of-control hit: `intruder` is within zoc_m of `holder`; `crossed` = it crossed a line segment since the last pass. */

@@ -30,11 +30,17 @@ its own note in this folder (`WP-*.md`) on its worktree branch `worktree-agent-<
 - WP-SEC (worktree-agent-af59da2c7d0e452ce) — merged. WP-H upgrades (worktree-agent-a355e4433af39a02b) — merge 2bafd54. Open: value/cost lab too noisy to tune costs; rich-vs-poor ahead 12/12 but only 2/12 wars end in 60 min (1v1 pace); SPEAR_MOBILE ignores motorized squads; tank skirts/barrel unverified visually.
 - Code review (worktree-agent-a1d3da2905d495183): 0 CRITICAL, 3 HIGH, 10 MED → WP-REV; finding 13 (fronts.ts 938 lines, commands.apply 150 lines, updater.cjs closure) deferred to the perf/refactor round.
 
-## Wave 2 running
+- WP-Y (worktree-agent-a64b488ed4b0a6047) — merged. Challenge 54/54. Rail raids rarely cut lines (rear defence stops parties; rails are capital spurs) — accepted. Maneuver doctrine 5 %/81 % → WP-T.
+
+- WP-REV (worktree-agent-a454729feb76eab03) — merge d753534. Not covered: renderer bridge meshes for engineer-road bridges (built once at start).
+
+## Wave 2/3 running
 | WP | branch | status |
 |---|---|---|
-| Y doctrine seams (rail raids, picket gap, upgrade priority rows) + backdoor fix | worktree-agent-a64b488ed4b0a6047 | running |
-| REV code-review fixes (HIGH 1–3, MED 4–12) | worktree-agent-a454729feb76eab03 | running |
+| M perf round | worktree-agent-a71b5e2ec10e0548f | running |
+| N README en+zh + GIFs | worktree-agent-a8afeff94d884d5c5 | running |
+| T tuning: pace, maneuver, upgrade costs, supply after roads | (launched after Y merge) | running |
+| R refactor splits (commands.ts handlers, updater.cjs, railgen helpers) | (launched after REV merge) | running (Sonnet) |
 
 ## Wave 1 agents still running (merge each when reported; typecheck + tests after every merge)
 | WP | branch | status |

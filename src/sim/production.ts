@@ -107,7 +107,8 @@ export function normalizedWeights(world: World, f: Faction): Map<string, number>
   for (const id of world.data.unitOrder) {
     const def = world.data.units.get(id)!;
     const w = f.weights[id] ?? 0;
-    if (w <= 0 || f.paused[id] || !unlocked(world, def)) continue;
+    // Review HIGH 3: a weight on a non-producible def (train, commander) never takes a share.
+    if (w <= 0 || !def.producible || f.paused[id] || !unlocked(world, def)) continue;
     if (unitCount(world, f, id) >= (f.caps[id] ?? Infinity)) continue;
     out.set(id, w);
     sum += w;

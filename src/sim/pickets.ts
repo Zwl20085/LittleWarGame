@@ -1,4 +1,5 @@
 import type { InfiltrationRules } from '../data/infiltrationRules';
+import { picketGapMul } from './doctrines';
 import { defendingHome } from './homeguard';
 import type { Faction, Front, Unit } from './types';
 import { dist, headingTo, type V2 } from './vec';
@@ -9,7 +10,7 @@ import { infilOn, infilRules, INFILTRATION_AB } from './zoc';
  * 3.0 pickets and reaction groups (docs/V30_SPEC.md §11, WP-E). Called at the end of a front's
  * formation pass (fronts.planFront, every front think) with the slots it computed:
  *
- * - **Pickets**: points every `picket_gap_m × picket_tier_mul[tier]` along the front's whole stretch
+ * - **Pickets**: points every `picket_gap_m × picket_tier_mul[tier] × doctrine picket_gap` along the front's whole stretch
  *   of the line; a point with no slot within half a gap gets the spare infantry squad whose slot is
  *   most redundant (≥ 2 other slots within half a gap), leaning `picket_lean_m` back. At most
  *   `picket_max_share` of the front's infantry. Pickets are ordinary line slots (opRole 'line'), so
@@ -55,10 +56,10 @@ export const reactionGroup = (s: Front): readonly number[] => reaction.get(s) ??
 const REACT_RANK: Record<string, number> = { motor_inf: 0, light_tank: 1, medium_tank: 2, heavy_tank: 3 };
 const PICKET_KINDS = new Set(['infantry', 'motor_inf']);
 
-/** Gap between pickets for a front of command tier `tier`. */
-export function picketGap(r: InfiltrationRules, tier: number): number {
+/** Gap between pickets for a front of command tier `tier`; `doctrineMul` = doctrines.picketGapMul (3.0). */
+export function picketGap(r: InfiltrationRules, tier: number, doctrineMul = 1): number {
   const mul = r.picket_tier_mul[Math.min(r.picket_tier_mul.length - 1, Math.max(0, tier))] ?? 1;
-  return r.picket_gap_m * mul;
+  return r.picket_gap_m * mul * doctrineMul;
 }
 
 /** Length of an angle-ordered cell polyline (jumps > 3 cells are gaps between contact stretches, not line). */
@@ -115,15 +116,15 @@ export function picketSlots(world: World, f: Faction, s: Front, liners: readonly
   const pushing = s.mode === 'push' || s.mode === 'breakthrough';
   const group = pushing ? [] : pickReaction(r, liners, combat);
   const inGroup = new Set(group.map((u) => u.id));
-  placePickets(world, r, s, liners.filter((u) => !inGroup.has(u.id)), out, line, home);
+  placePickets(world, r, s, liners.filter((u) => !inGroup.has(u.id)), out, line, home, picketGapMul(world, f));
   if (group.length > 0) postReaction(world, r, group, out, line, home);
   reaction.set(s, group.map((u) => u.id));
   return out;
 }
 
 /** Greedy gap filling: each uncovered picket point takes the spare squad with the most redundant slot. */
-function placePickets(world: World, r: InfiltrationRules, s: Front, liners: readonly Unit[], out: Record<number, V2>, line: readonly V2[], home: V2): void {
-  const gap = picketGap(r, s.tier);
+function placePickets(world: World, r: InfiltrationRules, s: Front, liners: readonly Unit[], out: Record<number, V2>, line: readonly V2[], home: V2, doctrineMul: number): void {
+  const gap = picketGap(r, s.tier, doctrineMul);
   const half = gap / 2;
   const points = picketPoints(line, gap);
   // Coverage counts the slots of these units only (the reaction group leaves its line slots).
@@ -134,7 +135,8 @@ function placePickets(world: World, r: InfiltrationRules, s: Front, liners: read
   const budget = Math.floor(cands.length * r.picket_max_share);
   if (budget <= 0) return;
   // Redundancy: other slots within half a gap of the candidate's slot (it can leave without opening a gap).
-  const red = cands.map((u) => slotList.reduce((n, q) => n + (q !== out[u.id] && dist(q, out[u.id]) <= half ? 1 : 0), 0));  const used = new Set<number>();
+  const red = cands.map((u) => slotList.reduce((n, q) => n + (q !== out[u.id] && dist(q, out[u.id]) <= half ? 1 : 0), 0));
+  const used = new Set<number>();
   let placed = 0;
   for (const p of points) {
     if (placed >= budget) return;
@@ -151,6 +153,9 @@ function placePickets(world: World, r: InfiltrationRules, s: Front, liners: read
     const want = towardHome(p, home, r.picket_lean_m);
     const at = world.navFor(u).nearestPassable(want, 40) ?? want;
     out[u.id] = at;
+    // Review MEDIUM 12: the vacated slot no longer covers anything.
+    const k = slotList.indexOf(old);
+    if (k >= 0) slotList.splice(k, 1);
     slotList.push(at);
     used.add(best);
     placed++;
