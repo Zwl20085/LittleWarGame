@@ -117,8 +117,9 @@ export class InputController {
       this.ctx.toast(t('fail.noGround'), 'warn');
       return;
     }
-    if (b) this.ctx.issue({ type: 'setDirective', kind: m.directive, line: { a: drag.a, b } });
-    else this.ctx.issue({ type: 'setDirective', kind: m.directive, axis: drag.a });
+    const force = this.hud.fronts.forceFlag();
+    if (b) this.ctx.issue({ type: 'setDirective', kind: m.directive, line: { a: drag.a, b }, ...force });
+    else this.ctx.issue({ type: 'setDirective', kind: m.directive, axis: drag.a, ...force });
     const col = ORDER_COLOR[DIRECTIVE_TONE[m.directive]];
     this.ctx.renderer.orderMarker(drag.a, col);
     if (b) this.ctx.renderer.orderMarker(b, col);
