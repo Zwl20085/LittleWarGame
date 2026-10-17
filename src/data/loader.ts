@@ -1,5 +1,6 @@
 import { parseCsv, num, bool, type CsvRow } from './csv';
 import { validateFrontRules } from './frontRules';
+import { validateInfiltrationRules } from './infiltrationRules';
 import type { DefensiveRules, FireMode, GameData, Rules, UnitDef, UnitKind, WeaponDef, Facility } from './types';
 
 const KINDS: readonly UnitKind[] = ['infantry', 'crew', 'vehicle'];
@@ -105,6 +106,7 @@ export function buildGameData(unitsCsv: string, weaponsCsv: string, rulesJson: s
   validateDefensive(rules.construction?.defensive, units, weapons);
   validateLogistics(rules);
   validateFrontRules(rules.fronts, rules.command.compliance_threshold, rules.command.compliance);
+  validateInfiltrationRules(rules.infiltration);
   validateZones(rules, units);
   // 2.2 endurance (V22_SPEC §3.1): one documented lever, every weapon's ammo cost × multiplier.
   const ammoMul = rules.logistics?.ammo_cost_multiplier ?? 1;

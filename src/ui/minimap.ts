@@ -230,6 +230,25 @@ export class MinimapPanel {
     fg.putImageData(img, 0, 0);
   }
 
+  /** 3.0 (infiltration.ts): an infiltration alert (log.infiltrator) blinks where it was reported for 30 s. */
+  private drawInfiltrators(g: CanvasRenderingContext2D): void {
+    const w = this.ctx.match.world;
+    const since = w.tick - 30 * w.tickHz;
+    const pulse = 0.5 + 0.5 * Math.sin(w.tick / 3);
+    for (let i = w.log.length - 1; i >= 0 && w.log[i].tick >= since; i--) {
+      const l = w.log[i];
+      if (l.key !== 'log.infiltrator' || (!this.ctx.spectator && l.faction !== this.ctx.playerId)) continue;
+      const x = Number(l.params.x) * this.scale;
+      const z = Number(l.params.z) * this.scale;
+      if (!Number.isFinite(x) || !Number.isFinite(z)) continue;
+      g.strokeStyle = `rgba(214, 48, 32, ${(0.4 + 0.6 * pulse).toFixed(2)})`;
+      g.lineWidth = 2;
+      g.beginPath();
+      g.arc(x, z, 5 + 4 * pulse, 0, Math.PI * 2);
+      g.stroke();
+    }
+  }
+
   refresh(): void {
     const w = this.ctx.match.world;
     const g = this.canvas.getContext('2d')!;
@@ -296,6 +315,7 @@ export class MinimapPanel {
       const s = u.def.kind === 'vehicle' ? 3 : 2;
       g.fillRect(u.pos.x * this.scale - s / 2, u.pos.z * this.scale - s / 2, s, s);
     }
+    this.drawInfiltrators(g);
     if (this.ctx.renderer.layers.fronts) this.drawOrders(g);
     const corners = this.ctx.renderer.rig.viewCorners();
     if (corners.length === 4) {

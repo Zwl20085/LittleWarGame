@@ -9,6 +9,7 @@ import type { World } from './world';
 import { updateWorksCover } from './works';
 import { isStructure, updateStructureGarrison } from './structures';
 import { pocketExit } from './pocket';
+import { zocMul } from './zoc';
 import { mineSpeedMul } from './minefields';
 
 /** Set a movement destination; path is (re)computed lazily and rate-limited. */
@@ -173,7 +174,7 @@ export function speedOf(world: World, u: Unit, heading: number): number {
   if (u.mounted) {
     const g = world.terrain.groundAt(u.pos.x, u.pos.z);
     // 3.0: riding its trucks = wheeled off road (transport.ts); 2.2 vehicle table when transport is off.
-    return MOTOR.speed * groundMul(transportRules(world.data.rules), g, 'wheeled') * (world.data.rules.proposed_defaults.tempo_move_multiplier ?? 1);
+    return MOTOR.speed * groundMul(transportRules(world.data.rules), g, 'wheeled') * (world.data.rules.proposed_defaults.tempo_move_multiplier ?? 1) * zocMul(world, u);
   }
   const veh = u.def.kind === 'vehicle';
   // Ground type and grade change slowly along a path: sample them every few ticks (perf).
@@ -195,7 +196,7 @@ export function speedOf(world: World, u: Unit, heading: number): number {
   if (veh && u.ammo <= 0) s *= world.data.rules.supply.empty_vehicle_speed_multiplier;
   // 3.0: minefields slow hostile vehicles (minefields.ts).
   if (veh) s *= mineSpeedMul(world, u);
-  return s;
+  return s * zocMul(world, u);
 }
 
 /** Advance along path with hull-turn limits and light separation. */

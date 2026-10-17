@@ -23,6 +23,10 @@ import { THEATRE_AB } from '../src/sim/theatre';
 import { stockSummary } from '../src/sim/settlements';
 import { econCounts } from '../src/sim/econ';
 import type { World } from '../src/sim/world';
+import { INFILTRATION_AB } from '../src/sim/zoc';
+
+// A/B: INFIL_OFF=1 switches the 3.0 zone of control / pickets / rear screen off.
+if (process.env.INFIL_OFF) INFILTRATION_AB.on = false;
 
 // A/B: HOME_DEFENCE=0 turns the round-3 home defence off (docs/STRATEGY_LAB.md "Round 3").
 if (process.env.HOME_DEFENCE === '0') STRATEGY_AI.homeDefence = false;

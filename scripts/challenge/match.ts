@@ -7,6 +7,10 @@ import type { GameData } from '../../src/data/types';
 import { CommandBus, type Command } from '../../src/sim/commands';
 import { createMatch, step } from '../../src/sim/sim';
 import { ROUND7_AB } from '../../src/sim/homeguard';
+import { INFILTRATION_AB } from '../../src/sim/zoc';
+
+// A/B: INFIL_OFF=1 switches the 3.0 zone of control / pickets / rear screen off in this process.
+if (process.env.INFIL_OFF) INFILTRATION_AB.on = false;
 
 // A/B: R7_OFF=hqPoint,eta,assault,counter (or "all"); R7_ON=alarm turns the rejected narrow-alarm recall gate on turns round-7 AI fixes off in this process (docs/CHALLENGE_LAB.md).
 const r7off = (process.env.R7_OFF ?? '').split(',').filter(Boolean);

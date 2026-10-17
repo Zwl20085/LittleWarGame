@@ -5,6 +5,7 @@ import { EAGER, eagerOn, stormOn } from './strategyai';
 import { navPost } from './crewai';
 import { boundOrder } from './frontref';
 import type { World } from './world';
+import { segmentsByProximity } from './pickets';
 
 /** Query scratch for crowding() (called per blast victim). */
 const SC_CROWD: Unit[] = [];
@@ -48,6 +49,9 @@ export function frontSegments(world: World, f: Faction, cells: V2[]): V2[][] {
     while (a < -Math.PI) a += 2 * Math.PI;
     return { c, a };
   }).sort((p, q) => p.a - q.a);
+  // 3.0 (pickets.ts): each front takes the stretch nearest its own battle line (fronts are not kept in angle order).
+  const near = segmentsByProximity(world, f, withAng.map((p) => p.c));
+  if (near) return near;
   // Equal shares by count, in left → right order (matching front keys left/center/right).
   const out: V2[][] = f.fronts.map(() => []);
   withAng.forEach((p, i) => out[Math.min(groups - 1, Math.floor((i / withAng.length) * groups))].push(p.c));

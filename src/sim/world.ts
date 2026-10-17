@@ -301,6 +301,7 @@ export class World {
       unstuckAt: -1e9,
       rearming: false,
       rearmAt: 0,
+      zocUntil: 0,
       rail: null,
     };
     this.units.set(u.id, u);

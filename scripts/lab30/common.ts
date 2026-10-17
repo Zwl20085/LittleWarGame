@@ -60,12 +60,14 @@ export interface LabMatchSpec {
   readonly factions?: number;
   readonly size?: 'medium' | 'large';
   readonly mapId?: MatchConfig['mapId'];
+  /** Information mode (default open). */
+  readonly infoMode?: MatchConfig['infoMode'];
 }
 
-/** Headless spectator match (open information, normal difficulty). */
+/** Headless spectator match (open information unless `infoMode`, normal difficulty). */
 export function labMatch(data: GameData, spec: LabMatchSpec): Match {
   return createMatch(data, {
-    mapId: spec.mapId ?? 'generated', mapSize: spec.size ?? 'medium', factions: spec.factions ?? 4, infoMode: 'open',
+    mapId: spec.mapId ?? 'generated', mapSize: spec.size ?? 'medium', factions: spec.factions ?? 4, infoMode: spec.infoMode ?? 'open',
     seed: spec.seed, difficulty: 'normal', playerSlot: 0, spectate: true,
   });
 }

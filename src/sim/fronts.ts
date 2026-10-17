@@ -18,6 +18,7 @@ import { boundLine, boundOrder, frontById } from './frontref';
 import { armourSlots, isTank } from './armour';
 import { econWorth, planEconRaids } from './econwar';
 import { updateFrontTier } from './frontTiers';
+import { picketSlots } from './pickets';
 
 export { frontById };
 
@@ -87,7 +88,6 @@ function segmentDistance(p: V2, a: V2, b: V2): number {
   const t = l2 > 0 ? Math.max(0, Math.min(1, ((p.x - a.x) * vx + (p.z - a.z) * vz) / l2)) : 0;
   return Math.hypot(p.x - (a.x + vx * t), p.z - (a.z + vz * t));
 }
-
 /** Default line length for a point order (a line through the point, square to the capital bearing). */
 const ORDER_LINE_M = 240;
 
@@ -786,7 +786,7 @@ function planFront(world: World, f: Faction, s: Front, units: Unit[], defensive:
   const attacking = !ordered && !siegeSlots && !defendingHome(s) && (s.mode === 'push' || attackLine || approach);
   // (A siege ring / capital storm and the home defence keep their own slots: tanks storm with the rest.)
   if (!siegeSlots && !defendingHome(s)) armourSlots(world, s, liners, slots, { front, facing, pushing: attacking && !defensive });
-  s.slots = slots;
+  s.slots = siegeSlots ? slots : picketSlots(world, f, s, liners, slots, seg, units.length); // 3.0 pickets + reaction group
 }
 
 /**
