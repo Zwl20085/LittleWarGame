@@ -17,17 +17,19 @@ its own note in this folder (`WP-*.md`) on its worktree branch `worktree-agent-<
 - WP-B/C fronts+compliance (worktree-agent-aa55ed9ace45ae466) — merged (see git log). Fronts/faction mid-war 3.9→6.6, mean size 31.6→17.7 (accepted), compliance threshold 0.4, challenge 21/21.
 - WP-I anomaly (worktree-agent-a975a400ec14180f9) — merge efd2f03: convoy fix halves ammo-starved clusters (156→106 episodes).
 
+- WP-D roads/rail (worktree-agent-ab63c300467793cd5) — merge 39bc12a. scripts/lab30/common.ts = WP-D's generic helpers; the anomaly suite's runner moved to scripts/lab30/runner.ts. Armour fix merged; strict fronts test threshold restored (330139a).
+
 ## Wave 2 running
 | WP | branch | status |
 |---|---|---|
+| H unit upgrades | worktree-agent-a355e4433af39a02b | running |
+| D2 transport wiring (HUD cmds, needRoadLinks) | worktree-agent-a25254c4706d82957 | running (Sonnet) |
 | E infiltration/ZOC/pickets | worktree-agent-aa578224f6cc603a0 | running |
 | A doctrines + music wiring + doctrine_* strategies | worktree-agent-ac07b57b1ae15b872 | running |
 
 ## Wave 1 agents still running (merge each when reported; typecheck + tests after every merge)
 | WP | branch | status |
 |---|---|---|
-| D roads/rail | worktree-agent-ab63c300467793cd5 | running |
-| I anomaly lab + ammo fix | worktree-agent-a975a400ec14180f9 | merged efd2f03; fixing tests/fronts.test.ts 'binds a defend order' (0.9 vs >0.9) on its branch → re-merge |
 | F+G econ zones + works | worktree-agent-a7cde76b4ad393c3f | running |
 
 Merge order when several are ready: D → B+C → F+G → I-anomaly → K → I-challenge (K and I-challenge
