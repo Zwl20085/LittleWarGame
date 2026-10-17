@@ -2,7 +2,7 @@ import { moveTo, stop } from './movement';
 import { frontById } from './frontref';
 import { safeRear } from './frontai';
 import type { Faction, Front, Place, Unit } from './types';
-import { crowdEfficiency, drawsAmmo, inContact, logisticsRules, armyScale, placeById, placeContested, placeOwner } from './settlements';
+import { crowdEfficiency, drawsAmmo, inContact, logisticsRules, armyScale, nearestStock, placeById, placeContested, placeOwner } from './settlements';
 import { dist, type V2 } from './vec';
 import type { World } from './world';
 
@@ -60,34 +60,57 @@ function pickDestination(world: World, f: Faction, trucks: Unit[]): { front: Fro
     const score = need / (1 + enRoute * 1.5);
     if (score > bestNeed) {
       bestNeed = score;
-      const home = world.hqPos(f.id);
-      const d = dist(home, s.front);
-      const t = d > 0 ? Math.max(0, (d - CONVOY.standoff) / d) : 0;
-      const p = { x: home.x + (s.front.x - home.x) * t, z: home.z + (s.front.z - home.z) * t };
-      const safe = safeRear(world, f.id, p, home, 170);
+      const safe = supplyPoint(world, f, s);
       best = { front: s, pos: world.nav(true, 22).nearestPassable(safe, 60) ?? safe };
     }
   }
   return bestNeed > 2 ? best : null;
 }
 
-const needCache = new WeakMap<World, { tick: number; byFaction: Map<number, number>[] }>();
-/** Ammunition need per faction/front, recomputed at most once per second. */
-function frontNeeds(world: World, f: Faction): Map<number, number> {
+interface NeedCache { tick: number; byFaction: Map<number, number>[]; needy: Map<number, { x: number; z: number; n: number }>[] }
+const needCache = new WeakMap<World, NeedCache>();
+/** Ammunition need per faction/front (and where its needy units are), recomputed at most once per second. */
+function needs(world: World): NeedCache {
   let c = needCache.get(world);
   if (!c || world.tick - c.tick >= world.tickHz) {
     // By front id (ids are stable but not indices: fronts are created and dissolved, theatre.ts).
     const byFaction = world.factions.map(() => new Map<number, number>());
+    const needy = world.factions.map(() => new Map<number, { x: number; z: number; n: number }>());
+    const below = logisticsRules(world).truck_meet_below ?? 0;
     for (const u of world.units.values()) {
       if (u.hp <= 0 || u.fixed || u.def.id === 'supply_truck') continue;
       if (dist(u.pos, world.hqPos(u.owner)) < world.data.rules.supply.city_local_radius_m) continue;
       const arr = byFaction[u.owner];
       if (arr) arr.set(u.frontId, (arr.get(u.frontId) ?? 0) + ammoNeed(u) + 0.05 * u.def.supplyDemand); // upkeep so idle groups get visits
+      if (below > 0 && u.primary && (u.rearming || u.ammo < below)) {
+        const m = needy[u.owner];
+        const e = m?.get(u.frontId);
+        if (e) { e.x += u.pos.x; e.z += u.pos.z; e.n++; } else m?.set(u.frontId, { x: u.pos.x, z: u.pos.z, n: 1 });
+      }
     }
-    c = { tick: world.tick, byFaction };
+    c = { tick: world.tick, byFaction, needy };
     needCache.set(world, c);
   }
-  return c.byFaction[f.id];
+  return c;
+}
+const frontNeeds = (world: World, f: Faction): Map<number, number> => needs(world).byFaction[f.id];
+
+/**
+ * Where a truck of front `s` hands over: CONVOY.standoff behind the line centre on the way home —
+ * 3.0: or, when the front has units short of ammunition, at their centre (the tank block or a
+ * detachment rearming away from the line centre was never reached) — pulled back off hostile ground.
+ */
+function supplyPoint(world: World, f: Faction, s: Front): V2 {
+  const home = world.hqPos(f.id);
+  const e = needs(world).needy[f.id]?.get(s.id);
+  let p: V2;
+  if (e && e.n > 0) p = { x: e.x / e.n, z: e.z / e.n };
+  else {
+    const d = dist(home, s.front);
+    const t = d > 0 ? Math.max(0, (d - CONVOY.standoff) / d) : 0;
+    p = { x: home.x + (s.front.x - home.x) * t, z: home.z + (s.front.z - home.z) * t };
+  }
+  return safeRear(world, f.id, p, home, 170);
 }
 
 function knownThreatNear(world: World, u: Unit, r: number): boolean {
@@ -106,8 +129,9 @@ export function thinkConvoyTruck(world: World, u: Unit): void {
   const depot = stockAt.pos;
   const trucks = trucksOf(world, u.owner);
   // Threatened away from home: abort and run back (the enemy is hunting the supply line).
+  // 3.0: with cargo, only fall back out of reach and hand over there (fallBack).
   if ((u.truckState === 'out' || u.truckState === 'unload') && knownThreatNear(world, u, CONVOY.fleeRadius)) {
-    u.truckState = 'return';
+    if (!fallBack(world, u)) u.truckState = 'return';
     world.note(u.owner, 'log.convoyThreat', {}, 'warn');
   }
   switch (u.truckState) {
@@ -136,12 +160,15 @@ export function thinkConvoyTruck(world: World, u: Unit): void {
       }
       // Keep following the group's line as it moves.
       const s = frontById(f, u.frontId);
-      if (s) {
-        const home = world.hqPos(u.owner);
-        const d = dist(home, s.front);
-        const t = d > 0 ? Math.max(0, (d - CONVOY.standoff) / d) : 0;
-        const p = { x: home.x + (s.front.x - home.x) * t, z: home.z + (s.front.z - home.z) * t };
-        const safe = safeRear(world, u.owner, p, home, 170);
+      // 3.0: units that ran short meet the truck on its way — it stops and hands over there.
+      if (meetsNeedy(world, u)) {
+        u.truckState = 'unload';
+        u.truckIdleSince = world.time;
+        stop(u);
+        return;
+      }
+      if (s && (HELD_BACK.get(u) ?? -1) < world.time) {
+        const safe = supplyPoint(world, f, s);
         if (dist(safe, u.truckDest) > 60) u.truckDest = world.navFor(u).nearestPassable(safe, 60) ?? safe;
       }
       moveTo(world, u, u.truckDest);
@@ -156,7 +183,7 @@ export function thinkConvoyTruck(world: World, u: Unit): void {
     case 'unload':
       stop(u);
       u.status = 'status.unloading';
-      if (u.cargo < 0.5 || world.time - u.truckIdleSince > 12) u.truckState = 'return';
+      if (u.cargo < 0.5 || world.time - u.truckIdleSince > (logisticsRules(world).truck_unload_wait_s ?? 12)) u.truckState = 'return';
       return;
     case 'return':
     default:
@@ -164,6 +191,50 @@ export function thinkConvoyTruck(world: World, u: Unit): void {
       u.status = 'status.convoyBack';
       if (dist(u.pos, depot) < CONVOY.depotRadius * 0.8) u.truckState = 'load';
   }
+}
+
+/**
+ * 3.0 fix for the ammo-starved tank herd (docs/DEBUG_LAB.md): the supply point sits CONVOY.standoff
+ * (110 m) behind the line but a truck flees from any enemy within fleeRadius (130 m), so trucks
+ * near a moving front turned back fully loaded, reloaded nothing and drove out again — and the tank
+ * block (the group furthest forward) chased them and never drew. A threatened truck with cargo now
+ * pulls back `truck_fallback_m` toward home and hands over there (held for HOLD_S, not re-aimed at
+ * the line); units walking to it can reach it.
+ */
+const HELD_BACK = new WeakMap<Unit, number>();
+const HOLD_S = 60;
+
+function fallBack(world: World, u: Unit): boolean {
+  const back = logisticsRules(world).truck_fallback_m ?? 0;
+  if (back <= 0 || u.cargo < 2) return false;
+  const home = world.hqPos(u.owner);
+  const d = dist(u.pos, home);
+  if (d < back) return false;
+  const t = back / d;
+  const p = { x: u.pos.x + (home.x - u.pos.x) * t, z: u.pos.z + (home.z - u.pos.z) * t };
+  u.truckDest = world.navFor(u).nearestPassable(p, 60) ?? p;
+  u.truckState = 'out';
+  HELD_BACK.set(u, world.time + HOLD_S);
+  return true;
+}
+
+const SC_MEET: Unit[] = [];
+/** Units this close to an own stock draw from it; a truck does not stop for them there. */
+const MEET_STOCK_CLEAR_M = 300;
+
+/** An own unit below truck_meet_below (out of contact) within hand-over reach of this loaded truck, away from any stock. */
+function meetsNeedy(world: World, u: Unit): boolean {
+  const below = logisticsRules(world).truck_meet_below ?? 0;
+  if (below <= 0 || u.cargo < 2) return false;
+  const r = truckReach(world);
+  let found = false;
+  for (const o of world.spatial.query(u.pos.x, u.pos.z, r, SC_MEET)) {
+    if (o.owner === u.owner && o.ammo < below && drawsAmmo(o) && !inContact(world, o) && dist(o.pos, u.pos) <= r) {
+      found = true;
+      break;
+    }
+  }
+  return found && nearestStock(world, u.owner, u.pos, 1, MEET_STOCK_CLEAR_M) === null;
 }
 
 const truckCache = new WeakMap<World, { tick: number; byFaction: Unit[][] }>();

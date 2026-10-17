@@ -172,6 +172,11 @@
     "truck_capacity": 25,
     "truck_unload_per_second": 4,
     "truck_handover_radius_m": 80,
+    "truck_meet_below": 0.3,
+    "truck_fallback_m": 160,
+    "truck_unload_wait_s": 30,
+    "truck_meet_seek_m": 900,
+    "truck_fix_comment": "3.0 ammo-starved herd fix (docs/DEBUG_LAB.md): a loaded truck stops and hands over where it meets own units below truck_meet_below away from a stock; a threatened loaded truck falls back truck_fallback_m and hands over there instead of driving back to the depot full; an unloading truck waits truck_unload_wait_s for takers (was 12 s); a rearming unit walks to a loaded convoy within truck_meet_seek_m (and nearer than its stock) instead of back to a far stock. 0 switches meet / fallback / meet-seek off (A/B).",
     "supply_round_comment": "2.2 supply round (docs/BALANCE_LAB.md 2026-10-10): rearming is a pause in the fight. A unit that fired in the last draw_contact_seconds draws only inside the settlement (its defenders) and takes nothing from a truck; trucks hand over within 80 m (units come to them), carry 25 and hand over 4 per second (area cap 0.6 k); rearm 0.012 of a load per second (≈ 80 s empty to full), walk to rearm below 0.08, back to the fight at 0.45. Was: draw 260/170/130 m, rearm 0.025, area 1.2, rearm 0.12 → 0.6, truck 40 / 8 / 190 m, seek 450 m.",
     "fill_comment": "2.2 wave 2: a place refills at most place_fill_burst × its cap share of the logistics flow (a drained front town no longer takes the whole flow); the steward asks for more logistics while the stocks are below steward_stock_target of their caps.",
     "contested_comment": "A contested place pauses its queue; contested this long (or lost) its orders are refunded at economy.cancel_started_refund_ratio."

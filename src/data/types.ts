@@ -135,6 +135,17 @@ export interface LogisticsRules {
   readonly truck_unload_per_second?: number;
   /** Convoy truck hand-over radius (m; absent = convoy.ts default 190): units come to the truck. */
   readonly truck_handover_radius_m?: number;
+  /**
+   * 3.0 (docs/DEBUG_LAB.md): a truck on its way out stops and hands over where it meets own units
+   * below this ammo (0 / absent = off); a threatened truck with cargo falls back this far toward
+   * home and hands over there instead of driving back to the depot (0 / absent = off); an
+   * unloading truck waits this long for takers (absent = 12 s).
+   */
+  readonly truck_meet_below?: number;
+  readonly truck_fallback_m?: number;
+  readonly truck_unload_wait_s?: number;
+  /** 3.0: a rearming unit walks to a loaded convoy out to the front within this (and nearer than its stock) instead of to the stock (0 / absent = off). */
+  readonly truck_meet_seek_m?: number;
 }
 
 export interface EconBuildingRules {
