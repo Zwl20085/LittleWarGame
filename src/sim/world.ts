@@ -18,6 +18,7 @@ import type {
 } from './types';
 import type { V2 } from './vec';
 import { DEG } from './vec';
+import { refitOnSpawn } from './upgradestats';
 
 /** Shallow equality of two flat note-parameter records (no JSON round trip). */
 function sameParams(a: Record<string, string | number>, b: Record<string, string | number>): boolean {
@@ -303,7 +304,12 @@ export class World {
       rearmAt: 0,
       zocUntil: 0,
       rail: null,
+      upg: 0,
+      upgGunAt: 0,
+      upgNadeAt: 0,
     };
+    // 3.0: a new unit rolls out with its faction's upgrades (upgradestats.ts).
+    if (!opts.fixed) refitOnSpawn(this, u);
     this.units.set(u.id, u);
     this.aliveUnits.push(u);
     return u;

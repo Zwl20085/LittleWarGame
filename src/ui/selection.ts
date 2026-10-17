@@ -6,6 +6,7 @@ import { h } from './dom';
 import { natoSymbol, silhouette } from './icons';
 import { t, unitName, unitShortName } from './i18n';
 import { factionLabel, frontLabel } from './labels';
+import { unitUpgradeNames } from './upgrades';
 
 const isCommander = (w: World, u: Unit): boolean => u.def.id === w.data.rules.command.commander_unit;
 
@@ -49,7 +50,7 @@ export class SelectionPanel {
     }
     this.el.style.display = '';
     const units = sel.length > 0 ? sel : [enemy!];
-    const sig = JSON.stringify(units.map((u) => [u.id, Math.round(u.hp), Math.round(u.morale), Math.round(u.suppression), Math.round(u.ammo * 20), u.status, u.setup, u.manual?.type, u.supplied, u.routing, u.moraleState]));
+    const sig = JSON.stringify(units.map((u) => [u.id, u.upg, Math.round(u.hp), Math.round(u.morale), Math.round(u.suppression), Math.round(u.ammo * 20), u.status, u.setup, u.manual?.type, u.supplied, u.routing, u.moraleState]));
     if (sig === this.sig) return;
     this.sig = sig;
     this.el.innerHTML = '';
@@ -74,6 +75,8 @@ export class SelectionPanel {
       this.meter(t('sel.ammo'), u.ammo * 100, 100, u.ammo < 0.3 ? 'danger' : ''),
       h('div', { class: 'kv' }, h('span', {}, t('sel.morale')), h('b', {}, this.moraleText(u))),
     );
+    // 3.0: upgrades this unit has been fitted with.
+    if (u.upg) this.el.append(h('div', { class: 'kv' }, h('span', {}, t('upg.card')), h('b', { class: 'upg-tags' }, unitUpgradeNames(u).join(' · '))));
     if (enemyView) return;
     this.el.append(h('div', { class: 'kv' }, h('span', {}, t('sel.supply')), h('b', {}, u.supplied ? `${Math.round(u.supplyRatio * 100)}%` : '✕')));
     if (u.def.setupSeconds > 0) this.el.append(h('div', { class: 'kv' }, h('span', {}, '⚙'), h('b', {}, t(`sel.setup.${u.setup}`))));

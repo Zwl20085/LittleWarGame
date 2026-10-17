@@ -255,7 +255,7 @@ describe('3.0 transport: railways and engineer jobs', () => {
     expect(run(0, { type: 'buildRoad', a: hq, b: { x: -50, z: -50 } })).toEqual({ ok: false, reason: 'OUT_OF_BOUNDS' });
     expect(run(0, { type: 'buildRoad', a: hq, b: { x: NaN, z: 0 } })).toEqual({ ok: false, reason: 'BAD_VALUE' });
     // Rail: unknown / whole line, and a line that is not ours.
-    expect(run(0, { type: 'repairRail', lineId: 9999 })).toEqual({ ok: false, reason: 'TRANSPORT_OFF' });
+    expect(run(0, { type: 'repairRail', lineId: 9999 })).toEqual({ ok: false, reason: 'STALE_TARGET' });
     const whole = st.lines.find((l) => !l.cut)!;
     expect(run(0, { type: 'repairRail', lineId: whole.id })).toEqual({ ok: false, reason: 'NOT_CUT' });
     expect(run(0, { type: 'repairRail', lineId: 0.5 })).toEqual({ ok: false, reason: 'BAD_VALUE' });

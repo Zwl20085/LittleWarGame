@@ -10,6 +10,7 @@ import { applyWorks } from './worksCommands';
 import { applyDirectiveNow } from './theatre';
 import type { DirectiveKind, Unit } from './types';
 import { startRailExtension, startRailRepair, startRoadJob, type JobResult } from './transportjobs';
+import { cancelResearch, startResearch } from './upgrades';
 import { dist, type V2 } from './vec';
 
 /**
@@ -49,6 +50,9 @@ export type Command =
   | { type: 'layMines'; pos: V2; facing: number }
   | { type: 'unitOrder'; unitIds: number[]; order: 'move' | 'moveHold' | 'attackMove' | 'retreat' | 'hold' | 'resume'; pos?: V2; queue?: boolean }
   | { type: 'focus'; unitIds: number[]; targetId: number }
+  /** 3.0 unit upgrades: pay for and start researching an item at the capital; cancel the research under way. */
+  | { type: 'research'; upgradeId: string }
+  | { type: 'cancelResearch' }
   /** 3.0 engineers: lay a road a -> b (<= road_job.max_len_m; bridges short gaps). */
   | { type: 'buildRoad'; a: V2; b: V2 }
   /** 3.0 engineers: rebuild a cut rail line the faction holds at both ends. */
@@ -60,7 +64,8 @@ export type CommandFail =
   | 'FACTION_DEAD' | 'NOT_OWNER' | 'STALE_TARGET' | 'UNREACHABLE' | 'BAD_VALUE' | 'ROUTING'
   | 'LOCKED' | 'INSUFFICIENT_M' | 'INSUFFICIENT_P' | 'OUT_OF_BOUNDS' | 'NO_ORDER' | 'NO_FRONT' | 'NO_SLOT' | 'CONTESTED'
   | 'LINE_SHORT' | 'LINE_ONLY_FORTIFY' | 'BAD_SITE' | 'MAX_LEVEL' | 'BUSY'
-  | 'TOO_LONG' | 'BAD_TERRAIN' | 'NOT_CUT' | 'JOB_BUSY' | 'NOT_HELD' | 'HAS_STATION' | 'TRANSPORT_OFF';
+  | 'TOO_LONG' | 'BAD_TERRAIN' | 'NOT_CUT' | 'JOB_BUSY' | 'NOT_HELD' | 'HAS_STATION' | 'TRANSPORT_OFF'
+  | 'DISABLED' | 'OWNED' | 'RESEARCH_BUSY' | 'NO_RESEARCH';
 
 export interface CommandEnvelope {
   readonly commandId: number;
@@ -107,6 +112,11 @@ function ownedUnits(match: Match, actor: number, ids: number[]): Unit[] {
 const fail = (reason: CommandFail): CommandOutcome => ({ ok: false, reason });
 const OK: CommandOutcome = { ok: true };
 
+const UNIT_ORDERS: readonly string[] = ['move', 'moveHold', 'attackMove', 'retreat', 'hold', 'resume'];
+/** Most units one order may name (a drag-select never needs more; bounds the work per command). */
+const MAX_ORDER_UNITS = 64;
+const validUnitIds = (ids: unknown): ids is number[] => Array.isArray(ids) && ids.length <= MAX_ORDER_UNITS && ids.every((i) => Number.isInteger(i));
+
 const finiteV2 = (p: V2 | undefined): p is V2 => !!p && Number.isFinite(p.x) && Number.isFinite(p.z);
 /** A unit the player may produce (review HIGH 3: not the train, not a front commander). */
 const producibleId = (w: Match['world'], id: string): boolean => !!w.data.units.get(id)?.producible && id !== w.data.rules.command.commander_unit;
@@ -122,11 +132,11 @@ function apply(match: Match, env: CommandEnvelope): CommandOutcome {
       f.weights = { ...f.weights, [c.unitId]: c.weight };
       return OK;
     case 'setCap':
-      if (!Number.isFinite(c.cap) || c.cap < 0 || !producibleId(w, c.unitId)) return fail('BAD_VALUE');
+      if (!Number.isFinite(c.cap) || c.cap < 0 || !w.data.units.has(c.unitId) || !producibleId(w, c.unitId)) return fail('BAD_VALUE');
       f.caps = { ...f.caps, [c.unitId]: Math.round(c.cap) };
       return OK;
     case 'togglePause':
-      if (!producibleId(w, c.unitId)) return fail('BAD_VALUE');
+      if (!w.data.units.has(c.unitId) || !producibleId(w, c.unitId)) return fail('BAD_VALUE');
       f.paused = { ...f.paused, [c.unitId]: !f.paused[c.unitId] };
       return OK;
     case 'queueUnit':
@@ -157,21 +167,30 @@ function apply(match: Match, env: CommandEnvelope): CommandOutcome {
       return applyWorks(match, f, c);
     case 'cancelOrder':
       return cancelOrder(w, f, c.orderId) ? OK : fail('NO_ORDER');
+    case 'research': {
+      const r = startResearch(w, f, c.upgradeId);
+      return r === null ? OK : fail(r);
+    }
+    case 'cancelResearch':
+      return cancelResearch(w, f) ? OK : fail('NO_RESEARCH');
     case 'setAlloc': {
+      if (!Array.isArray(c.alloc) || c.alloc.length !== 3 || c.alloc.some((v) => typeof v !== 'number' || !Number.isFinite(v) || v < 0)) return fail('BAD_VALUE');
       const sum = c.alloc[0] + c.alloc[1] + c.alloc[2];
-      if (c.alloc.some((v) => !Number.isFinite(v) || v < 0) || !(sum > 0)) return fail('BAD_VALUE');
+      if (!Number.isFinite(sum) || !(sum > 0)) return fail('BAD_VALUE');
       f.alloc = [c.alloc[0] / sum, c.alloc[1] / sum, c.alloc[2] / sum];
       return OK;
     }
     case 'setAutoInvest':
+      if (typeof c.on !== 'boolean') return fail('BAD_VALUE');
       f.autoInvest = c.on;
       if (!c.on) releaseFund(w, f);
       return OK;
     case 'setAuto':
+      if (typeof c.on !== 'boolean') return fail('BAD_VALUE');
       f.autoEconomy = c.on;
       return OK;
     case 'setLock': {
-      if (![0, 1, 2].includes(c.index)) return fail('BAD_VALUE');
+      if (![0, 1, 2].includes(c.index) || typeof c.locked !== 'boolean') return fail('BAD_VALUE');
       const locks: [boolean, boolean, boolean] = [...f.locks];
       locks[c.index] = c.locked;
       f.locks = locks;
@@ -207,6 +226,12 @@ function apply(match: Match, env: CommandEnvelope): CommandOutcome {
       return OK;
     }
     case 'unitOrder': {
+      if (!validUnitIds(c.unitIds) || !UNIT_ORDERS.includes(c.order)) return fail('BAD_VALUE');
+      if (c.queue !== undefined && typeof c.queue !== 'boolean') return fail('BAD_VALUE');
+      if (c.pos !== undefined) {
+        if (!finiteV2(c.pos)) return fail('BAD_VALUE');
+        if (!w.terrain.inBounds(c.pos.x, c.pos.z)) return fail('OUT_OF_BOUNDS');
+      }
       const units = ownedUnits(match, env.actor, c.unitIds);
       if (units.length === 0) return fail('NOT_OWNER');
       let any = false;
@@ -245,12 +270,13 @@ function apply(match: Match, env: CommandEnvelope): CommandOutcome {
       return jobOutcome(startRoadJob(w, env.actor, { x: c.a.x, z: c.a.z }, { x: c.b.x, z: c.b.z }));
     }
     case 'repairRail':
-      if (!Number.isInteger(c.lineId)) return fail('BAD_VALUE');
+      if (!Number.isInteger(c.lineId) || c.lineId < 0) return fail('BAD_VALUE');
       return jobOutcome(startRailRepair(w, env.actor, c.lineId));
     case 'extendRail':
-      if (!Number.isInteger(c.stationIdx) || !Number.isInteger(c.to)) return fail('BAD_VALUE');
+      if (!Number.isInteger(c.stationIdx) || !Number.isInteger(c.to) || c.stationIdx < 0 || c.to < 0) return fail('BAD_VALUE');
       return jobOutcome(startRailExtension(w, env.actor, c.stationIdx, c.to));
     case 'focus': {
+      if (!validUnitIds(c.unitIds) || !Number.isInteger(c.targetId)) return fail('BAD_VALUE');
       const t = w.unitAlive(c.targetId);
       if (!t || !w.knows(env.actor, t)) return fail('STALE_TARGET');
       const units = ownedUnits(match, env.actor, c.unitIds);
@@ -266,7 +292,7 @@ function apply(match: Match, env: CommandEnvelope): CommandOutcome {
 
 const JOB_FAIL: Record<string, CommandFail> = {
   DISABLED: 'TRANSPORT_OFF', LENGTH: 'TOO_LONG', WATER: 'BAD_TERRAIN', SLOPE: 'BAD_TERRAIN', OUT_OF_BOUNDS: 'OUT_OF_BOUNDS',
-  NO_BUDGET: 'INSUFFICIENT_M', NOT_CUT: 'NOT_CUT', NOT_HELD: 'NOT_HELD', BUSY: 'JOB_BUSY', HAS_STATION: 'HAS_STATION', BAD_TARGET: 'BAD_VALUE',
+  NO_BUDGET: 'INSUFFICIENT_M', NOT_CUT: 'NOT_CUT', NOT_HELD: 'NOT_HELD', BUSY: 'JOB_BUSY', NO_SUCH: 'STALE_TARGET', HAS_STATION: 'HAS_STATION', BAD_TARGET: 'BAD_VALUE',
 };
 
 /** Map an engineer-job refusal (transportjobs.ts) to a structured command failure. */

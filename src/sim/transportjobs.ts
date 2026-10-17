@@ -10,6 +10,7 @@ import type { TransportJob, TransportJobKind } from './transportstate';
 import type { Faction, Unit } from './types';
 import { dist, type V2 } from './vec';
 import type { World } from './world';
+import { workMul } from './upgradestats';
 
 /**
  * 3.0 engineer transport jobs (V30_SPEC §10): lay a road segment (cheap; ≤ road_job.max_len_m;
@@ -29,6 +30,8 @@ const roadRules = (world: World): NonNullable<ReturnType<typeof transportRules>>
 const ASSIGN_RADIUS_M = 2200;
 /** An engineer works within this of the job's current work point (m). */
 const WORK_RADIUS_M = 16;
+/** Two road jobs whose endpoints are this close are the same job (m). */
+const ROAD_OVERLAP_M = 30;
 /** Unit-executor cadence the work increment assumes (s; behaviour thinks every 0.4 s). */
 const THINK_S = 0.4;
 /** A job nobody has worked on for this long is dropped (s). */
@@ -90,6 +93,9 @@ export function startRoadJob(world: World, f: number, a: V2, b: V2): JobResult {
   if (!r || !world.transport) return { ok: false, reason: 'DISABLED' };
   const chk = roadSegmentOk(world, a, b);
   if (!chk.ok) return chk;
+  // An overlapping road job (an endpoint within ROAD_OVERLAP_M of one of its endpoints) is already in flight.
+  const near = (p: V2, q: V2): boolean => dist(p, q) <= ROAD_OVERLAP_M;
+  if (world.transport.jobs.some((j) => j.kind === 'road' && [a, b].some((p) => near(p, j.a) || near(p, j.b)))) return { ok: false, reason: 'BUSY' };
   const L = dist(a, b);
   const m = (r.cost_m_k_per_100m * armyScale(world) * L) / 100;
   if (!pay(world, f, 0, m)) return { ok: false, reason: 'NO_BUDGET' };
@@ -102,7 +108,8 @@ export function startRailRepair(world: World, f: number, lineId: number): JobRes
   const r = railRules(world);
   const st = world.transport;
   const line = st?.lines[lineId];
-  if (!r || !st || !line) return { ok: false, reason: 'DISABLED' };
+  if (!r || !st) return { ok: false, reason: 'DISABLED' };
+  if (!line) return { ok: false, reason: 'NO_SUCH' };
   if (!line.cut) return { ok: false, reason: 'NOT_CUT' };
   if (stationOwner(world, st.stations[line.a]) !== f || stationOwner(world, st.stations[line.b]) !== f) return { ok: false, reason: 'NOT_HELD' };
   if (st.jobs.some((j) => j.kind === 'rail' && j.lineId === lineId)) return { ok: false, reason: 'BUSY' };
@@ -119,10 +126,13 @@ export function startRailExtension(world: World, f: number, stationId: number, o
   const st = world.transport;
   const s = st?.stations[stationId];
   const o = world.objectives[objIdx];
-  if (!r || !st || !s || !o) return { ok: false, reason: 'DISABLED' };
+  if (!r || !st) return { ok: false, reason: 'DISABLED' };
+  if (!s || !o) return { ok: false, reason: 'NO_SUCH' };
   if (o.kind !== 'town' && o.kind !== 'city') return { ok: false, reason: 'BAD_TARGET' };
   if (stationOwner(world, s) !== f || o.owner !== f) return { ok: false, reason: 'NOT_HELD' };
   if (st.stations.some((x) => x.placeIdx === objIdx)) return { ok: false, reason: 'HAS_STATION' };
+  // One extension per objective and per station at a time.
+  if (st.jobs.some((j) => j.kind === 'rail' && j.lineId < 0 && (j.toPlace === objIdx || j.fromStation === stationId))) return { ok: false, reason: 'BUSY' };
   const d = dist(s.pos, o.pos);
   const end = { x: o.pos.x + ((s.pos.x - o.pos.x) / (d || 1)) * Math.min(o.radius, d / 2), z: o.pos.z + ((s.pos.z - o.pos.z) / (d || 1)) * Math.min(o.radius, d / 2) };
   const L = dist(s.pos, end);
@@ -152,7 +162,7 @@ export function transportDuty(world: World, u: Unit): boolean {
   else {
     stop(u);
     if (u.moraleState === 'normal') {
-      job.progress = Math.min(1, job.progress + THINK_S / Math.max(1, job.workSeconds));
+      job.progress = Math.min(1, job.progress + (THINK_S * workMul(u)) / Math.max(1, job.workSeconds));
       job.workedAt = world.time;
       if (job.progress >= 1) completeJob(world, job);
     }

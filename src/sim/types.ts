@@ -30,9 +30,15 @@ export type ManualTask =
 export interface Unit {
   readonly id: number;
   readonly owner: number;
-  readonly def: UnitDef;
-  readonly primary: WeaponDef | null;
-  readonly secondary: WeaponDef | null;
+  /** Refit (upgradestats.ts) swaps these for upgraded variants; the base ids stay the same. */
+  def: UnitDef;
+  primary: WeaponDef | null;
+  secondary: WeaponDef | null;
+  /** 3.0 upgrade bits this unit carries (upgradestats.ts); 0 = stock unit. */
+  upg: number;
+  /** 3.0 next time the attached gun team / AP grenades may fire (upgradekit.ts). */
+  upgGunAt: number;
+  upgNadeAt: number;
   pos: V2;
   prev: V2;
   y: number;
@@ -431,6 +437,23 @@ export interface Faction {
   aiThinkAt: number;
   /** Supply trucks of this faction hit recently (id, time); escorts read this short list (perf). */
   trucksUnderFire: { id: number; at: number }[];
+  /** 3.0 unit upgrades: owned bits and the research at the capital (upgrades.ts). */
+  upgrades: UpgradeState;
+}
+
+/** 3.0 per-faction upgrade tree state (upgrades.ts). */
+export interface UpgradeState {
+  /** Bit k set = item UPGRADE_IDS[k] researched. */
+  owned: number;
+  /** Research under way (one at a time): item, start, end and the price paid (refunds). */
+  research: { id: string; startedAt: number; endsAt: number; p: number; m: number } | null;
+  /** AI: next purchase check; income samples (P + M per minute) for the trend test. */
+  aiAt: number;
+  incomeSamples: number[];
+  /** AI: the item it is saving for and the P/M set aside for it (a share of income, like econFund). */
+  want: string | null;
+  fundP: number;
+  fundM: number;
 }
 
 export interface Objective {

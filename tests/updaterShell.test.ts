@@ -5,7 +5,7 @@
  */
 import { generateKeyPairSync, type KeyObject } from 'node:crypto';
 import { EventEmitter } from 'node:events';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -247,5 +247,62 @@ describe('updater shell (fake Electron)', () => {
     await one.u.check();
     expect(one.u.status().state).toBe('unavailable');
     expect(requested).toEqual([]);
+  });
+});
+
+describe('updater shell hardening (fake Electron)', () => {
+  const bundles = (): string => join(profile, 'userData', 'bundles');
+
+  it('(f) after ready, a later renderer crash or failed load only reloads and never marks the bundle bad', async () => {
+    publish(makeRelease('3.1.0'));
+    const one = launch();
+    await one.u.check();
+    await until(() => one.u.status().state === 'ready');
+    vi.stubEnv('LITTLEWAR_UPDATE_READY_MS', '60000');
+    const two = launch();
+    two.send('updater:ready');
+    two.wc.emit('render-process-gone', {}, { reason: 'crashed' });
+    two.wc.emit('did-fail-load', {}, -6, 'ERR_FILE_NOT_FOUND', 'app://game/index.html', true);
+    await until(() => two.loads.length >= 2);
+    expect(two.loads).toEqual(['app://game/index.html', 'app://game/index.html']);
+    expect(two.u.root()).toBe(join(bundles(), '3.1.0'));
+    const st = store.readState(bundles());
+    expect(st.bad).toEqual([]);
+    expect(st.confirmed).toEqual(['3.1.0']);
+  });
+
+  it('(g) a failed installer download leaves no .part file', async () => {
+    const exe = Buffer.from('MZ fake installer');
+    publish(makeRelease('4.0.0', { minShell: '4.0.0', installers: { setup: { name: 'LittleWar-4.0.0-setup.exe', data: exe } } }));
+    delete routes['http://localhost:9/blob/LittleWar-4.0.0-setup.exe']; // the redirect target 404s
+    const one = launch();
+    await one.u.check();
+    await until(() => one.u.status().state === 'error');
+    const dl = join(profile, 'Downloads');
+    expect(existsSync(dl) ? readdirSync(dl) : []).toEqual([]);
+  });
+
+  it('(h) never clobbers an existing user file: the installer gets a " (1)" name', async () => {
+    const exe = Buffer.from('MZ fake installer');
+    publish(makeRelease('4.0.0', { minShell: '4.0.0', installers: { setup: { name: 'LittleWar-4.0.0-setup.exe', data: exe } } }));
+    const dl = join(profile, 'Downloads');
+    mkdirSync(dl, { recursive: true });
+    writeFileSync(join(dl, 'LittleWar-4.0.0-setup.exe'), 'precious user data');
+    const one = launch();
+    await one.u.check();
+    await until(() => one.u.status().state === 'installer-ready');
+    expect(readFileSync(join(dl, 'LittleWar-4.0.0-setup.exe'), 'utf8')).toBe('precious user data');
+    expect(readFileSync(join(dl, 'LittleWar-4.0.0-setup (1).exe'))).toEqual(exe);
+    expect(readdirSync(dl).filter((n) => n.endsWith('.part'))).toEqual([]);
+  });
+
+  it('(i) skips an installed bundle whose manifest needs a newer shell', () => {
+    const archive = zip.writeZip([{ name: 'index.html', data: 'hi' }]);
+    store.installBundle(bundles(), '3.5.0', archive, Buffer.from(JSON.stringify({ minShell: '9.0.0' })));
+    store.installBundle(bundles(), '3.4.0', archive, Buffer.from(JSON.stringify({ minShell: '3.0.0' })));
+    store.installBundle(bundles(), '3.3.0', archive, Buffer.from('not json'));
+    expect(store.listInstalled(bundles(), SHELL)).toEqual(['3.4.0']);
+    expect(store.listInstalled(bundles())).toHaveLength(3);
+    expect(launch().u.root()).toBe(join(bundles(), '3.4.0'));
   });
 });

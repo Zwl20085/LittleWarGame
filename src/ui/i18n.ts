@@ -1,5 +1,6 @@
 import { COMMAND_EN, COMMAND_ZH } from './i18n-command';
 import { WORKS_EN, WORKS_ZH } from './i18n-works';
+import { UPGRADE_EN, UPGRADE_ZH } from './i18n-upgrades';
 
 export type Lang = 'zh' | 'en';
 
@@ -176,6 +177,7 @@ const zh: Dict = {
   'cam.tip.battle': '战斗镜头：自动对准最激烈的交战，每 12–20 秒切换（K）', 'cam.tip.overview': '总览全图，再按一次回到原视角（Tab）',
   'cam.noFollow': '先选中部队或展开一个方面卡，再按 F 跟随', 'cam.followLost': '跟随目标已不存在',
   'set.dayCycle': '昼夜推移（黎明 → 正午 → 黄昏）', 'set.depthBlur': '低角度近景景深（仅高画质）',
+  ...UPGRADE_ZH,
 };
 
 const en: Dict = {
@@ -337,6 +339,7 @@ const en: Dict = {
   'cam.tip.battle': 'Battle cam: frames the hottest fight, cuts every 12–20 s (K)', 'cam.tip.overview': 'Whole map; press again to return to your view (Tab)',
   'cam.noFollow': 'Select a unit or expand a front card, then press F to follow', 'cam.followLost': 'The followed unit or front is gone',
   'set.dayCycle': 'Time of day drifts (dawn → noon → dusk)', 'set.depthBlur': 'Depth blur at low close-in angles (high quality only)',
+  ...UPGRADE_EN,
 };
 
 /** Historical-flavour equipment names (fictional factions; user-approved naming). */

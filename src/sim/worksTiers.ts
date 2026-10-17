@@ -10,6 +10,7 @@ import type { Faction, Fort, Unit } from './types';
 import { dist, type V2 } from './vec';
 import { segDist } from './works';
 import type { World } from './world';
+import { workMul } from './upgradestats';
 
 /**
  * 3.0 defensive works tiers (V30 §8, user: "little effect from defensive works"). Engineers
@@ -102,20 +103,20 @@ export function tierStep(world: World, u: Unit, fort: Fort): boolean {
     moveTo(world, u, at);
   } else {
     stop(u);
-    if (u.moraleState === 'normal') work(world, fort);
+    if (u.moraleState === 'normal') work(world, fort, workMul(u));
   }
   u.status = fort.upgrade ? 'status.upgrading' : fort.kind === 'minefield' ? 'status.layingMines' : 'status.repairing';
   return true;
 }
 
-function work(world: World, fort: Fort): void {
+function work(world: World, fort: Fort, mul: number): void {
   const t = tierRules(world);
   if (fort.upgrade) {
     const rule = t?.upgrades.find((x) => x.from === fort.kind);
-    fort.upgrade.progress = Math.min(1, fort.upgrade.progress + 0.4 / (rule?.work_seconds ?? 60));
+    fort.upgrade.progress = Math.min(1, fort.upgrade.progress + (0.4 * mul) / (rule?.work_seconds ?? 60));
     if (fort.upgrade.progress >= 1) finishUpgrade(world, fort);
   } else if (fort.kind === 'minefield' && fort.progress < 1) {
-    fort.progress = Math.min(1, fort.progress + 0.4 / (t?.minefield.work_seconds ?? 45));
+    fort.progress = Math.min(1, fort.progress + (0.4 * mul) / (t?.minefield.work_seconds ?? 45));
   } else if (fort.permanent) {
     const rate = world.data.rules.capital_defence?.repair_hp_per_second ?? 30;
     fort.hp = Math.min(fort.maxHp, fort.hp + rate * 0.4);
