@@ -2,14 +2,17 @@
 // signed game bundle into userData/bundles/<ver>/, serves the newest good bundle through
 // app://, falls back to the built-in dist/ when a bundle does not reach the title screen, and
 // downloads (never runs) the full installer when a release needs a newer shell.
+//
+// This file composes the two halves around one shared context: updateCheck.cjs (feed check, decide,
+// download / verify / install) and updateServe.cjs (serving, trial / ready / fallback, relaunch).
 'use strict';
 
 const fs = require('node:fs');
 const path = require('node:path');
-const crypto = require('node:crypto');
 const logic = require('./updateLogic.cjs');
 const store = require('./bundle.cjs');
-const { httpGet } = require('./fetch.cjs');
+const { createCheck } = require('./updateCheck.cjs');
+const { createServe } = require('./updateServe.cjs');
 
 /**
  * Ed25519 public key (base64 SPKI DER) that verifies game bundle manifests. Printed by
@@ -33,330 +36,100 @@ function devEnv(app) {
   };
 }
 
-function createUpdater({ app, net, shell, ipcMain, builtinRoot }) {
+function readAutoDownload(settingsFile) {
+  try {
+    const v = JSON.parse(fs.readFileSync(settingsFile, 'utf8'));
+    return typeof v.autoDownload === 'boolean' ? v.autoDownload : true;
+  } catch {
+    return true;
+  }
+}
+
+/** The state both halves share: fixed config plus the few fields they mutate (serving, win, status, pending, ...). */
+function createContext({ app, net, shell, ipcMain, builtinRoot }) {
   const dev = devEnv(app);
-  const publicKey = dev.publicKey ?? UPDATE_PUBLIC_KEY;
-  const readyMs = dev.readyMs ?? DEFAULT_READY_MS;
   const shellVersion = app.getVersion();
-  const builtinVersion = shellVersion;
-  const dir = path.join(app.getPath('userData'), 'bundles');
   const settingsFile = path.join(app.getPath('userData'), 'updater.json');
-  const feed = logic.resolveFeed(process.env, app.isPackaged);
-
-  let serving = null; // bundle version being served, or null for the built-in dist/
-  let win = null;
-  let readyTimer = null;
-  let confirmedThisLaunch = false; // the served bundle reached ready: its trial is over
-  let checked = false;
-  let pending = null; // { kind, manifest, feed } offered but not downloaded (auto-download off)
-  let installerPath = null;
-  let status = { state: 'idle', version: null, progress: null, installerName: null, error: null };
-  let autoDownload = readAutoDownload();
-
-  function log(event, data = {}) {
-    if (!dev.logFile) return;
-    try {
-      fs.appendFileSync(dev.logFile, `${JSON.stringify({ t: Date.now(), event, ...data })}\n`);
-    } catch {
-      // test log only
-    }
-  }
-
-  function readAutoDownload() {
-    try {
-      const v = JSON.parse(fs.readFileSync(settingsFile, 'utf8'));
-      return typeof v.autoDownload === 'boolean' ? v.autoDownload : true;
-    } catch {
-      return true;
-    }
-  }
-
-  function publicStatus() {
-    const v = status.version;
-    return Object.freeze({
-      ...status,
-      autoDownload,
-      shellVersion,
-      serving: Object.freeze({ source: serving ? 'bundle' : 'builtin', version: serving ?? builtinVersion }),
-      releaseUrl: v ? `${RELEASE_PAGE}${v}` : null,
-    });
-  }
-
-  function setStatus(patch) {
-    status = { ...status, ...patch };
-    if (win && !win.isDestroyed()) win.webContents.send('updater:status-changed', publicStatus());
-  }
-
-  // ------------------------------------------------------------ serving + fallback
-
-  /** Pick what to serve this launch (before the window exists). */
-  function init() {
-    store.cleanupStaging(dir);
-    const installed = store.listInstalled(dir, shellVersion);
-    const { state, serve } = logic.onLaunch(store.readState(dir), installed, builtinVersion);
-    saveState(state);
-    serving = serve;
-    store.removeBundles(dir, logic.toPrune(state, installed, serving));
-    log('serving', { source: serving ? 'bundle' : 'builtin', version: serving ?? builtinVersion });
-  }
-
-  function root() {
-    return serving ? store.bundlePath(dir, serving) : builtinRoot;
-  }
-
-  /** Persist the bundle state; never throws (a failed write must not block the fallback). */
-  function saveState(next) {
-    try {
-      store.writeState(dir, next);
-    } catch (err) {
-      console.warn('[updater] could not save bundle state:', err && err.message);
-      log('error', { stage: 'state', error: String(err && err.message) });
-    }
-  }
-
-  function reloadGame(clear) {
-    if (!win || win.isDestroyed()) return;
-    const reload = () => { if (!win.isDestroyed()) win.loadURL('app://game/index.html').catch(() => undefined); };
-    if (clear) win.webContents.session.clearCache().then(reload, reload);
-    else reload();
-  }
-
-  function fallBack(reason) {
-    if (!serving) return;
-    if (confirmedThisLaunch) {
-      // The bundle already reached the title screen this launch, so it is not the culprit of a
-      // later crash or failed navigation: just reload, never blame (and demote) it.
-      log('reload', { version: serving, reason });
-      reloadGame(false);
-      return;
-    }
-    const bad = serving;
-    clearTimeout(readyTimer);
-    serving = null; // serve the built-in game from now on, whatever happens below
-    saveState(logic.onFailure(store.readState(dir), bad));
-    console.warn(`[updater] bundle ${bad} failed (${reason}); falling back to the built-in game`);
-    log('fallback', { version: bad, reason });
-    reloadGame(true);
-  }
-
-  function attach(w) {
-    win = w;
-    if (serving) readyTimer = setTimeout(() => fallBack('not ready in time'), readyMs);
-    w.webContents.on('did-fail-load', (_e, code, desc, _url, isMainFrame) => {
-      if (isMainFrame && code !== -3) fallBack(`load failed: ${desc}`);
-    });
-    w.webContents.on('render-process-gone', (_e, details) => fallBack(`renderer gone: ${details.reason}`));
-  }
-
-  function onRendererReady() {
-    log('ready', { source: serving ? 'bundle' : 'builtin', version: serving ?? builtinVersion });
-    if (!serving) return;
-    clearTimeout(readyTimer);
-    confirmedThisLaunch = true;
-    saveState(logic.onReady(store.readState(dir), serving));
-  }
-
-  // ------------------------------------------------------------ check + download
-
-  async function check() {
-    if (checked) return;
-    checked = true;
-    if (!feed || logic.isPlaceholderKey(publicKey)) {
-      setStatus({ state: 'unavailable' });
-      return;
-    }
-    setStatus({ state: 'checking' });
-    try {
-      const raw = await httpGet(net, feed.url, { allowLocal: feed.allowLocal, maxBytes: logic.LIMITS.feedBytes, accept: 'application/vnd.github+json' });
-      const rel = logic.parseFeed(JSON.parse(raw.body.toString('utf8')), { allowLocal: feed.allowLocal });
-      const current = serving ?? builtinVersion;
-      if (!rel || !logic.isNewer(rel.version, current)) {
-        setStatus({ state: 'up-to-date' });
-        log('up-to-date', { latest: rel && rel.version });
-        return;
-      }
-      const verdict = await fetchManifest(rel);
-      if (!verdict) return;
-      act(verdict, rel);
-    } catch (err) {
-      fail('check', err);
-    }
-  }
-
-  async function fetchManifest(rel) {
-    const opts = { allowLocal: feed.allowLocal, accept: 'application/octet-stream' };
-    const manifest = await httpGet(net, rel.assets[rel.manifestName], { ...opts, maxBytes: logic.LIMITS.manifestBytes });
-    const sig = await httpGet(net, rel.assets[rel.sigName], { ...opts, maxBytes: logic.LIMITS.sigBytes });
-    const v = logic.checkManifest({ manifestBytes: manifest.body, sigText: sig.body.toString('utf8'), publicKey, shellVersion, feedVersion: rel.version });
-    if (!v.ok) {
-      log('rejected', { stage: v.stage, error: v.error, version: rel.version });
-      setStatus({ state: 'error', version: rel.version, error: `${v.stage}: ${v.error}` });
-      return null;
-    }
-    return { ...v, manifestBytes: manifest.body };
-  }
-
-  function act(verdict, rel) {
-    const decision = logic.decide({ manifest: verdict.manifest, kind: verdict.kind, servingVersion: serving ?? builtinVersion, installed: store.listInstalled(dir, shellVersion), bad: store.readState(dir).bad });
-    log('decision', { decision, version: verdict.manifest.version });
-    const version = verdict.manifest.version;
-    if (decision === 'up-to-date' || decision === 'known-bad') return setStatus({ state: 'up-to-date' });
-    if (decision === 'already-installed') return setStatus({ state: 'ready', version });
-    pending = { verdict, rel };
-    if (!autoDownload) return setStatus({ state: 'available', version, needsInstaller: decision === 'installer' });
-    return startPending();
-  }
-
-  function startPending() {
-    if (!pending) return undefined;
-    const { verdict, rel } = pending;
-    pending = null;
-    const job = verdict.kind === 'installer' ? downloadInstaller(verdict.manifest, rel) : downloadBundle(verdict, rel);
-    return job.catch((err) => fail('download', err));
-  }
-
-  async function downloadBundle({ manifest, manifestBytes }, rel) {
-    const url = rel.assets[manifest.file];
-    if (!url) throw new Error(`release has no ${manifest.file}`);
-    setStatus({ state: 'downloading', version: manifest.version, progress: 0 });
-    const hash = crypto.createHash('sha256');
-    const parts = [];
-    const res = await httpGet(net, url, {
-      allowLocal: feed.allowLocal,
-      accept: 'application/octet-stream',
-      maxBytes: manifest.size,
-      onChunk: (c) => { hash.update(c); parts.push(c); },
-      onProgress: (n) => setStatus({ progress: Math.min(1, n / manifest.size) }),
-    });
-    const ok = logic.checkPayload(manifest, { size: res.size, sha256: hash.digest('hex') });
-    if (!ok.ok) {
-      log('rejected', { stage: ok.stage, error: ok.error, version: manifest.version });
-      setStatus({ state: 'error', error: `${ok.stage}: ${ok.error}`, progress: null });
-      return;
-    }
-    store.installBundle(dir, manifest.version, Buffer.concat(parts), manifestBytes);
-    const state = store.readState(dir);
-    store.removeBundles(dir, logic.toPrune(state, store.listInstalled(dir, shellVersion), serving));
-    log('installed', { version: manifest.version });
-    setStatus({ state: 'ready', version: manifest.version, progress: 1 });
-  }
-
-  async function downloadInstaller(manifest, rel) {
-    const isPortable = Boolean(process.env.PORTABLE_EXECUTABLE_DIR);
-    const ref = logic.pickInstaller(manifest, isPortable);
-    const url = ref && rel.assets[ref.name];
-    if (!ref || !url) {
-      setStatus({ state: 'available', version: manifest.version, needsInstaller: true });
-      return;
-    }
-    const downloads = dev.downloads ?? app.getPath('downloads');
-    // Never overwrite or delete a file the user already has: use "name (1).exe" etc. instead.
-    const target = await pickTarget(downloads, ref);
-    if (target.have) return installerDone(target.file, ref, manifest.version);
-    const final = target.file;
-    setStatus({ state: 'installer-downloading', version: manifest.version, progress: 0, installerName: ref.name });
-    fs.mkdirSync(downloads, { recursive: true });
-    const part = `${final}.${crypto.randomBytes(4).toString('hex')}.part`;
-    try {
-      const fd = fs.openSync(part, 'w');
-      const hash = crypto.createHash('sha256');
-      let res;
+  const ctx = {
+    app, net, shell, ipcMain, builtinRoot, dev, shellVersion, settingsFile,
+    publicKey: dev.publicKey ?? UPDATE_PUBLIC_KEY,
+    readyMs: dev.readyMs ?? DEFAULT_READY_MS,
+    builtinVersion: shellVersion,
+    dir: path.join(app.getPath('userData'), 'bundles'),
+    feed: logic.resolveFeed(process.env, app.isPackaged),
+    serving: null, // bundle version being served, or null for the built-in dist/
+    win: null,
+    pending: null, // { verdict, rel } offered but not downloaded (auto-download off)
+    installerPath: null,
+    status: { state: 'idle', version: null, progress: null, installerName: null, error: null },
+    autoDownload: readAutoDownload(settingsFile),
+    downloadsDir: () => dev.downloads ?? app.getPath('downloads'),
+    log(event, data = {}) {
+      if (!dev.logFile) return;
       try {
-        res = await httpGet(net, url, {
-          allowLocal: feed.allowLocal,
-          accept: 'application/octet-stream',
-          maxBytes: ref.size ?? logic.LIMITS.installerBytes,
-          onChunk: (c) => { hash.update(c); fs.writeSync(fd, c); },
-          onProgress: (n, total) => setStatus({ progress: (ref.size || total) ? Math.min(1, n / (ref.size || total)) : null }),
-        });
-      } finally {
-        fs.closeSync(fd);
+        fs.appendFileSync(dev.logFile, `${JSON.stringify({ t: Date.now(), event, ...data })}\n`);
+      } catch {
+        // test log only
       }
-      const ok = logic.checkPayload(ref, { size: res.size, sha256: hash.digest('hex') });
-      if (!ok.ok) {
-        fs.rmSync(part, { force: true });
-        log('rejected', { stage: ok.stage, error: ok.error, installer: ref.name });
-        setStatus({ state: 'error', error: `${ok.stage}: ${ok.error}`, progress: null });
-        return undefined;
-      }
-      if (fs.existsSync(final)) throw new Error(`${path.basename(final)} appeared during the download`);
-      fs.renameSync(part, final);
-    } catch (err) {
-      fs.rmSync(part, { force: true }); // any failure leaves no .part behind
-      throw err;
-    }
-    return installerDone(final, ref, manifest.version);
-  }
+    },
+    publicStatus() {
+      const v = ctx.status.version;
+      return Object.freeze({
+        ...ctx.status,
+        autoDownload: ctx.autoDownload,
+        shellVersion,
+        serving: Object.freeze({ source: ctx.serving ? 'bundle' : 'builtin', version: ctx.serving ?? ctx.builtinVersion }),
+        releaseUrl: v ? `${RELEASE_PAGE}${v}` : null,
+      });
+    },
+    setStatus(patch) {
+      ctx.status = { ...ctx.status, ...patch };
+      if (ctx.win && !ctx.win.isDestroyed()) ctx.win.webContents.send('updater:status-changed', ctx.publicStatus());
+    },
+  };
+  return ctx;
+}
 
-  /** First free "name", "name (1)", ... in downloads, or an existing copy that already verifies. */
-  async function pickTarget(downloads, ref) {
-    const ext = path.extname(ref.name);
-    const stem = ref.name.slice(0, ref.name.length - ext.length);
-    for (let i = 0; i < 100; i++) {
-      const file = path.join(downloads, i === 0 ? ref.name : `${stem} (${i})${ext}`);
-      if (!fs.existsSync(file)) return { file, have: false };
-      if ((await fileSha256(file)) === ref.sha256) return { file, have: true };
-    }
-    throw new Error('too many copies of the installer in the downloads folder');
-  }
+function fromGame(e) {
+  const url = e.senderFrame && e.senderFrame.url;
+  return typeof url === 'string' && url.startsWith('app://game/');
+}
 
-  function installerDone(file, ref, version) {
-    installerPath = file;
-    log('installer', { name: ref.name, version });
-    setStatus({ state: 'installer-ready', version, progress: 1, installerName: ref.name });
-  }
+function createUpdater(deps) {
+  const ctx = createContext(deps);
+  const serve = createServe(ctx);
+  const { check, startPending } = createCheck(ctx);
 
-  function fail(stage, err) {
-    const msg = err && err.message ? err.message : String(err);
-    console.warn(`[updater] ${stage} failed:`, msg);
-    log('error', { stage, error: msg });
-    setStatus({ state: 'error', error: msg, progress: null });
-  }
-
-  function fileSha256(file) {
-    return new Promise((resolve) => {
-      const h = crypto.createHash('sha256');
-      fs.createReadStream(file).on('data', (c) => h.update(c)).on('end', () => resolve(h.digest('hex'))).on('error', () => resolve(null));
-    });
-  }
-
-  // ------------------------------------------------------------ renderer bridge
-
-  function fromGame(e) {
-    const url = e.senderFrame && e.senderFrame.url;
-    return typeof url === 'string' && url.startsWith('app://game/');
-  }
-
+  /** Renderer bridge: every channel only answers the game page (app://game/). */
   function registerIpc() {
-    ipcMain.handle('updater:status', (e) => (fromGame(e) ? publicStatus() : null));
-    ipcMain.on('updater:ready', (e) => { if (fromGame(e)) onRendererReady(); });
+    const { ipcMain, shell } = ctx;
+    ipcMain.handle('updater:status', (e) => (fromGame(e) ? ctx.publicStatus() : null));
+    ipcMain.on('updater:ready', (e) => { if (fromGame(e)) serve.onRendererReady(); });
     ipcMain.on('updater:check', (e) => { if (fromGame(e)) void check(); });
     ipcMain.on('updater:restart', (e) => {
-      if (!fromGame(e) || status.state !== 'ready') return;
-      const exe = logic.portableRelaunchPath(process.env.PORTABLE_EXECUTABLE_FILE, fs.existsSync) ?? process.execPath;
-      app.relaunch({ execPath: exe });
-      app.exit(0);
+      if (!fromGame(e) || ctx.status.state !== 'ready') return;
+      serve.restart();
     });
     ipcMain.on('updater:open-downloads', (e) => {
       if (!fromGame(e)) return;
-      if (installerPath && fs.existsSync(installerPath)) shell.showItemInFolder(installerPath);
-      else void shell.openPath(dev.downloads ?? app.getPath('downloads'));
+      if (ctx.installerPath && fs.existsSync(ctx.installerPath)) shell.showItemInFolder(ctx.installerPath);
+      else void shell.openPath(ctx.downloadsDir());
     });
     ipcMain.handle('updater:set-auto', (e, on) => {
       if (!fromGame(e) || typeof on !== 'boolean') return null;
-      autoDownload = on;
+      ctx.autoDownload = on;
       try {
-        store.writeFileAtomic(settingsFile, JSON.stringify({ autoDownload }));
+        store.writeFileAtomic(ctx.settingsFile, JSON.stringify({ autoDownload: ctx.autoDownload }));
       } catch (err) {
         console.warn('[updater] could not save settings:', err && err.message);
       }
-      if (on && pending) void startPending();
-      else setStatus({});
-      return publicStatus();
+      if (on && ctx.pending) void startPending();
+      else ctx.setStatus({});
+      return ctx.publicStatus();
     });
   }
 
-  return { init, root, attach, registerIpc, check, status: publicStatus };
+  return { init: serve.init, root: serve.root, attach: serve.attach, registerIpc, check, status: ctx.publicStatus };
 }
 
 module.exports = { createUpdater, UPDATE_PUBLIC_KEY };
