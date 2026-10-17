@@ -19,6 +19,8 @@ import { clothFlag, FLAG_TIME } from './flags';
 import { FieldWorks, isLineWork } from './fieldWorks';
 import { StructureViews, type StructureRecord } from './structures';
 import { registerEconModels } from './econModels';
+import { registerWorksModels } from './worksModels';
+import { structureKind } from './structureKinds';
 import { FrontLines } from './frontLines';
 import { fortModel } from './models';
 import { PontoonView } from './pontoon';
@@ -160,7 +162,17 @@ export class GameRenderer {
     this.extraViews = new StructureViews(w.terrain, (owner) => w.factions[owner]?.color ?? '#888888');
     // 2.2 economic buildings (factory, recruitment office, depot) through the kind registry.
     registerEconModels();
-    this.extraStructures = () => w.econ;
+    // 3.0: economic zones and the new works kinds (worksModels.ts).
+    const mines = w.data.rules.construction.defensive.tiers?.minefield;
+    registerWorksModels(mines?.depth_m, mines?.length_m);
+    const extra: StructureRecord[] = [];
+    this.extraStructures = () => {
+      if (w.econZones.length === 0) return w.econ;
+      extra.length = 0;
+      for (const b of w.econ) extra.push(b);
+      for (const z of w.econZones) extra.push(z);
+      return extra;
+    };
     this.scene.add(this.extraViews.group);
     this.opArrows = new OpArrows((x, z) => w.terrain.heightAt(x, z));
     this.scene.add(this.opArrows.mesh);
@@ -311,7 +323,7 @@ export class GameRenderer {
       for (let i = 0; i < this.extraViews.siteCount; i++) this.effects.workSite(this.extraViews.sites[i], dt);
     }
     for (const f of w.forts) {
-      if (f.hp <= 0 || isLineWork(f.kind) || f.kind === 'pillbox' || f.kind === 'bunker') continue;
+      if (f.hp <= 0 || isLineWork(f.kind) || structureKind(f.kind)) continue;
       seen.add(f.id);
       if (f.kind === 'pontoon') {
         let pv = this.pontoonViews.get(f.id);
