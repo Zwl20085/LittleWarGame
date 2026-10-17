@@ -37,7 +37,16 @@ export function settingsFields(onLang?: () => void): HTMLElement {
     h('label', { class: 'field check' },
       h('input', { type: 'checkbox', checked: s.checkUpdates, onchange: (e: Event) => updateSettings({ checkUpdates: (e.target as HTMLInputElement).checked }) }),
       h('span', {}, t('set.checkUpdates'))),
+    checkField('set.dayCycle', 'dayCycle'),
+    checkField('set.depthBlur', 'depthBlur'),
   );
+}
+
+/** One on/off setting, applied live. */
+function checkField(label: string, key: 'dayCycle' | 'depthBlur'): HTMLElement {
+  return h('label', { class: 'field check' },
+    h('input', { type: 'checkbox', checked: settings()[key], onchange: (e: Event) => updateSettings({ [key]: (e.target as HTMLInputElement).checked }) }),
+    h('span', {}, t(label)));
 }
 
 /** One audio volume slider (0–100%), applied live. */

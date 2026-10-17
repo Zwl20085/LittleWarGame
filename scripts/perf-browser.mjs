@@ -117,5 +117,7 @@ await measure('front', () => {
   g.renderer.rig.setZoom(3);
 });
 await measure('close', () => { window.__game.renderer.rig.setZoom(8); });
+// 3.0: low close-in angle — the high-tier tilt-shift pass is on here (battle cam / follow views).
+await measure('close-low', () => { window.__game.renderer.rig.setZoom(3); window.__game.renderer.rig.setElevation(36); });
 if (errors.length) console.log('page errors:\n' + errors.slice(0, 10).join('\n'));
 await browser.close();

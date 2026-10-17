@@ -12,10 +12,14 @@ export interface Settings {
   readonly quality: 'auto' | 'high' | 'medium' | 'low';
   /** Ask GitHub for a newer release on start (V22_SPEC §9). */
   readonly checkUpdates: boolean;
+  /** 3.0: time-of-day drift over the war (off = the fixed 2.x late-afternoon light). */
+  readonly dayCycle: boolean;
+  /** 3.0: light tilt-shift at low close-in angles (high quality tier only). */
+  readonly depthBlur: boolean;
 }
 
 const KEY = 'lwg.settings';
-const DEFAULTS: Settings = { uiScale: 1, smoke: 1, shake: true, volMaster: 0.8, volMusic: 0.55, volSfx: 0.8, muted: false, quality: 'auto', checkUpdates: true };
+const DEFAULTS: Settings = { uiScale: 1, smoke: 1, shake: true, volMaster: 0.8, volMusic: 0.55, volSfx: 0.8, muted: false, quality: 'auto', checkUpdates: true, dayCycle: true, depthBlur: true };
 const QUALITIES: readonly Settings['quality'][] = ['auto', 'high', 'medium', 'low'];
 
 const clamp = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v));
@@ -35,6 +39,8 @@ function load(): Settings {
       volSfx: vol(v.volSfx, DEFAULTS.volSfx),
       muted: typeof v.muted === 'boolean' ? v.muted : DEFAULTS.muted,
       checkUpdates: typeof v.checkUpdates === 'boolean' ? v.checkUpdates : DEFAULTS.checkUpdates,
+      dayCycle: typeof v.dayCycle === 'boolean' ? v.dayCycle : DEFAULTS.dayCycle,
+      depthBlur: typeof v.depthBlur === 'boolean' ? v.depthBlur : DEFAULTS.depthBlur,
       quality: QUALITIES.includes(v.quality as Settings['quality']) ? (v.quality as Settings['quality']) : DEFAULTS.quality,
     };
   } catch {

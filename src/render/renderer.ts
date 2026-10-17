@@ -7,7 +7,9 @@ import type { Match } from '../sim/sim';
 import type { Ground } from '../sim/terrain';
 import type { V2 } from '../sim/vec';
 import { lang } from '../ui/i18n';
-import { Haze, LIGHT, roomBackground } from './atmosphere';
+import { backdropTexture, Haze, LIGHT } from './atmosphere';
+import { DayCycle } from './timeOfDay';
+import { TiltShift, tiltStrength } from './tiltShift';
 import { CameraRig } from './camera';
 import { Effects } from './effects';
 import { MapLabels } from './mapLabels';
@@ -67,6 +69,11 @@ export class GameRenderer {
   /** Unit vector toward the sun (afternoon light from the north-west). */
   private readonly sunDir = LIGHT.sunDir.clone();
   private readonly haze: Haze;
+  /** 3.0: time-of-day drift (dawn → noon → dusk) and the high-tier tilt-shift at low angles. */
+  readonly day: DayCycle;
+  private readonly tilt = new TiltShift();
+  /** Player setting: light depth blur at low close-in angles (high tier only). */
+  depthBlur = true;
   private readonly objectiveMarkers: ObjectiveMarkers;
   private readonly fortViews = new Map<number, THREE.Group>();
   private readonly pontoonViews = new Map<number, PontoonView>();
@@ -112,7 +119,8 @@ export class GameRenderer {
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.05;
     this.quality.setAutoStart(initialLevel(deviceHint(this.renderer.getContext())));
-    this.scene.background = roomBackground();
+    const backdrop = backdropTexture();
+    this.scene.background = backdrop.texture;
 
     this.rig = new CameraRig({ w: w.terrain.width, d: w.terrain.depth });
     this.haze = new Haze(this.scene, Math.max(w.terrain.width, w.terrain.depth) / 2, 4500);
@@ -137,6 +145,7 @@ export class GameRenderer {
     sc.near = 10;
     sc.far = 1500;
     this.scene.add(this.sun, this.sun.target);
+    this.day = new DayCycle({ sun: this.sun, hemi, sunDir: this.sunDir, setHaze: (c) => this.haze.setColor(c), backdrop });
 
     this.terrainView = new TerrainView(w.terrain);
     this.scene.add(this.terrainView.group);
@@ -505,6 +514,7 @@ export class GameRenderer {
     // shadows start at the feet and tracks.
     const texel = (2 * ext) / Math.max(1, this.sun.shadow.mapSize.x);
     this.sun.shadow.normalBias = Math.min(0.6, Math.max(0.03, texel * 1.5));
+    this.day.update(w.time);
     const back = 1500 + ext;
     this.sun.position.set(t.x - this.sunDir.x * -back, t.y + this.sunDir.y * back, t.z - this.sunDir.z * -back);
     this.sun.target.position.copy(t);
@@ -556,7 +566,8 @@ export class GameRenderer {
     const mapMode = this.layers.terrain;
     this.terrainView.uniforms.uTerrainLayer.value = mapMode ? 1 : 0;
     this.terrainView.water.update(realDt, this.rig.camera, this.sunDir, mapMode);
-    this.renderer.render(this.scene, this.rig.camera);
+    this.tilt.strength = this.depthBlur && this.quality.level === 0 ? tiltStrength(this.rig.elevationDeg, ppm) : 0;
+    this.tilt.render(this.renderer, this.scene, this.rig.camera);
     this.overlay.begin(this.rig.camera);
     this.labels.draw(this.overlay, ppm, this.rig.zoom, lang(), null, this.stockOf);
     this.counters.draw(this.overlay, ppm, this.playerId, this.fog);
@@ -609,6 +620,7 @@ export class GameRenderer {
   private applyQuality(): void {
     const q = this.quality.profile;
     this.effects.detail = this.quality.level;
+    if (this.quality.level !== 0) this.tilt.release();
     this.renderer.setPixelRatio(Math.min(q.maxPixelRatio, window.devicePixelRatio));
     const shadows = q.shadowMap > 0;
     if (this.renderer.shadowMap.enabled !== shadows) {
@@ -644,6 +656,7 @@ export class GameRenderer {
     this.extraViews.dispose();
     this.objectiveMarkers.dispose();
     this.overlay.dispose();
+    this.tilt.dispose();
     this.renderer.dispose();
   }
 }
