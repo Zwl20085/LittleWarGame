@@ -2,7 +2,7 @@
 
 **English** · [简体中文](README.zh-CN.md)
 
-<img src="docs/media/hero.gif" width="100%" alt="Trailer cut from live play: a war map with fronts, unit counters and attack arrows, a howitzer salvo streaking into the edge of a city, a group of tanks rolling across the fields with rifle squads close behind, a street fight between apartment blocks, supply trucks crossing a river bridge, and the LITTLE WAR title screen over a live battle" />
+<img src="docs/media/hero.gif" width="100%" alt="Trailer cut from live play: a war map with fronts, unit counters and attack arrows, shells streaking in over a town at the edge of a forest, tanks driving between villages with rifle squads close behind, rifle squads storming across a railway past a pillbox at the edge of a town, troops crossing a river bridge, and the LITTLE WAR title screen over a live battle with its one-line Quick Battle description and version 3.0.0" />
 
 # LITTLE WAR
 
@@ -18,11 +18,30 @@
 ![Simulation](https://img.shields.io/badge/sim-deterministic%2020%20Hz-6b7a3a)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
-[What's new](#whats-new-in-22) · [Features](#features) · [Download](#download-and-play) · [How a war plays](#how-a-war-plays) · [Controls](#controls) · [Under the hood](#under-the-hood) · [Roadmap](#roadmap) · [Build from source](#build-from-source)
+[What's new](#whats-new-in-30) · [Features](#features) · [Download](#download-and-play) · [How a war plays](#how-a-war-plays) · [Controls](#controls) · [Under the hood](#under-the-hood) · [Roadmap](#roadmap) · [Build from source](#build-from-source)
 
 </div>
 
 ---
+
+## What's new in 3.0
+
+- **Four AI doctrines that clash.** Every AI supreme HQ now fights with a doctrine that sets its production, investment, directives, front behaviour and appetite for risk. **Builder** takes land and builds the economy first, then turns the lead into a large late army. **Blitz** keeps a compact perimeter, masses armour and motor rifles and launches one deep offensive on an enemy capital. **Attrition** fights from works, pulls damaged units back, keeps fewer, denser fronts and raids convoys and economic zones. **Maneuver** keeps a large mechanized main body that hunts isolated enemy fronts at 1.5:1 and cares about towns only once the enemy army is broken. A Quick Battle deals a different doctrine to each AI; a Custom game lets you pick each AI's doctrine or Random. An enemy's doctrine appears on its faction card after your first fight with it (or after 5 minutes), and the score plays your strongest enemy's theme. In the doctrine lab (36 duels and 6 four-way wars) no doctrine wins or loses 75 % of its matches (win / loss: builder 46 / 21 %, blitz 42 / 29 %, attrition 29 / 29 %, maneuver 21 / 58 %), and a classifier names the right doctrine from a faction's behaviour 71–77 % of the time ([DOCTRINES](docs/DOCTRINES.md), [STRATEGY_LAB](docs/STRATEGY_LAB.md#30-doctrines-wp-a-docsdoctrinesmd)).
+- **More fronts, and big fronts fight better.** The 8-front cap is gone (keys <kbd>1</kbd>–<kbd>8</kbd> still pick the first eight, and the card list scrolls). A front of 12, 24 or 40 combat units becomes a **Corps**, an **Army** or an **Army Group**: its batteries fire on one shared barrage point, it hits 5 / 8 / 12 % more often and loses less morale, and it gets supply and reinforcements first. A front with too few troops for its line is marked **Stretched** and fights worse. The theatre wants a front for every 16 troops or 700 m of line, opens one where a cluster of free troops stands, and merges a front that stays under 7 units. In AI wars on the large map, fronts per faction in mid-war rose from 3.9 to 6.6, and the AI still kept its capital in all 21 challenge matches ([COMMAND_V2 §8](docs/COMMAND_V2.md#8-30--unlimited-fronts-front-tiers-directive-compliance-as-built)).
+- **Front commanders may decline.** A directive is no longer obeyed blindly. Each front weighs it against the enemy strength at its objective, the own towns it would leave open and its ammunition; fronts near the capital answer sooner and more readily. A front that declines says why on its card ("Declined — enemy 2.4:1, would expose Greycrest") and does the best thing it can locally; the fronts that accept move in order of distance from the capital. Give the same directive again within 30 s, or switch on **Force** on the HQ card, and every front obeys at once. A defence of your own capital is never declined by the fronts near it.
+- **Roads and railways.** Roads are now a movement layer: off the road tanks run at 0.6×, trucks at 0.4× and infantry at 0.75×, so armies funnel onto roads, junctions and bridges. Railways join every capital to its cities, with stations. A unit sent far rides a train (up to 6 squads or vehicles, three times truck speed) when a station lies near both ends of a line its side holds whole; an enemy on any station cuts the line, and supply moves along held lines as stock. Engineers lay roads, rebuild cut track and extend the rail to a town from the new **Engineering** popover (<kbd>I</kbd>). In the transport lab a 20-unit force crossed the large map in 302 s by rail against 984 s without it, and the share of fights within 150 m of a road junction rose from 52–61 % to 56–66 %.
+- **Economic zones anywhere.** Engineers build an economic zone on own or neutral ground away from the towns (economy panel → **Build economic zone**, then a click on the map). Level 1 is cheap; levels 2 and 3 are further engineer jobs from the zone's panel. A zone with a road link to an own town pays in full, an unlinked one half. Zones can be shelled, raided, captured and rebuilt from the ruins, and the AI and your auto-invest place them where the land is safe and a road is near. In the economy lab a builder HQ that invests in zones was ahead of the same seed without them by 602 strength at 20 minutes and by 2 621 at 45.
+- **Works that hold.** Engineers upgrade works in place (pillbox → bunker → **fortress**, trench → fortified trench), dig **AT emplacements** and lay **minefields** that slow and damage vehicles until enemy engineers clear them. Manned works also observe farther and spot for the artillery. Every capital gets an **absolute defence perimeter**: five free strongpoints with machine guns, guns and bunker armour that only armour can storm, and an observation ring under fog of war. In the defence lab a tank-led assault at equal cost won 33 % of its trials in the open and 83 % against pillboxes, but none against bunkers or a fortress line; two rows of mines knocked out 15 of 20 tanks.
+- **Unit upgrades.** The supreme HQ researches 13 upgrades at the capital, one at a time (**Upgrades**, <kbd>Y</kbd>): an infantry gun team with every rifle squad, armour-piercing grenades, full motorization, tank armour I–III (side skirts) and gun I–III (a longer barrel), artillery range, truck capacity, engineer speed and a staff upgrade that lowers the front tiers. Each upgrade makes the next dearer, and the AI buys by doctrine. Motorized reinforcements reached a town 1.6 km away in 364–467 s, where the same squads on foot took 787 s or never arrived. With 1.5× income the rich side led at the end of all 12 lab wars, but only 2 of them ended within the hour (at 45 and 55 minutes): an economic lead snowballs slowly.
+- **Infiltrators get caught.** An enemy within 150 m of a front's line units moves at half speed and is revealed, and slipping between two line units less than 250 m apart counts as contact. Fronts post pickets every 220 m and keep a motorized or tank reaction group behind the line. A raid deep in your ground is reported (**Infiltrator reported**, with a blinking ring on the minimap), the nearest free units hunt it, and the towns and zones near it post a screen. In the infiltration lab the share of raiders that got past the line unseen fell from 21 % to 0 %, and the AI kept its capital in all 42 challenge matches, shadow strikes and backdoor raids included, for 5–10 % more simulation time ([COMMAND_V2 §9](docs/COMMAND_V2.md#9-30--sparse-fronts-and-infiltration-as-built-wp-e)).
+- **The debug lab finds what looks like a bug.** `scripts/lab30/anomaly.ts` plays whole wars and flags ammo-starved herds, dry supply chains, idle herds, stuck units, convoy loops, phantom fronts and unreachable orders, each with a root-cause guess. It found why tanks herded without ammunition: trucks fled from the line and drove home full, and units walked kilometres to a stock. Trucks now hand over where they meet units short of ammunition and fall back only 160 m when threatened. Ammo-starved episodes fell from 156 to 106 and the unit-time spent starved was halved (2 745 → 1 380 unit-windows) ([DEBUG_LAB](docs/DEBUG_LAB.md)).
+- **Cameras for watching a war.** **Orbit** (<kbd>O</kbd>), **follow** a unit or a front (<kbd>F</kbd>, or double-click a front card), the **battle cam** (<kbd>K</kbd>: it finds the hottest fight you can see and cuts to the next one every 12–20 s) and the **overview** (<kbd>Tab</kbd>, again to come back), with eased moves and a camera strip on the HUD. The battle cam respects the fog of war. The light drifts from dawn through noon to dusk over the first hour of a war (Settings → *Time of day drifts*), and a light depth blur can be switched on for low close-in views on the high tier.
+- **Automatic updates.** The desktop app downloads each new release as an Ed25519-signed game bundle in the background, checks its signature, size and hash, and plays it from the next start (or at once with **Restart now**). A release that needs a newer shell downloads the installer to your Downloads folder instead and never runs it. **Auto-download updates** in Settings turns it off. 2.2.x has only the update notice, so 2.2 players install 3.0 once by hand; from 3.0 on, updates arrive by themselves ([UPDATER](docs/UPDATER.md)).
+- **A score for each doctrine.** Each doctrine has its own theme (pastoral strings for the builder, trumpet anapests over a driving ostinato for the blitz, a low march of trombones and timpani for attrition, galloping horns for maneuver). New cues mark an offensive you launch, your capital falling and a quiet spell, and the strings now move in four-part voice leading in a new hall ([MUSIC](docs/MUSIC.md)).
+- **A wider challenge lab.** New scripted opponents attack the AI: an armour raid, a shadow strike (a detachment routed outside every defender's sight), a backdoor raid, a feint, an economic war, a siege and one per doctrine. Each match is scored with player-experience metrics: one-sidedness, a cheap-win index, warning time before a capital falls and pacing ([CHALLENGE_LAB](docs/CHALLENGE_LAB.md#30-diversity-suite-and-player-experience-metrics-wp-i)).
+
+<details>
+<summary><b>What was new in 2.2</b></summary>
 
 ## What's new in 2.2
 
@@ -36,6 +55,8 @@
 - **Quick Battle is fought under fog of war.** Custom games keep their own toggle.
 - **Update check.** On start the title screen asks GitHub for the latest release and, when it is newer than yours, shows a small notice with a link to the release page. It never downloads anything, stays silent offline and can be turned off in Settings. The title screen also shows the version.
 - **Smoother and sharper.** Shader relinks, idle buffer uploads and UI layout churn are gone: in the browser at 8× the renderer frame fell from 7.2 to 5.7 ms at the overview and from 5.4 to 3.8 ms close in, and every view holds 60 fps without the periodic stutter ([PERFORMANCE](docs/PERFORMANCE.md)). New procedural ground texture, crisper roads and rivers, a period city skyline, economic buildings as period models and stock gauges on the towns.
+
+</details>
 
 <details>
 <summary><b>What was new in 2.1</b></summary>
@@ -94,6 +115,46 @@
 ## Features
 
 <div align="center">
+<img src="docs/media/doctrines.gif" width="100%" alt="War-room HUD early in a war: the pointer moves along the enemy faction cards in the top bar, each labelled with its doctrine, and the tooltips read Builder, economy and land first; Maneuver, seek the decisive battle; Attrition, hold, preserve, interdict. Then a blitz army's tanks and trucks push between apartment blocks into an enemy city, and an attrition raiding party in loose file crosses the fields toward an enemy village" />
+<br/><sub><b>Four doctrines, four kinds of war.</b> Every AI supreme HQ fights with a doctrine: Builder, Blitz, Attrition or Maneuver. Once you have fought an enemy, its doctrine stands on its card in the top bar, and hovering the card names it in full. Below, two of them at work: a blitz army drives into an enemy city, and an attrition raiding party sets off for an enemy village behind the lines.</sub>
+</div>
+<br/>
+
+<div align="center">
+<img src="docs/media/fronts.gif" width="100%" alt="War-room HUD in a mid-war match: the player presses General offensive and clicks an enemy capital; the front cards, badged Corps and Army, answer: two fronts take the order and move within seconds, the fourth stamps Declined, enemy 2.9 to 1; then the player presses Force, a notice says every front must obey, and every card turns to Forced, Attack" />
+<br/><sub><b>Fronts that answer back.</b> Fronts are as many as the war needs, and a big front is a <i>Corps</i>, an <i>Army</i> or an <i>Army Group</i>, with massed artillery, better aim and morale, and first call on supply. Here the player orders a general offensive on an enemy capital: fronts near the capital take it within seconds, while the fourth front, facing 2.9 to 1, declines and says so on its card. <b>Force</b> overrides them, and every front attacks.</sub>
+</div>
+<br/>
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/media/rail.gif" width="100%" alt="A short steam train stands at a station between a factory and town houses, then runs out along its single track through fields and over a rail bridge across a river" /></td>
+    <td width="50%"><img src="docs/media/zones.gif" width="100%" alt="The player opens the economy panel, presses Build economic zone and clicks a site by a farm road; level 1 sheds appear; the zone panel then reads Level 1, output +10 P / +20 M per minute, road link to an own town, and the player raises it to level 2, after which a larger works with chimneys stands on the site and the panel shows +20 P / +40 M" /></td>
+  </tr>
+  <tr>
+    <td><b>Roads and railways.</b> Off the road, tanks, trucks and infantry slow right down, so the fighting gathers at road junctions and bridges. Units sent far ride the train when a line their side holds whole runs near both ends, and a station in enemy hands cuts the line. Engineers lay roads and rebuild and extend the rail. Here a train takes on squads at a city station and runs across the river on its own line.</td>
+    <td><b>Economic zones.</b> Engineers build an economic zone on open ground away from the towns and raise it to level 2 and 3. A road link to an own town doubles its output. Zones are targets: the enemy shells and raids them, and they change hands with the ground. Here the player sites a zone by a farm road, then raises it from level 1 to level 2.</td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/media/works.gif" width="100%" alt="Three 3.0 works close up: a concrete strongpoint of a capital's defence perimeter with its rifle garrison around it inside a wire fence; a dug-in AT emplacement under a camouflage roof on open ground before a capital; and a minefield staked out in a field beside a route two tanks are driving" /></td>
+    <td width="50%"><img src="docs/media/upgrades.gif" width="100%" alt="The Upgrades panel lists attached guns, AP grenades, full motorization, tank armour I to III and tank gun I to III with prices and research times; the player starts Tank armour I and a research bar begins to fill. Then a medium tank with side skirts and a long barrel drives along a country road, and a rifle squad with an attached gun team on its little wheeled gun stands in a village street" /></td>
+  </tr>
+  <tr>
+    <td><b>Works that hold.</b> Pillboxes become bunkers and fortresses, trenches are reinforced, AT guns dig in, and minefields slow and wreck vehicles until engineers clear them. Every capital has a free defence perimeter of strongpoints that only armour can storm. At equal cost a tank-led assault took open ground a third of the time and no bunker or fortress line at all. In the clip: a perimeter strongpoint with its garrison, a dug-in AT emplacement on a capital's approach, and a staked minefield beside a tank route.</td>
+    <td><b>Unit upgrades.</b> The capital researches one upgrade at a time: an infantry gun team with every rifle squad, AP grenades, full motorization, tank armour (side skirts) and tank guns (longer barrels) in three steps, artillery range, truck beds, engineer tools and staff work. Tanks and squads refit when they next rearm at a town. In the clip the player starts Tank armour I; the tank shown carries armour II and gun III, and the squad has its gun team.</td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/media/infiltration.gif" width="100%" alt="Six enemy rifle squads in file cross the fields deep in the player's rear toward a town, under an Infiltrator reported caption, with the player's minimap in the corner" /></td>
+    <td width="50%"><img src="docs/media/camera.gif" width="100%" alt="Three camera modes in the HUD: K, the battle cam cuts from a river crossing to a fight between city tower blocks; F, the camera rides behind a selected medium tank as it drives into a village; Tab, the view flies out to the whole war map with its fronts and comes back" /></td>
+  </tr>
+  <tr>
+    <td><b>No more walking through the line.</b> Enemies near a front's line units are slowed and revealed, pickets cover the gaps and a reaction group waits behind the line. A raid that still gets through is reported with a blinking ring on the minimap, and the nearest free units hunt it while rear towns post a screen. Here six enemy squads have slipped deep into the rear: they are reported, slowed and tracked as they head for a town.</td>
+    <td><b>Cameras for watching.</b> <kbd>K</kbd> is the battle cam: it finds the hottest fight you can see, frames it and cuts to the next. <kbd>F</kbd> follows the selected unit or front, <kbd>O</kbd> orbits and <kbd>Tab</kbd> flies out to the overview and back.</td>
+  </tr>
+</table>
+<br/>
+
+<div align="center">
 <img src="docs/media/orders.gif" width="100%" alt="The war-room HUD: the player presses General offensive on the supreme-HQ card and clicks an enemy town as the axis; the front cards switch to Main effort and Supporting the main effort, the first front's dossier opens, and inked attack lines toward the town appear as the fronts start to move" />
 <br/><sub><b>One directive, every front answers.</b> Pick the directive (<kbd>Z</kbd> <kbd>X</kbd> <kbd>C</kbd> <kbd>V</kbd> <kbd>B</kbd>), then optionally click the axis on the map. Here the player orders a general offensive toward an enemy town: the nearest front becomes the main effort, the others support it, and each card says so. Top left: the supreme-HQ card with the directive palette, then one read-only card per front (the first one expanded). Bottom: production. Bottom right: minimap. Chinese by default, English with one click.</sub>
 </div>
@@ -147,7 +208,7 @@
     <td><b>Rivers shape the war.</b> Valleys carry rivers with bridges and fords. Fronts stage before a crossing, mass, then force it, and engineers throw pontoon bridges across when the nearest crossing is a long detour.</td>
   </tr>
   <tr>
-    <td><img src="docs/media/overview.gif" width="100%" alt="Whole-map view of a generated war: four armies' unit counters, front lines and war-map arrows among rivers, ranges, forests, towns and cities" /></td>
+    <td><img src="docs/media/overview.gif" width="100%" alt="Whole-map view of a generated 3.0 war: four armies' unit counters, front lines and war-map arrows among rivers, ranges, forests, towns and cities, the camera slowly zooming in" /></td>
     <td><img src="docs/media/convoy.gif" width="100%" alt="A supply truck leaves a town and crosses a river bridge on its way to the front" /></td>
   </tr>
   <tr>
@@ -189,7 +250,7 @@ Inside your order, every front commander attacks with a **battle plan**, drawn o
   </tr>
 </table>
 
-**Doctrine.** Before a battle, choose *balanced*, *infantry first*, *armour first*, *mechanized* or *artillery first*. Your doctrine sets your production mix and the plans your front commanders prefer. Each AI faction has its own doctrine.
+**Doctrine.** Before a battle, choose *balanced*, *infantry first*, *armour first*, *mechanized* or *artillery first*. Your doctrine sets your production mix and the plans your front commanders prefer. Since 3.0 each AI supreme HQ also fights with one of four war doctrines (Builder, Blitz, Attrition, Maneuver; see [What's new](#whats-new-in-30)), which go deeper than the production mix: investment, directives, raids, front density and risk.
 
 Also inside:
 - **Territory is the economy.** Your capital alone feeds about a third of a full army. Villages supply recruits (manpower), and towns and cities supply industry (munitions), production slots, supply stocks, population and lots for economic buildings. Since 2.2 a settlement on its own yields half of its old income, and its buildings make up the rest. The mobilisation and industry sliders scale the output of all your territory. Losing ground shrinks your war effort, and losses take real time and money to replace. Every P/M spent on a factory is a squad not built, so economy against army is a real choice.
@@ -206,6 +267,8 @@ Also inside:
 
 > [!NOTE]
 > The Windows build is not code-signed, so SmartScreen may warn on first launch. Choose **More info → Run anyway**. You need a GPU with WebGL2 (any graphics card from the last ~8 years). Press **F11** for fullscreen.
+
+**Updating.** From 3.0 the desktop app updates itself: each release carries a signed game bundle that the app downloads, verifies against the public key built into it, and plays from the next start. If the bundle cannot start, the app falls back to the game it shipped with. A release that needs a newer desktop shell saves the new installer to your Downloads folder for you to run. **Coming from 2.2.x?** That version can only point you at the release page, so download and install 3.0 by hand once; later updates arrive by themselves. How it works and how it is secured: [docs/UPDATER.md](docs/UPDATER.md).
 
 ## How a war plays
 
@@ -241,11 +304,23 @@ flowchart LR
 | Left drag (25 px or more, after Fortify) | Optional: draw a line that becomes a permanent fortified zone |
 | <kbd>Shift</kbd> while placing | Keep the directive armed for another click |
 | Right click or <kbd>Esc</kbd> | Skip the optional click (the directive stands) |
-| <kbd>1</kbd>–<kbd>8</kbd> or click a front card | Open or close that front's dossier: its answer to the directive, plan, position and units |
+| **Force** on the HQ card, or the same directive again within 30 s | Every front obeys at once; none may decline |
+| <kbd>1</kbd>–<kbd>8</kbd> or click a front card | Open or close that front's dossier: its answer to the directive (or why it declined), tier, plan, position and units |
 | Fortified zones list on the HQ card | Progress of each permanent zone; Cancel stops the work (standing works remain) |
 | Click a town or city on the map | Town panel: supply stock, local production queue (queue a unit here), economic buildings (build or rebuild) |
 
-Fronts are opened, merged and dissolved by the theatre itself; there is no key for it any more.
+Fronts are opened, merged and dissolved by the theatre itself; there is no key for it any more. There is no cap on fronts: the first eight have hotkeys and the card list scrolls.
+
+**Engineering, economy and research**
+
+| Input | Action |
+|---|---|
+| <kbd>I</kbd> or **Engineering** on the economy panel | Engineering popover: **Build road** (click two points, or drag), **Repair rail** (a cut line you hold at both ends), **Extend rail** (an own station, then an own town) |
+| Economy panel (the *Auto* button in the top bar) → **Build economic zone**, then click the map | Site an economic zone on own or neutral ground, away from towns and near a road |
+| Click an economic zone | Zone panel: level, output, road link, condition; raise it to the next level or rebuild the ruin |
+| <kbd>Y</kbd> or **Upgrades** | Upgrade panel: research one item at a time at the capital, see the timer, cancel for a partial refund |
+
+**Custom game:** next to your own doctrine, pick each AI side's doctrine (*Builder*, *Blitz*, *Attrition*, *Maneuver* or *Random*). Quick Battle and Spectate deal them at random, all different in a four-way war.
 
 **Units** (optional direct control)
 
@@ -260,15 +335,19 @@ Fronts are opened, merged and dissolved by the theatre itself; there is no key f
 | Input | Action |
 |---|---|
 | <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> or middle-drag, <kbd>Q</kbd>/<kbd>E</kbd>, wheel | Pan · rotate · zoom |
-| <kbd>Ctrl</kbd>+wheel or <kbd>PgUp</kbd>/<kbd>PgDn</kbd>, <kbd>Tab</kbd>, <kbd>F</kbd> | Camera pitch · overview · follow the selected unit |
-| <kbd>Space</kbd> <kbd>U</kbd> <kbd>Esc</kbd> | Pause · hide HUD · cancel / menu |
+| <kbd>[</kbd> / <kbd>]</kbd>, <kbd>PgDn</kbd>/<kbd>PgUp</kbd> or <kbd>Ctrl</kbd>+wheel | Camera tilt |
+| <kbd>O</kbd> · <kbd>K</kbd> | Orbit · battle cam (frames the hottest fight you can see, cuts every 12–20 s) |
+| <kbd>F</kbd>, or double-click a front card | Follow the selected unit, else the open front |
+| <kbd>Tab</kbd> | Overview; press again to fly back |
+| Camera strip on the HUD | Free · Orbit · Follow · Battle · Overview |
+| <kbd>Space</kbd> <kbd>U</kbd> <kbd>Esc</kbd> | Pause · hide HUD · back to the free camera / cancel / menu |
 | <kbd>F11</kbd> · <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>I</kbd> | Fullscreen · developer console (desktop app) |
 
 Game speed: 1× / 2× / 4× / 8×. If the simulation can't keep up, the game slows down and shows a notice. It never skips ticks.
 
 **Graphics quality** (Settings, on the title screen or in the Esc menu): *auto* (default), *high*, *medium* or *low*. Auto starts at a tier guessed from your graphics card, drops one tier after about 3 s of slow frames and tells you when it does.
 
-**Quick Battle** is fought under fog of war; a Custom game has its own fog toggle, and Spectate shows everything. **Update check:** the title screen looks for a newer release on start (Settings → *Check for updates on start* turns it off).
+**Quick Battle** is fought under fog of war; a Custom game has its own fog toggle, and Spectate shows everything. **Updates:** the title screen looks for a newer release on start (Settings → *Check for updates on start* turns it off). In the desktop app a newer release downloads and verifies itself in the background and the title screen offers **Restart now**; Settings → *Auto-download updates* turns that off and leaves only the notice with a link to the release page. The browser build always runs the latest version.
 
 ## Under the hood
 
@@ -276,23 +355,30 @@ Game speed: 1× / 2× / 4× / 8×. If the simulation can't keep up, the game slo
 flowchart LR
   subgraph Worker[Web Worker: deterministic simulation, 20 Hz]
     MG[Map generator] --> T[Terrain · buildings · navigation]
-    T --> AI[Supreme HQ → fronts and front commanders → units]
-    AI --> CB[Combat · structures · morale · supply · economy]
+    T --> AI[Supreme HQ and its doctrine → fronts: tiers, compliance → units]
+    AI --> CB[Combat · works and minefields · morale · supply · economy and zones · roads and rail · upgrades]
   end
   Worker -- packed snapshots --> Main
   subgraph Main[Main thread]
-    R[Three.js diorama<br/>instancing · soldier motion · effects · order lines] --- UI[War-room HUD · i18n]
-    AU[Score composer · mixer]
+    R[Three.js diorama<br/>instancing · soldier motion · effects · order lines · camera modes · time of day] --- UI[War-room HUD · i18n]
+    AU[Score composer · doctrine themes · mixer]
   end
   subgraph Orch[Web Worker: orchestra]
     OR[Synthesized instrument samples]
   end
+  subgraph Shell[Electron shell]
+    UP[Updater: signed bundles · fallback]
+  end
   OR -- samples --> AU
   UI -- commands --> Worker
+  UP -- app://game/ --> Main
 ```
 
 - **Deterministic simulation.** Fixed 20 Hz ticks with seeded RNG, so the same seed and the same commands give the same war. A test checks this. The simulation runs in a Web Worker, and the main thread only draws.
-- **One command hierarchy for everyone.** The supreme HQ (you, or the AI planner) decides the war effort and gives one directive with an optional axis or line. The theatre opens, merges and dissolves fronts and keeps the capital's garrison for every side. Each front commander turns the directive into its own response (main effort, support, pin, hold, counter-attack, fall back), then decides the objective, the posture, the battle plan, the slots on the line, crossings and spearheads. Units decide targets and cover. The AI supreme HQ thinks every 5 s and issues its directive through the same `setDirective` command the UI sends ([COMMAND_V2 §7](docs/COMMAND_V2.md), [STRATEGY_LAB Round 6](docs/STRATEGY_LAB.md)).
+- **One command hierarchy for everyone.** The supreme HQ (you, or the AI planner) decides the war effort and gives one directive with an optional axis or line. The theatre opens, merges and dissolves fronts and keeps the capital's garrison for every side. Each front commander turns the directive into its own response (main effort, support, pin, hold, counter-attack, fall back), then decides the objective, the posture, the battle plan, the slots on the line, crossings and spearheads. Units decide targets and cover. The AI supreme HQ thinks every 5 s and issues its directive through the same `setDirective` command the UI sends ([COMMAND_V2 §7](docs/COMMAND_V2.md), [STRATEGY_LAB Round 6](docs/STRATEGY_LAB.md)). Since 3.0 each front answers through a compliance score (proximity to the capital, local risk, temperament), and fronts are planned in staggered chunks of eight per tick, so their cost grows with the number of fronts per 5 s think rather than per tick ([COMMAND_V2 §8](docs/COMMAND_V2.md)).
+- **Doctrines are levers, not a second AI.** A doctrine profile in `docs/data/rules.json` (`doctrines`) scales the dials the AI already reads: production mix and caps, investment, occupation, defend and attack thresholds, retreat HP, raid targets, front density, compliance temperament, main-effort share and upgrade priorities. The finisher that ends a war still comes first ([DOCTRINES](docs/DOCTRINES.md)).
+- **Transport as a movement layer.** Speed and navigation cost depend on the move class (tracked, wheeled, foot, towed) and whether the cell is a road or a town street; trucks path on their own wheeled grid. Rail lines are generated from the map with no extra RNG draws, so old seeds keep their maps; ownership, cuts, trains and engineer jobs are plain data in the snapshot ([rules.json](docs/data/rules.json) `transport`).
+- **Every 3.0 system has a switch and a lab.** Each one ships with a `rules.json` block, an `enabled` flag for A/B runs, unit tests and a lab suite in `scripts/lab30/`, and the deterministic-replay test still passes with all of them on.
 - **Logistics through places.** Every held place is a supply node with a stock, a draw radius, its own build slots and queue, and lots for economic buildings; stocks and buildings travel to the main thread in the snapshot for the town panel and the stock gauges. Rearming is a rate with a crowding penalty, and convoy hand-overs are capped per 200 m cell. Numbers live in `docs/data/rules.json` (`logistics`, `econ`).
 - **Structures.** Pillboxes and bunkers are engineer-built forts with HP, a garrison, all-round cover, a raised muzzle and concealment until they fire. Hits resolve through a per-tick fort index, and garrison checks run every 10 ticks per unit. Rules and numbers: [BALANCE_SPEC §10.1](docs/BALANCE_SPEC.md).
 - **Data-oriented hot paths.** Lazy flow fields (Dial's algorithm) are shared per goal, and paths are built in 320 m stretches. A cell-sorted spatial hash handles queries, and a 2 m building raster with local detours handles movement through towns. In 2.0 the enemy-distance transform moved to a 32 m grid (2.8 % → 0.8 % of sim CPU), and defensive-position and cover searches are cached. Over the releases the mean tick fell from 4.5 ms (0.5) to 2.7 ms (1.0) and 1.6 ms at about 330 units (1.1) ([docs/PERFORMANCE.md](docs/PERFORMANCE.md)).
@@ -322,6 +408,9 @@ flowchart LR
   - The **strategy lab** (`scripts/strategy.ts`) records every operation, engagement and capture, then reports which plans work against which odds and terrain ([docs/STRATEGY_LAB.md](docs/STRATEGY_LAB.md)). With the 2.0 supreme HQ, operation success went from 20.5 % to 30.5 % and capitals lost to stoppable attacks from 2 to 1 (3 seeds × 30 min).
   - The **challenge lab** (`scripts/challenge.ts`) attacks the AI with scripted supreme-HQ strategies through the real command API (below).
   - The **soak test** (`scripts/soak.ts`) plays whole wars and flags NaNs, stuck units, idle fronts and slow ticks.
+  - The **anomaly lab** (`scripts/lab30/anomaly.ts`) runs four-way wars on medium and large maps with read-only probes and reports every ammo-starved cluster, dry supply chain, idle herd, stuck unit, convoy loop, phantom front and unreachable order with a root-cause guess and a timeline; `--src` points it at a frozen older tree for a before / after ([DEBUG_LAB](docs/DEBUG_LAB.md)).
+  - The **3.0 suites** in `scripts/lab30/`: `doctrine.ts` (doctrine-vs-doctrine win matrix, curves, distinctiveness), `fronts.ts` and `directive.ts` (fronts per faction, front cost, order spam with compliance on and off, home-recall timing), `transport.ts` (crossing times by rail and road, road share, fights at junctions), `economy.ts` (zone income by doctrine), `defence.ts` (equal-cost assaults on tiered works, mines, cheap-win probes), `infiltration.ts` (detachments and motorized raids at the widest gap, open and `--fog`) and `upgrade.ts` (value per cost, rich vs poor, motorization).
+  - The challenge lab's **experience metrics** (`--experience`) score every match for one-sidedness, cheap wins, warning time before a capital falls, pacing and engagement health; the 2.2.1 baseline is kept in `docs/lab/` ([CHALLENGE_LAB, 3.0](docs/CHALLENGE_LAB.md#30-diversity-suite-and-player-experience-metrics-wp-i)).
 
 ### Challenge lab: can the AI survive a scripted strategy?
 
@@ -336,6 +425,11 @@ A player once won by sending every unit at an enemy capital. The challenge lab t
 | `late_blitz` | fortifies until 15 min, then a general offensive on the nearest capital |
 | `human_like` | defends when threatened, strikes a neighbour whose capital is thinly held |
 | `rush_micro` | no directive: every combat unit gets a direct attack-move on the nearest capital |
+| `armour_raid` (3.0) | saves up 20 tanks and 10 motor rifles, then drives them at the nearest capital, direct or by a flank |
+| `shadow_strike` (3.0) | from 10 min a small detachment takes a route outside every defender's sight to the capital (open and fog) |
+| `backdoor` (3.0) | a loud offensive elsewhere while a capturing detachment slips to the capital by the shadow route |
+| `feint` · `econ_war` · `siege` (3.0) | a loud offensive on one axis and the real one on another · raids on every economic site and convoy · an artillery line and works, then a storm |
+| `doctrine_*` (3.0) | the challenger plays one of the four AI doctrines through the command API |
 
 In the first baseline the AI survived every blunt strategy. The one loss led to the Round 7 defence fixes: holders on the HQ point, a forecast of the defenders that can actually block a capture, the nearest group's arrival time, and a counter-attack.
 
@@ -349,8 +443,11 @@ In the first baseline the AI survived every blunt strategy. The one loss led to 
 
 A capital taken by a challenger fielding at least twice the defender's army counts as a legitimate loss. The one remaining failure is a 3-minute direct rush on one seed at 1.2×, where the holders on the HQ point were suppressed. In 2.2 the strategies drive the universal directive instead of per-front orders, and the challenger gets the theatre's own front management, so it is a stronger opponent; in the 2.2 strategy round the AI kept its capital in all 21 matches (7 strategies × 3 seeds × 40 min). Full tables and the A/B switches: [docs/CHALLENGE_LAB.md](docs/CHALLENGE_LAB.md).
 
+On 2.2.1 the 3.0 diversity suite found one exploit that still worked: a shadow strike with open information took the AI's capital in 2 of 3 seeds, after as little as 17 s of warning. With the 3.0 zone of control, rear reports and hunts, the AI kept its capital in all 42 matches of `--all` (14 strategies × 3 seeds × 40 min), the shadow strike's shortest warning rose from 216 to 408 s, and under fog it never reached the capital. Where a `doctrine_*` challenger took a capital, it came late and with the larger army, never as a cheap win.
+
 ```bash
 npx tsx scripts/challenge.ts --all --rushAt 300,180,600 --seeds 7,11,13 --jobs 8   # the baseline
+npx tsx scripts/challenge.ts --suite diversity --seeds 7,11,13 --minutes 40 --jobs 9 --experience   # 3.0 suite + experience metrics
 ```
 
 <details>
@@ -374,10 +471,10 @@ It also prints an attacker × victim kill matrix, damage shares by attacker for 
 
 ## Roadmap
 
-<img src="docs/media/roadmap.svg" width="100%" alt="War-map roadmap: an inked road through shipped versions 0.4, 0.5, 1.0, 1.1, 2.0 and 2.1 fortress war to 2.2 economic war, this release, then a dashed road through planned stops 2.3 sharper AI and 2.x rivers, records and campaign" />
+<img src="docs/media/roadmap.svg" width="100%" alt="War-map roadmap: an inked road through shipped versions 0.4, 0.5, 1.0, 1.1, 2.0, 2.1 and 2.2 to 3.0 doctrine war, this release, starred, then a dashed road to the planned stop 3.x: war pace, river assaults, save and replay, linked maps and mods" />
 
 > [!NOTE]
-> Everything past 2.2 is a plan, not a promise. Stops may move, merge or drop out as playtesting shows what matters.
+> Everything past 3.0 is a plan, not a promise. Stops may move, merge or drop out as playtesting shows what matters.
 
 <table>
   <thead>
@@ -390,17 +487,18 @@ It also prints an attacker × victim kill matrix, damage shares by attacker for 
     <tr><td>1.1</td><td>Artillery and unit identity, capital defence, siege and storm, capital-only victory</td><td><img src="https://img.shields.io/badge/shipped-3a3326?style=flat-square" alt="shipped" /></td></tr>
     <tr><td>2.0</td><td>Supreme HQ and front commanders, pillboxes and bunkers, armoured thrusts, challenge lab, impact effects</td><td><img src="https://img.shields.io/badge/shipped-3a3326?style=flat-square" alt="shipped" /></td></tr>
     <tr><td>2.1</td><td>Fortress war: permanent fortified zones, binding orders, stronger and cheaper works, capital pillboxes, grounded units and detailed towns</td><td><img src="https://img.shields.io/badge/shipped-3a3326?style=flat-square" alt="shipped" /></td></tr>
-    <tr><td><b>2.2</b></td><td><b>Economic war: one supreme-HQ directive answered by every front, supply stocks in every town with gradual rearm, per-town production, factories, recruiting offices and depots with raids, roadside farms as cover, armour groups, a weaker AT gun, fog-of-war Quick Battle, update check, a smoother renderer</b></td><td><img src="https://img.shields.io/badge/this_release-a63f36?style=flat-square" alt="this release" /></td></tr>
-    <tr><td>2.2.x</td><td>Endgame pace: near-equal two-way duels can still run past an hour under capital-only victory (finisher and attrition tuning); supply that really starves an over-extended offensive</td><td><img src="https://img.shields.io/badge/in_progress-8a6a2c?style=flat-square" alt="in progress" /></td></tr>
-    <tr><td>2.3</td><td>Fog-of-war challenge runs and harder AI difficulties</td><td><img src="https://img.shields.io/badge/planned-6b7a3a?style=flat-square" alt="planned" /></td></tr>
-    <tr><td>2.3</td><td>AI bunker garrisons with AT guns, using captured enemy works</td><td><img src="https://img.shields.io/badge/planned-6b7a3a?style=flat-square" alt="planned" /></td></tr>
-    <tr><td>2.3</td><td>Fortifications that block movement</td><td><img src="https://img.shields.io/badge/planned-6b7a3a?style=flat-square" alt="planned" /></td></tr>
-    <tr><td>2.x</td><td>Naval and river crossings under fire</td><td><img src="https://img.shields.io/badge/planned-6b7a3a?style=flat-square" alt="planned" /></td></tr>
-    <tr><td>2.x</td><td>Save and replay a war</td><td><img src="https://img.shields.io/badge/planned-6b7a3a?style=flat-square" alt="planned" /></td></tr>
-    <tr><td>2.x</td><td>A campaign of linked maps</td><td><img src="https://img.shields.io/badge/planned-6b7a3a?style=flat-square" alt="planned" /></td></tr>
-    <tr><td>2.x</td><td>Steam-style achievements</td><td><img src="https://img.shields.io/badge/planned-6b7a3a?style=flat-square" alt="planned" /></td></tr>
-    <tr><td>2.x</td><td>Localisation beyond Chinese and English</td><td><img src="https://img.shields.io/badge/planned-6b7a3a?style=flat-square" alt="planned" /></td></tr>
-    <tr><td>2.x</td><td>Mod-friendly unit data</td><td><img src="https://img.shields.io/badge/planned-6b7a3a?style=flat-square" alt="planned" /></td></tr>
+    <tr><td>2.2</td><td>Economic war: one supreme-HQ directive answered by every front, supply stocks in every town with gradual rearm, per-town production, factories, recruiting offices and depots with raids, roadside farms as cover, armour groups, a weaker AT gun, fog-of-war Quick Battle, update check, a smoother renderer</td><td><img src="https://img.shields.io/badge/shipped-3a3326?style=flat-square" alt="shipped" /></td></tr>
+    <tr><td><b>3.0</b></td><td><b>Doctrine war: four clashing AI doctrines, unlimited fronts with Corps / Army / Army Group tiers, front commanders who may decline an order (and a Force switch), roads and railways, engineer-built economic zones, fortresses, AT emplacements, minefields and a capital defence perimeter, 13 unit upgrades, zone of control and infiltrator hunts, camera modes and time of day, signed automatic updates, a debug lab, doctrine themes in the score</b></td><td><img src="https://img.shields.io/badge/this_release-a63f36?style=flat-square" alt="this release" /></td></tr>
+    <tr><td>3.0.x</td><td>War pace: with zones, works and the perimeter on, four-way AI wars end about half as often as in 2.2 (0.9 eliminations an hour against 1.3–1.8); a tuning pass on the perimeter, works tiers and zone output</td><td><img src="https://img.shields.io/badge/in_progress-8a6a2c?style=flat-square" alt="in progress" /></td></tr>
+    <tr><td>3.0.x</td><td>Performance round on large maps with every 3.0 system on</td><td><img src="https://img.shields.io/badge/in_progress-8a6a2c?style=flat-square" alt="in progress" /></td></tr>
+    <tr><td>3.x</td><td>Harder AI difficulties</td><td><img src="https://img.shields.io/badge/planned-6b7a3a?style=flat-square" alt="planned" /></td></tr>
+    <tr><td>3.x</td><td>Fortifications that block movement; AI garrisons in captured enemy works</td><td><img src="https://img.shields.io/badge/planned-6b7a3a?style=flat-square" alt="planned" /></td></tr>
+    <tr><td>3.x</td><td>River assaults under fire and naval crossings</td><td><img src="https://img.shields.io/badge/planned-6b7a3a?style=flat-square" alt="planned" /></td></tr>
+    <tr><td>3.x</td><td>Save and replay a war</td><td><img src="https://img.shields.io/badge/planned-6b7a3a?style=flat-square" alt="planned" /></td></tr>
+    <tr><td>3.x</td><td>A campaign of linked maps</td><td><img src="https://img.shields.io/badge/planned-6b7a3a?style=flat-square" alt="planned" /></td></tr>
+    <tr><td>3.x</td><td>Steam-style achievements</td><td><img src="https://img.shields.io/badge/planned-6b7a3a?style=flat-square" alt="planned" /></td></tr>
+    <tr><td>3.x</td><td>Localisation beyond Chinese and English</td><td><img src="https://img.shields.io/badge/planned-6b7a3a?style=flat-square" alt="planned" /></td></tr>
+    <tr><td>3.x</td><td>Mod-friendly unit data</td><td><img src="https://img.shields.io/badge/planned-6b7a3a?style=flat-square" alt="planned" /></td></tr>
   </tbody>
 </table>
 
@@ -413,7 +511,22 @@ npm install
 npm run dev          # browser: http://localhost:5173
 npm run app          # desktop window (Electron)
 npm run dist:win     # Windows portable .exe + installer → release/
+npm run pack:game    # signed game bundle for the updater: game-<ver>.zip + .json + .json.sig → release/
 ```
+
+<details>
+<summary><b>Releasing with the updater</b></summary>
+
+```bash
+npm run release:keygen   # once: Ed25519 key pair; the private key goes to %USERPROFILE%\.littlewar\ (never into the repo)
+                         # paste the printed UPDATE_PUBLIC_KEY line into electron/updater.cjs and back the key up
+npm run dist:win         # build dist/ and both installers
+npm run pack:game        # zip dist/, write and sign the manifest (checks the key in updater.cjs matches)
+npm run updater:e2e      # real Electron shell against a localhost feed: install, tamper, fallback, installer path
+```
+
+Upload `game-<ver>.zip`, `game-<ver>.json`, `game-<ver>.json.sig` and both installers to the GitHub release tagged `v<ver>`. Bump `scripts/release/release.config.json` → `minShell` when a change under `electron/` is one the game depends on; older shells then fetch the installer instead of the bundle. Until the public key is pasted in, the shell ships a placeholder key and never installs bundles ([docs/UPDATER.md](docs/UPDATER.md)).
+</details>
 
 <details>
 <summary><b>Development commands</b></summary>
@@ -429,6 +542,18 @@ npx tsx scripts/lab.ts --seeds 7,11 --minutes 30 --ab --set unit.infantry.cost_p
 npx tsx scripts/strategy.ts --seeds 7,11,13 --minutes 20 --compare  # strategy lab: plan outcomes, A/B
 npx tsx scripts/challenge.ts --all --seeds 7,11,13 --minutes 40 --jobs 6  # challenge lab: scripted strategies vs the AI
 npx tsx scripts/soak.ts 45 7,11,13                # whole wars: outcome, anomalies, tick cost (minutes, seeds)
+
+# 3.0 labs (reports → media/stats/lab30/)
+npx tsx scripts/lab30/anomaly.ts --seeds 7,11,13 --maps medium,large --minutes 45 --jobs 6   # debug lab
+npx tsx scripts/lab30/doctrine.ts --seeds 7,11,13 --minutes 45 --jobs 8   # doctrine win matrix, curves, distinctiveness
+npx tsx scripts/lab30/fronts.ts --seeds 7,11,13 --size large              # fronts per faction, front cost
+npx tsx scripts/lab30/directive.ts --seeds 7,11,13 --minutes 40           # order spam with compliance on / off, home recall
+npx tsx scripts/lab30/transport.ts --seeds 7,11 --minutes 30              # rail vs road crossing, road share, junction fights
+npx tsx scripts/lab30/economy.ts --seeds 7,11,13 --minutes 45             # economic zones by doctrine
+npx tsx scripts/lab30/defence.ts --suite assault                          # equal-cost assaults on tiered works, mines
+npx tsx scripts/lab30/infiltration.ts --seeds 7,11,13 [--fog]             # raids at the widest gap
+npx tsx scripts/lab30/upgrade.ts --parts value,rich,motor --seeds 7,11,13 # upgrade value, rich vs poor, motorization
+npx tsx scripts/challenge.ts --suite diversity --seeds 7,11,13 --minutes 40 --jobs 9 --experience  # challenge + experience metrics
 
 # Performance
 npx tsx scripts/perf.ts generated 600 7           # headless ms/tick (mean, p99), stuck units, supply health
@@ -452,13 +577,19 @@ Trailer: `cd trailer && npm i && npx remotion studio` to preview. `npx remotion 
 ```
 src/sim/      deterministic simulation: map generator, terrain and buildings, navigation,
               economy, production, combat, structures, morale, supply convoys, front analysis,
-              AI (supreme HQ / fronts and front commanders / cities / units), stats ledger
+              AI (supreme HQ and doctrines / fronts, tiers and compliance / cities / units),
+              roads and rail, economic zones, works tiers and minefields, capital perimeter,
+              zone of control and infiltration, unit upgrades, stats ledger
 src/render/   Three.js diorama: instanced units, soldier motion, terrain, water, settlements,
-              structures, order lines, impact and artillery FX, quality tiers
-src/ui/       war-room HUD, title screen, supreme-HQ and front cards, settings, i18n (zh / en)
+              structures, order lines, impact and artillery FX, rail and trains, upgrade models,
+              camera modes, time of day, quality tiers
+src/ui/       war-room HUD, title screen, supreme-HQ and front cards, engineering, zone and upgrade
+              panels, camera strip, settings, i18n (zh / en)
+src/update/   renderer side of the updater (status, notice states)
 src/audio/    score composer and themes, synthesized orchestra (worker), sound effects (Web Audio)
-scripts/      balance, strategy and challenge labs, soak test, perf and profiling tools, capture scripts
-electron/     standalone desktop shell (serves the built game over app://)
+scripts/      balance, strategy and challenge labs, 3.0 lab suites (lab30/), soak test, perf and
+              profiling tools, capture scripts, release tools (release/: keygen, pack, updater e2e)
+electron/     standalone desktop shell (serves the built game over app://) and the signed-bundle updater
 docs/         design documents (mostly Chinese) and docs/data/*.csv|json: unit, weapon and rule data
 tests/        rule, terrain, map-generation, determinism, structure and AI smoke tests
 trailer/      Remotion project for the promo trailer
@@ -469,7 +600,7 @@ Design docs: [docs/README.md](docs/README.md). Implementation-time decisions are
 
 ## Status
 
-**v2.2.** Balance and AI are tuned from headless AI-vs-AI wars and the challenge lab, not yet from much human play. The 2.2 economy, supply and production numbers are new and the least tested part of the game. Wars between four AI sides end less often: capitals with a standing garrison, pillboxes and recall are hard to take, and the endgame storm is still being tuned ([BALANCE_LAB](docs/BALANCE_LAB.md)). What comes next is in the [roadmap](#roadmap).
+**v3.0.** Balance and AI are tuned from headless AI-vs-AI wars, the 3.0 labs and the challenge lab, not yet from much human play. The 3.0 systems are new and each passed its own lab, but together they make wars slower to end: with economic zones, tiered works and the capital perimeter on, four AI sides eliminate about 0.9 factions an hour against 1.3–1.8 in 2.2, and 1v1 duels rarely end inside an hour. A tuning pass on the perimeter, works tiers and zone output comes next ([roadmap](#roadmap)).
 
 **Known limitations:** the orchestra is synthesized, not recorded, and sounds like it. Single player only: there is no multiplayer. The Windows build is not code-signed.
 
