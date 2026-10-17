@@ -51,13 +51,23 @@ for (let i = 1; i <= secs * w.tickHz; i++) {
   let builds = 0;
   let rebuilds = 0;
   let cached = 0;
+  let fieldBytes = 0;
   const per: string[] = [];
   for (const h of hooked.values()) {
     let settled = 0;
     let cells = 0;
     for (const f of h.fields.values()) {
-      cells += f.dist.length;
-      for (let k = 0; k < f.dist.length; k++) if (f.dist[k] !== FIELD_INF) settled++;
+      // Dense fields (before WP-M2) count touched cells; sparse fields count touched 32-cell chunks.
+      const dense = (f as unknown as { dist?: Int32Array }).dist;
+      if (dense) {
+        cells += dense.length;
+        fieldBytes += dense.byteLength;
+        for (let k = 0; k < dense.length; k++) if (dense[k] !== FIELD_INF) settled++;
+      } else {
+        cells += f.chunkOf.length * 32;
+        fieldBytes += f.bytes;
+        settled += f.touchedCells;
+      }
     }
     builds += h.builds;
     rebuilds += h.rebuilds;
@@ -65,7 +75,7 @@ for (let i = 1; i <= secs * w.tickHz; i++) {
     per.push(`${h.label} ${h.fields.size}f ${h.builds}b ${h.rebuilds}rb ${cells ? Math.round((100 * settled) / cells) : 0}%touched`);
   }
   const mu = process.memoryUsage();
-  console.log(`t=${Math.round(w.time)}s units ${w.units.size} arrayBuffers ${mb(mu.arrayBuffers)} MB heap ${mb(mu.heapUsed)} MB rss ${mb(mu.rss)} MB | fields ${cached} builds ${builds} rebuilds ${rebuilds} (${builds ? Math.round((100 * rebuilds) / builds) : 0} %) | ${(ms / (300 * w.tickHz)).toFixed(2)} ms/tick`);
+  console.log(`t=${Math.round(w.time)}s units ${w.units.size} arrayBuffers ${mb(mu.arrayBuffers)} MB heap ${mb(mu.heapUsed)} MB rss ${mb(mu.rss)} MB | fields ${cached} (${mb(fieldBytes)} MB) builds ${builds} rebuilds ${rebuilds} (${builds ? Math.round((100 * rebuilds) / builds) : 0} %) | ${(ms / (300 * w.tickHz)).toFixed(2)} ms/tick`);
   console.log(`  ${per.join(' | ')}`);
   ms = 0;
 }

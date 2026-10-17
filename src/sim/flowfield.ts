@@ -9,6 +9,11 @@
  *   read as unreachable, which is safe for steepest descent because a descent from `start` only
  *   ever moves to cells strictly cheaper than `dist[start]` (< frontier). Later requests from
  *   farther away simply resume the same search.
+ * - Storage is sparse (WP-M2): distances live in 32-cell chunks of the linear cell index, allocated
+ *   the first time the search touches a cell of the chunk. A lazy field touches 10-30 % of a large
+ *   map, so a field costs that share of a dense array, and the shared cache (nav.ts FieldPool)
+ *   holds several times more fields in the same bytes. An untouched cell reads FIELD_INF, exactly
+ *   what the dense array held, so every value, and every path, is unchanged.
  */
 
 /** Distance value of an unreached / not-yet-settled cell. */
@@ -60,8 +65,25 @@ export class EdgeTable {
   }
 }
 
+/** Cells per storage chunk (a power of two; a strip of one row of the linear cell index). */
+const CHUNK_SHIFT = 5;
+const CHUNK = 1 << CHUNK_SHIFT;
+const CHUNK_MASK = CHUNK - 1;
+/** Initial slab capacity (cells) and growth factor. */
+const SLAB_MIN = 64 * CHUNK;
+const SLAB_GROW = 1.5;
+
+/** Reusable storage of an evicted field (nav.ts FieldPool): its chunk table. */
+export interface FieldStore {
+  readonly chunkOf: Int32Array;
+}
+
 export class FlowField {
-  readonly dist: Int32Array;
+  /** Per chunk: offset of its cells in `slab`, or -1 while the search has not touched it. */
+  readonly chunkOf: Int32Array;
+  /** Chunk storage, in the order the search reached the chunks. */
+  slab: Int32Array;
+  private top = 0;
   used = 0;
   /** Every bucket below this distance has been fully processed (those cells are final). */
   private frontier = 0;
@@ -69,38 +91,80 @@ export class FlowField {
   /** Bucket ring of Dial's algorithm; slots are created on first use. */
   private buckets: (number[] | undefined)[] | null;
 
-  /** `buffer` (optional) is recycled storage of an evicted field, avoiding a fresh 400 KB allocation. */
-  constructor(private readonly edges: EdgeTable, n: number, goal: number, buffer?: Int32Array) {
-    this.dist = buffer && buffer.length === n ? buffer : new Int32Array(n);
-    this.dist.fill(FIELD_INF);
+  /**
+   * `store` (optional) is the storage of an evicted field, reused instead of fresh allocations.
+   * `onGrow(bytes)` is told when the slab grows (the shared cache's byte budget).
+   */
+  constructor(private readonly edges: EdgeTable, n: number, goal: number, store?: FieldStore, private readonly onGrow?: (bytes: number) => void) {
+    const chunks = (n + CHUNK_MASK) >> CHUNK_SHIFT;
+    this.chunkOf = store && store.chunkOf.length === chunks ? store.chunkOf : new Int32Array(chunks);
+    this.chunkOf.fill(-1);
+    this.slab = new Int32Array(SLAB_MIN);
     this.buckets = new Array<number[] | undefined>(edges.ring);
-    this.dist[goal] = 0;
+    this.slab[this.chunk(goal) + (goal & CHUNK_MASK)] = 0;
     this.buckets[0] = [goal];
+  }
+
+  /** Bytes held by this field's typed arrays. */
+  get bytes(): number {
+    return this.chunkOf.byteLength + this.slab.byteLength;
+  }
+
+  /** Cells (of 32-cell chunks) the search has touched. */
+  get touchedCells(): number {
+    return this.top;
+  }
+
+  /** Raw distance of cell k (tentative or final; FIELD_INF when untouched). */
+  at(k: number): number {
+    const o = this.chunkOf[k >> CHUNK_SHIFT];
+    return o < 0 ? FIELD_INF : this.slab[o + (k & CHUNK_MASK)];
   }
 
   /** Final cost-to-goal of cell k, or FIELD_INF when unreachable or not yet settled. */
   value(k: number): number {
-    const v = this.dist[k];
+    const v = this.at(k);
     return v < this.frontier ? v : FIELD_INF;
+  }
+
+  /** Slab offset of chunk c, allocating it (all FIELD_INF) on first touch. */
+  private chunk(k: number): number {
+    const c = k >> CHUNK_SHIFT;
+    const o = this.chunkOf[c];
+    if (o >= 0) return o;
+    if (this.top + CHUNK > this.slab.length) {
+      const grown = new Int32Array(Math.max(this.top + CHUNK, Math.ceil((this.slab.length * SLAB_GROW) / CHUNK) * CHUNK));
+      grown.set(this.slab.subarray(0, this.top));
+      this.onGrow?.(grown.byteLength - this.slab.byteLength);
+      this.slab = grown;
+    }
+    const at = this.top;
+    this.slab.fill(FIELD_INF, at, at + CHUNK);
+    this.chunkOf[c] = at;
+    this.top += CHUNK;
+    return at;
   }
 
   /** Expand the search until cell `k` is final (or the whole reachable area is). Returns cells popped. */
   settle(k: number): number {
-    const dist = this.dist;
-    if (dist[k] < this.frontier || this.pending === 0) return 0;
+    if (this.at(k) < this.frontier || this.pending === 0) return 0;
     const buckets = this.buckets!;
     const B = buckets.length;
     const W = this.edges.w;
     const OFF = this.edges.off;
+    const chunkOf = this.chunkOf;
+    let slab = this.slab;
     let d = this.frontier;
     let pending = this.pending;
     let popped = 0;
-    while (pending > 0 && d <= dist[k]) {
+    let target = this.at(k);
+    while (pending > 0 && d <= target) {
       const bucket = buckets[d % B];
       while (bucket !== undefined && bucket.length > 0) {
         const cur = bucket.pop()!;
         pending--;
-        if (dist[cur] !== d) continue;
+        // Every queued cell was written, so its chunk exists.
+        if (slab[chunkOf[cur >> CHUNK_SHIFT] + (cur & CHUNK_MASK)] !== d) continue;
         popped++;
         const base = cur * 8;
         for (let e = 0; e < 8; e++) {
@@ -108,14 +172,19 @@ export class FlowField {
           if (wt === 0) continue;
           const nb = cur + OFF[e];
           const nd = d + wt;
-          if (nd < dist[nb]) {
-            dist[nb] = nd;
-            const slot = nd % B;
-            const q = buckets[slot];
-            if (q === undefined) buckets[slot] = [nb];
-            else q.push(nb);
-            pending++;
+          let o = chunkOf[nb >> CHUNK_SHIFT];
+          if (o >= 0 && nd >= slab[o + (nb & CHUNK_MASK)]) continue;
+          if (o < 0) {
+            o = this.chunk(nb);
+            slab = this.slab;
           }
+          slab[o + (nb & CHUNK_MASK)] = nd;
+          if (nb === k) target = nd;
+          const slot = nd % B;
+          const q = buckets[slot];
+          if (q === undefined) buckets[slot] = [nb];
+          else q.push(nb);
+          pending++;
         }
       }
       d++;
