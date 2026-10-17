@@ -37,11 +37,18 @@ its own note in this folder (`WP-*.md`) on its worktree branch `worktree-agent-<
 - WP-R refactor (worktree-agent-a00358b1eea006fec) — merged (commands.ts 309→136, updater.cjs 362→135).
 - WP-M perf (worktree-agent-a71b5e2ec10e0548f) — merged. Sim ×1.17 vs 2.2.1 per unit-tick (large ×1.08, medium ×1.24); renderer close 5.4 ms (2.2.1 also misses 4 ms under load); large map 8× missed (6.2–7.3×). Proposals 1–2 → WP-M2.
 
+- WP-N README/media (worktree-agent-a8afeff94d884d5c5) — merged; version 3.0.0 set. README media ~27 MB/readme (target 25). Known gaps: roadside.gif no inside-building moment; rail.gif no engineer road (pre-REV stall); works.gif no fortress / no mine hit.
+
+## Release checklist (after T, M2, N follow-up merge)
+1. Full gates on the release tree: `npm run typecheck && npm test`, `npx tsx scripts/challenge.ts --all --seeds 7,11,13 --minutes 40 --jobs 6` (AI holds 2.x 21/21), `npx tsx scripts/soak.ts 45 7,11,13`, `npm run updater:e2e`.
+2. `npm run build`, `npm run dist:win`; the user runs `npm run release:keygen` and pastes the public key before `npm run pack:game`.
+3. Release PR feat/v3.0 → main (user OK), `gh release create v3.0.0` with both exes + game-3.0.0.zip/.json/.sig.
+
 ## Wave 2/3 running
 | WP | branch | status |
 |---|---|---|
 | M2 hunter re-pathing + flow-field memory budget | (launched after M merge) | running |
-| N README en+zh + GIFs | worktree-agent-a8afeff94d884d5c5 | running |
+| N follow-up: re-record rail.gif (engineer road), zones raid, minefield hit | worktree-agent-a8afeff94d884d5c5 | running |
 | T tuning: pace, maneuver, upgrade costs, supply after roads | (launched after Y merge) | running |
 
 ## Wave 1 agents still running (merge each when reported; typecheck + tests after every merge)
