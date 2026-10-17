@@ -8,7 +8,8 @@ import { assignJob, dropJob } from '../src/sim/structures';
 import { jobFront, roadSegmentOk, startRoadJob, transportSecond } from '../src/sim/transportjobs';
 import type { TransportJob } from '../src/sim/transportstate';
 import type { ManualTask } from '../src/sim/types';
-import type { V2 } from '../src/sim/vec';
+import { picketGap, picketSlots } from '../src/sim/pickets';
+import { dist, headingTo, type V2 } from '../src/sim/vec';
 import type { World } from '../src/sim/world';
 
 /** Code-review fixes (WP-REV): one regression test per finding where a unit test is feasible. */
@@ -95,6 +96,50 @@ describe('review HIGH 1 / MED 7: engineer transport jobs', () => {
     expect(f.m).toBeCloseTo(start, 3);
     expect(w.log.some((e) => e.key === 'log.transportJobDropped')).toBe(true);
   });
+});
+
+describe('review MED 12: pickets drop the vacated slot from coverage', () => {
+  it('a point covered only by the squad that just left is filled by another picket', () => {
+    const match = createMatch(data, { mapId: 'generated', factions: 4, infoMode: 'open', seed: 11, difficulty: 'normal', playerSlot: 0, spectate: true });
+    const w = match.world;
+    const f = w.factions[0];
+    const s = f.fronts[0];
+    const r = w.data.rules.infiltration;
+    const half = picketGap(r, 0) / 2;
+    const nav = w.nav(false, 35);
+    const hq = w.hqPos(0);
+    // A spot well away from the capital with passable ground along the line on both sides.
+    let p: V2 | null = null;
+    let dir = { x: 1, z: 0 };
+    for (let x = 400; x < w.terrain.width - 400 && !p; x += 100) for (let z = 400; z < w.terrain.depth - 400 && !p; z += 100) {
+      const q = { x, z };
+      if (dist(q, hq) < 900) continue;
+      const along = headingTo(hq, q) + Math.PI / 2;
+      const d = { x: Math.cos(along), z: Math.sin(along) };
+      const ok = [-120, 0, 100, 600].every((k) => nav.passable({ x: q.x + d.x * k, z: q.z + d.z * k }));
+      if (ok) { p = q; dir = d; }
+    }
+    expect(p).not.toBeNull();
+    const pt = (k: number): V2 => ({ x: p!.x + dir.x * k, z: p!.z + dir.z * k });
+    // Line far end first, then the near point (0.8 half-gap from the cluster's front squad).
+    const far = pt(600);
+    const near = pt(0.8 * half);
+    const seg = [far, near];
+    s.segment = seg;
+    s.line = null;
+    s.mode = 'hold';
+    s.op = 'frontal';
+    s.opPhase = '';
+    s.tier = 0;
+    // One squad at 0 and four at −0.9 half-gap: all redundant; the front one goes to the far point.
+    const liners = [0, -0.9, -0.9, -0.9, -0.9].map((k) => w.spawnUnit(0, 'infantry', pt(k * half), s.id));
+    const slots: Record<number, V2> = {};
+    for (const u of liners) slots[u.id] = { ...u.pos };
+    const out = picketSlots(w, f, s, liners, slots, seg, liners.length);
+    const finals = liners.map((u) => out[u.id]);
+    expect(Math.min(...finals.map((q) => dist(q, far)))).toBeLessThanOrEqual(half);
+    expect(Math.min(...finals.map((q) => dist(q, near)))).toBeLessThanOrEqual(half);
+  }, 120_000);
 });
 
 /** Issue one command as `actor` and return its outcome. */
