@@ -26,9 +26,14 @@ import { stockSummary } from '../src/sim/settlements';
 import { econCounts } from '../src/sim/econ';
 import type { World } from '../src/sim/world';
 import { INFILTRATION_AB } from '../src/sim/zoc';
+import { FINISH, FINISH_AB } from '../src/sim/storm';
 
 // A/B: INFIL_OFF=1 switches the 3.0 zone of control / pickets / rear screen off.
 if (process.env.INFIL_OFF) INFILTRATION_AB.on = false;
+// A/B: FINISH_BROKEN=0 turns the 3.0 broken-target finisher off (storm.ts, WP-T).
+if (process.env.FINISH_BROKEN === '0') FINISH_AB.broken = false;
+// FINISH_SET='{"brokenFullness":0.55}': finisher constants for tuning A/B runs (storm.FINISH).
+if (process.env.FINISH_SET) Object.assign(FINISH as unknown as Record<string, number>, JSON.parse(process.env.FINISH_SET) as Record<string, number>);
 
 // A/B: HOME_DEFENCE=0 turns the round-3 home defence off (docs/STRATEGY_LAB.md "Round 3").
 if (process.env.HOME_DEFENCE === '0') STRATEGY_AI.homeDefence = false;

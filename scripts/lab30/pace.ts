@@ -7,15 +7,19 @@
 //   npx tsx scripts/lab30/pace.ts [--seed 13] [--minutes 60] [--every 3]      (LAB_SET env: overrides)
 import { perimeterOf, perimeterPosts, ringSupported } from '../../src/sim/capitalDefence';
 import { doctrinePhase } from '../../src/sim/doctrineai';
-import { step } from '../../src/sim/sim';
+import { createMatch, step } from '../../src/sim/sim';
+import { FINISH } from '../../src/sim/storm';
 import { dist } from '../../src/sim/vec';
-import { argNum, labMatch, loadData, parseArgs } from './common';
+import { argNum, loadData, parseArgs } from './common';
 
+// FINISH_SET='{"brokenFullness":0.55}': finisher constants for A/B runs (as in soak.ts).
+if (process.env.FINISH_SET) Object.assign(FINISH as unknown as Record<string, number>, JSON.parse(process.env.FINISH_SET) as Record<string, number>);
 const a = parseArgs(process.argv.slice(2));
 const seed = argNum(a, 'seed', 13);
 const minutes = argNum(a, 'minutes', 60);
 const every = argNum(a, 'every', 3);
-const m = labMatch(loadData(), { seed, factions: 4 });
+// Same match as scripts/soak.ts (default map size).
+const m = createMatch(loadData(), { mapId: 'generated', factions: 4, infoMode: 'open', seed, difficulty: 'normal', playerSlot: 0, spectate: true });
 const w = m.world;
 const dead = new Set<number>();
 console.log(`seed ${seed}: doctrines ${w.factions.map((f) => `${f.id}=${f.doctrine}`).join(' ')}`);
