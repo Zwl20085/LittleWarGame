@@ -76,7 +76,8 @@ export class FrontsPanel {
 
   constructor(private readonly ctx: GameContext) {
     this.command = h('section', { class: 'hq-card orders panel paper-stack' });
-    this.cards = h('div', { class: 'front-cards' });
+    // 3.0: double-click a front card → the camera follows that front (cards rebuild, so delegate).
+    this.cards = h('div', { class: 'front-cards', ondblclick: (e: Event) => this.followFrom(e) });
     this.briefing = h('div', { class: 'briefing panel' });
     this.log = h('div', { class: 'eventlog' });
     this.zones = new ZonesSection(ctx);
@@ -86,6 +87,19 @@ export class FrontsPanel {
 
   dispose(): void {
     this.guard.dispose();
+  }
+
+  private followFrom(e: Event): void {
+    const id = Number((e.target as HTMLElement | null)?.closest?.('[data-front]')?.getAttribute('data-front'));
+    if (!Number.isFinite(id) || !this.ctx.camera) return;
+    this.expanded = id;
+    this.sig = '';
+    this.ctx.camera.followFront(id);
+  }
+
+  /** Front whose card is expanded (3.0: F follows it with the camera). */
+  get expandedFront(): number | null {
+    return this.expanded;
   }
 
   /** Expand / collapse a front's dossier. */

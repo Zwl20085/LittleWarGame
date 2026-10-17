@@ -122,7 +122,7 @@ const zh: Dict = {
   'set.smoke': '烟雾强度', 'set.shake': '镜头震动', 'set.uiScale': '界面缩放', 'set.elev': '俯角',
   'set.quality': '画质', 'quality.auto': '自动', 'quality.high': '高', 'quality.medium': '中', 'quality.low': '低',
   'hud.qualityLowered': '帧率偏低，已自动降低画质（可在菜单中更改）',
-  'help.body': '最高统帅部：Z 突击 · X 防御 · C 筑垒防守 · V 回防 · B 交还自主 → 地图上左键点选地点，或按住拖出战线（Shift 连续下达） · 1–8 / 点方面卡：指定接令方面 · ★ 主攻\n方面：N 新设方面（地图点选，最多 8 个）· 展开方面卡 → 撤销方面（连点两次）· 命令为强约束：方面卡盖“奉命”章，“到位”显示部队抵达情况\n筑垒地域：C 筑垒防守的每条防线都是永备工事，换令不撤；统帅部卡“筑垒地域”列出进度，可取消\n部队（可选）：左键/拖框选择 · 右键移动/集火 · A 攻击移动 · H 固守 · R 撤退 · G 归建\n镜头：WASD/中键 平移 · Q/E 旋转 · 滚轮 缩放 · PgUp/PgDn 俯角 · Tab 总览 · F 跟随 · Space 暂停 · U 隐藏界面 · Esc 取消/菜单',
+  'help.body': '最高统帅部：Z 突击 · X 防御 · C 筑垒防守 · V 回防 · B 交还自主 → 地图上左键点选地点，或按住拖出战线（Shift 连续下达） · 1–8 / 点方面卡：指定接令方面 · ★ 主攻\n方面：N 新设方面（地图点选，最多 8 个）· 展开方面卡 → 撤销方面（连点两次）· 命令为强约束：方面卡盖“奉命”章，“到位”显示部队抵达情况\n筑垒地域：C 筑垒防守的每条防线都是永备工事，换令不撤；统帅部卡“筑垒地域”列出进度，可取消\n部队（可选）：左键/拖框选择 · 右键移动/集火 · A 攻击移动 · H 固守 · R 撤退 · G 归建\n镜头：WASD/中键 平移 · Q/E 旋转 · [ / ] 或 PgDn/PgUp 俯角 · 滚轮 缩放 · Tab 总览（再按返回）· F 跟随部队/展开的方面（双击方面卡）· O 环绕 · K 战斗镜头 · Esc 退出镜头模式 · Space 暂停 · U 隐藏界面 · Esc 取消/菜单',
   'faction': '{roman} {city}',
   'you': '（你）',
   'ai.balanced': '均衡', 'ai.armor': '装甲', 'ai.infantry': '步兵', 'ai.artillery': '炮兵',  // title screen (titles stay English by design; descriptions follow the language)
@@ -168,6 +168,12 @@ const zh: Dict = {
   'eco.investOn': '自动投资：开', 'eco.investOff': '自动投资：关', 'eco.investTip': '开启时由统帅部参谋按局势在后方安全城镇投资经济建筑；首都告急或全线防御 / 战略收缩时暂停并退回预留资金。关闭后只能在城镇面板手动建造。', 'eco.investFund': '投资预留 {p} P / {m} M',
   'eco.buildings': '经济建筑：工厂 {f} · 征兵站 {r} · 仓库 {d}（+{p} P / +{m} M 每分）', 'eco.stock': '各地补给储备 {s} / {c}',
   'prod.at': '于 {place}', 'hud.stockTip': '各城镇补给储备合计',
+  // 3.0 camera modes and visuals (WP-K)
+  'cam.label': '镜头', 'cam.free': '自由', 'cam.orbit': '环绕', 'cam.follow': '跟随', 'cam.battle': '战斗', 'cam.overview': '总览',
+  'cam.tip.free': '自由镜头（Esc 从其他模式返回）', 'cam.tip.orbit': '环绕：镜头缓慢绕视野中心旋转（O）', 'cam.tip.follow': '跟随选中部队或展开的方面（F；双击方面卡）',
+  'cam.tip.battle': '战斗镜头：自动对准最激烈的交战，每 12–20 秒切换（K）', 'cam.tip.overview': '总览全图，再按一次回到原视角（Tab）',
+  'cam.noFollow': '先选中部队或展开一个方面卡，再按 F 跟随', 'cam.followLost': '跟随目标已不存在',
+  'set.dayCycle': '昼夜推移（黎明 → 正午 → 黄昏）', 'set.depthBlur': '低角度近景景深（仅高画质）',
 };
 
 const en: Dict = {
@@ -279,7 +285,7 @@ const en: Dict = {
   'set.smoke': 'Smoke density', 'set.shake': 'Camera shake', 'set.uiScale': 'UI scale', 'set.elev': 'Elevation',
   'set.quality': 'Graphics quality', 'quality.auto': 'Auto', 'quality.high': 'High', 'quality.medium': 'Medium', 'quality.low': 'Low',
   'hud.qualityLowered': 'Low frame rate: graphics quality lowered automatically (change it in the menu)',
-  'help.body': 'Supreme HQ: Z attack · X defend · C fortify · V fall back · B auto → click a place on the map, or drag a line (Shift keeps issuing) · 1–8 / front card: choose the front · ★ main effort\nFronts: N new front (click the map, up to 8) · expanded card → Disband (two clicks) · orders bind: the card is stamped "Ordered", "In position" shows the troops arriving\nFortified zones: every Fortify (C) line is a permanent project that survives new orders; the Supreme HQ card lists their progress and can cancel one\nUnits (optional): LMB/drag select · RMB move/focus · A attack-move · H hold · R retreat · G rejoin\nCamera: WASD/MMB pan · Q/E rotate · Wheel zoom · PgUp/PgDn tilt · Tab overview · F follow · Space pause · U hide HUD · Esc cancel/menu',
+  'help.body': 'Supreme HQ: Z attack · X defend · C fortify · V fall back · B auto → click a place on the map, or drag a line (Shift keeps issuing) · 1–8 / front card: choose the front · ★ main effort\nFronts: N new front (click the map, up to 8) · expanded card → Disband (two clicks) · orders bind: the card is stamped "Ordered", "In position" shows the troops arriving\nFortified zones: every Fortify (C) line is a permanent project that survives new orders; the Supreme HQ card lists their progress and can cancel one\nUnits (optional): LMB/drag select · RMB move/focus · A attack-move · H hold · R retreat · G rejoin\nCamera: WASD/MMB pan · Q/E rotate · [ / ] or PgDn/PgUp tilt · Wheel zoom · Tab overview (again to return) · F follow unit / expanded front (double-click a front card) · O orbit · K battle cam · Esc leave camera mode · Space pause · U hide HUD · Esc cancel/menu',
   'faction': '{roman} {city}',
   'you': ' (you)',
   'ai.balanced': 'Balanced', 'ai.armor': 'Armour', 'ai.infantry': 'Infantry', 'ai.artillery': 'Artillery',  'title.kicker': 'OPERATIONS ROOM · EUROPE 1944', 'title.name': 'LITTLE WAR', 'title.sub': 'A WWII BATTLE DIORAMA',
@@ -322,6 +328,12 @@ const en: Dict = {
   'eco.investOn': 'Auto-invest: on', 'eco.investOff': 'Auto-invest: off', 'eco.investTip': 'When on, the HQ staff invest in economic buildings in safe rear towns as the war allows; paused (and the money set aside returned) when the capital is in danger or under Defend / Contract. When off, build by hand from the town panel.', 'eco.investFund': 'Set aside for investment {p} P / {m} M',
   'eco.buildings': 'Economic buildings: factories {f} · recruiting {r} · depots {d} (+{p} P / +{m} M per min)', 'eco.stock': 'Supply stocks {s} / {c}',
   'prod.at': 'at {place}', 'hud.stockTip': 'Total supply stock in our towns',
+  // 3.0 camera modes and visuals (WP-K)
+  'cam.label': 'Camera', 'cam.free': 'Free', 'cam.orbit': 'Orbit', 'cam.follow': 'Follow', 'cam.battle': 'Battle', 'cam.overview': 'Overview',
+  'cam.tip.free': 'Free camera (Esc returns here from any mode)', 'cam.tip.orbit': 'Orbit: the camera circles the view centre slowly (O)', 'cam.tip.follow': 'Follow the selected unit or the expanded front (F; double-click a front card)',
+  'cam.tip.battle': 'Battle cam: frames the hottest fight, cuts every 12–20 s (K)', 'cam.tip.overview': 'Whole map; press again to return to your view (Tab)',
+  'cam.noFollow': 'Select a unit or expand a front card, then press F to follow', 'cam.followLost': 'The followed unit or front is gone',
+  'set.dayCycle': 'Time of day drifts (dawn → noon → dusk)', 'set.depthBlur': 'Depth blur at low close-in angles (high quality only)',
 };
 
 /** Historical-flavour equipment names (fictional factions; user-approved naming). */

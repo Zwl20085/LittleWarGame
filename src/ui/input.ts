@@ -254,6 +254,7 @@ export class InputController {
     if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
     const k = e.key.toLowerCase();
     this.keys.add(k);
+    for (const fn of this.keyHandlers) if (fn(e, k)) return;
     const ids = [...this.ctx.renderer.units.selected];
     const rig = this.ctx.renderer.rig;
     switch (k) {
@@ -285,21 +286,7 @@ export class InputController {
       case 'pagedown':
         rig.setElevation(rig.elevationGoal - 5);
         break;
-      case 'tab':
-        e.preventDefault();
-        rig.setElevation(rig.elevationGoal > 60 ? 45 : 70);
-        rig.setZoom(rig.elevationGoal > 60 ? 0.55 : 1);
-        break;
-      case 'f': {
-        const first = ids[0];
-        if (first !== undefined) {
-          rig.follow = () => {
-            const u = this.ctx.match.world.unitAlive(first);
-            return u ? new THREE.Vector3(u.pos.x, u.y, u.pos.z) : null;
-          };
-        }
-        break;
-      }
+      // Tab (overview), F (follow) and the other camera-mode keys: ui/cameraControls.ts.
       case 'u':
         this.ctx.hudHidden = !this.ctx.hudHidden;
         break;
@@ -328,6 +315,8 @@ export class InputController {
   }
 
   onEscape: (() => void) | null = null;
+  /** Extra key handlers run before the built-in keys (3.0 camera modes); true = consumed. */
+  readonly keyHandlers: ((e: KeyboardEvent, key: string) => boolean)[] = [];
 
   /** Continuous keyboard panning; call each frame. */
   update(dt: number): void {
