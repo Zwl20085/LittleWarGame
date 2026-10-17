@@ -42,12 +42,17 @@ const OWN_CITY_MAX_M = 2600;
 /** City–city links per city. */
 const CITY_LINKS = 2;
 
-export function generateRails(inp: RailGenInput): RailGenOutput {
+/** Settlement key: capital c -> -1 - c; town k -> k (its objective index). */
+type Key = number;
+type Pair = readonly [Key, Key];
+
+const posOf = (inp: RailGenInput, key: Key): V2 => (key < 0 ? inp.capitals[-1 - key] : { x: inp.towns[key].x, z: inp.towns[key].z });
+const radiusOf = (inp: RailGenInput, key: Key): number => (key < 0 ? CAPITAL_R : inp.towns[key].r);
+
+/** Candidate links: each capital to its own cities (or nearest town), then short city-city links. */
+function candidateLinks(inp: RailGenInput): Pair[] {
   const caps = inp.capitals;
   const towns = inp.towns;
-  // Settlement key: capital c → -1 - c; town k → k (its objective index).
-  const posOf = (key: number): V2 => (key < 0 ? caps[-1 - key] : { x: towns[key].x, z: towns[key].z });
-  const radiusOf = (key: number): number => (key < 0 ? CAPITAL_R : towns[key].r);
   const pairs: [number, number][] = [];
   const has = (a: number, b: number): boolean => pairs.some(([x, y]) => (x === a && y === b) || (x === b && y === a));
   const nearestCap = (p: V2): { c: number; d: number } => {
@@ -75,43 +80,60 @@ export function generateRails(inp: RailGenInput): RailGenOutput {
       .filter((x) => x.d < inp.cityLinkMaxM).sort((x, y) => x.d - y.d || x.k - y.k).slice(0, CITY_LINKS);
     for (const b of near) if (!has(a.k, b.k)) pairs.push([Math.min(a.k, b.k), Math.max(a.k, b.k)]);
   }
-  // Stations: one per settlement, at its edge toward the first line's far end.
-  const stationOf = new Map<number, number>();
+  return pairs;
+}
+
+/** Station placement: one per settlement, at its edge toward the first line's far end (memoised per settlement). */
+function stationPlacer(inp: RailGenInput): { stations: RailStationDef[]; station: (key: Key, toward: V2) => number } {
+  const stationOf = new Map<Key, number>();
   const stations: RailStationDef[] = [];
-  const station = (key: number, toward: V2): number => {
+  const station = (key: Key, toward: V2): number => {
     const known = stationOf.get(key);
     if (known !== undefined) return known;
-    const c = posOf(key);
+    const c = posOf(inp, key);
     const d = dist(c, toward) || 1;
-    const off = Math.min(radiusOf(key) * 0.85, d * 0.3);
+    const off = Math.min(radiusOf(inp, key) * 0.85, d * 0.3);
     const pos = { x: c.x + ((toward.x - c.x) / d) * off, z: c.z + ((toward.z - c.z) / d) * off };
     const id = stations.length;
     stations.push({ pos, placeIdx: key });
     stationOf.set(key, id);
     return id;
   };
-  const nx = Math.floor(inp.width / RAIL_CELL) + 1;
-  const nz = Math.floor(inp.depth / RAIL_CELL) + 1;
-  // Settlement key per router cell (NONE = open country): lines keep out of other settlements.
-  const NONE = -1e6;
+  return { stations, station };
+}
+
+/** Settlement key marking value for open country on the router grid. */
+const NONE = -1e6;
+
+/** Router grid: the settlement key per cell (lines keep out of other settlements). */
+function settlementGrid(inp: RailGenInput, nx: number, nz: number): Float64Array {
   const keyAt = new Float64Array(nx * nz).fill(NONE);
-  const mark = (key: number): void => {
-    const c = posOf(key);
-    const r = radiusOf(key);
+  const mark = (key: Key): void => {
+    const c = posOf(inp, key);
+    const r = radiusOf(inp, key);
     for (let j = Math.max(0, Math.floor((c.z - r) / RAIL_CELL)); j <= Math.min(nz - 1, Math.ceil((c.z + r) / RAIL_CELL)); j++) {
       for (let i = Math.max(0, Math.floor((c.x - r) / RAIL_CELL)); i <= Math.min(nx - 1, Math.ceil((c.x + r) / RAIL_CELL)); i++) {
         if (Math.hypot(i * RAIL_CELL - c.x, j * RAIL_CELL - c.z) < r) keyAt[j * nx + i] = key;
       }
     }
   };
-  towns.forEach((_, k) => mark(k));
-  caps.forEach((_, c) => mark(-1 - c));
+  inp.towns.forEach((_, k) => mark(k));
+  inp.capitals.forEach((_, c) => mark(-1 - c));
+  return keyAt;
+}
+
+export function generateRails(inp: RailGenInput): RailGenOutput {
+  const pairs = candidateLinks(inp);
+  const { stations, station } = stationPlacer(inp);
+  const nx = Math.floor(inp.width / RAIL_CELL) + 1;
+  const nz = Math.floor(inp.depth / RAIL_CELL) + 1;
+  const keyAt = settlementGrid(inp, nx, nz);
   // Grade and river cost per router cell, computed once on first use (shared by every line).
   const baseCost = new Float64Array(nx * nz).fill(NaN);
   const rails: RailLineDef[] = [];
   for (const [ka, kb] of pairs) {
-    const a = station(ka, posOf(kb));
-    const b = station(kb, posOf(ka));
+    const a = station(ka, posOf(inp, kb));
+    const b = station(kb, posOf(inp, ka));
     if (a === b) continue;
     const pa = stations[a].pos;
     const pb = stations[b].pos;
