@@ -130,7 +130,7 @@ const retryAt = new WeakMap<Faction, number>();
 /** Engineers free for a tier job, nearest first. */
 function pool(world: World, f: Faction, site: Fort): Unit[] {
   const out: Unit[] = [];
-  for (const u of world.units.values()) if (u.owner === f.id && u.def.id === 'engineer' && freeHand(f, u) && dist(u.pos, site.pos) < TIERS.poolR) out.push(u);
+  for (const u of world.units.values()) if (u.owner === f.id && u.def.id === 'engineer' && freeHand(f, u, world) && dist(u.pos, site.pos) < TIERS.poolR) out.push(u);
   return out.sort((a, b) => dist(a.pos, site.pos) - dist(b.pos, site.pos) || a.id - b.id);
 }
 

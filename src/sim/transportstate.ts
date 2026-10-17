@@ -80,6 +80,11 @@ export interface TransportJob {
   /** Engineer assigned to it (unit id, −1 = none). */
   worker: number;
   readonly startedAt: number;
+  /** What the job cost when ordered (refunded if it is dropped before any work). */
+  readonly costP?: number;
+  readonly costM?: number;
+  /** Since when the assigned worker has been unfit (manual, routing, riding, far); undefined = fit. */
+  unfitSince?: number;
 }
 
 export interface TransportState {
