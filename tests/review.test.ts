@@ -5,7 +5,7 @@ import { freeHand } from '../src/sim/fortplans';
 import { normalizedWeights } from '../src/sim/production';
 import { createMatch, type Match } from '../src/sim/sim';
 import { assignJob, dropJob } from '../src/sim/structures';
-import { jobFront, roadSegmentOk, startRoadJob, transportSecond } from '../src/sim/transportjobs';
+import { jobFront, needRoadLinks, roadSegmentOk, startRoadJob, thinkTransport, transportSecond } from '../src/sim/transportjobs';
 import type { TransportJob } from '../src/sim/transportstate';
 import type { ManualTask } from '../src/sim/types';
 import { selectTarget } from '../src/sim/combat';
@@ -162,6 +162,46 @@ describe('review MED 4: train riders hold no line and are not targets', () => {
     shooter.targetSince = -1e9;
     selectTarget(w, shooter, null);
     expect(shooter.targetId).toBeNull();
+  }, 120_000);
+});
+
+describe('review MED 6: AI road links try every candidate and remember failures', () => {
+  it('a link that fails is skipped for 5 min and the next candidate is laid', () => {
+    const match = createMatch(data, { mapId: 'generated', factions: 4, infoMode: 'open', seed: 11, difficulty: 'normal', playerSlot: 0, spectate: true });
+    const w = match.world;
+    const st = w.transport!;
+    const hq = w.hqPos(1);
+    const sites: V2[] = [];
+    for (let rad = 300; rad <= 900 && sites.length < 2; rad += 50) for (let k = 0; k < 64 && sites.length < 2; k++) {
+      const ang = (k / 64) * Math.PI * 2;
+      const q = { x: hq.x + Math.cos(ang) * rad, z: hq.z + Math.sin(ang) * rad };
+      if (sites.some((s) => dist(s, q) < 400)) continue;
+      if (!st.roads.nodes.every((n) => dist(n.pos, q) > 170) || !st.roads.nearestNode(q, 550)) continue;
+      const want = needRoadLinks(w, 1, [q])[0];
+      if (want && roadSegmentOk(w, want.from, want.to).ok) sites.push(q);
+    }
+    expect(sites).toHaveLength(2);
+    const wants = needRoadLinks(w, 1, sites);
+    expect(wants).toHaveLength(2);
+    // Another faction's job already covers the first link: starting it fails (BUSY).
+    w.factions[2].m = 1e5;
+    const blocker = startRoadJob(w, 2, wants[0].from, wants[0].to);
+    expect(blocker.ok).toBe(true);
+    const f = w.factions[1];
+    f.m = 1e5;
+    w.spawnUnit(1, 'engineer', hq, 0);
+    w.tick += w.tickHz * 10;
+    thinkTransport(w, f, sites);
+    const mine = st.jobs.filter((j) => j.owner === 1);
+    expect(mine).toHaveLength(1);
+    expect(dist(mine[0].b, wants[1].to)).toBeLessThan(1);
+    // Both jobs gone: the failed site is still skipped on the next think.
+    st.jobs.length = 0;
+    w.tick += w.tickHz * 120;
+    thinkTransport(w, f, sites);
+    const again = st.jobs.filter((j) => j.owner === 1);
+    expect(again).toHaveLength(1);
+    expect(dist(again[0].b, wants[1].to)).toBeLessThan(1);
   }, 120_000);
 });
 

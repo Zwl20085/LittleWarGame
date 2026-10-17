@@ -360,13 +360,30 @@ export function thinkTransport(world: World, f: Faction, extraSites: readonly V2
   if (!freeEngineer(world, f.id)) return;
   const cut = st.lines.find((l) => l.cut && stationOwner(world, st.stations[l.a]) === f.id && stationOwner(world, st.stations[l.b]) === f.id);
   if (cut && railRules(world) && startRailRepair(world, f.id, cut.id).ok) return;
-  const want = needRoadLinks(world, f.id, extraSites)[0];
   const road = roadRules(world);
-  if (!want || !road) return;
-  // Keep a reserve: the road is paid from what is left after a few of its own cost.
-  const cost = (road.cost_m_k_per_100m * armyScale(world) * dist(want.from, want.to)) / 100;
-  if (availableM(world, f) < cost * ROAD_RESERVE) return;
-  startRoadJob(world, f.id, want.from, want.to);
+  if (!road) return;
+  // Review MEDIUM 6: try the candidates in order, skipping sites whose road failed recently
+  // (slope, water, overlap…), so one unbuildable link no longer blocks every other one.
+  const failed = linkFailures(world);
+  for (const want of needRoadLinks(world, f.id, extraSites)) {
+    const key = `${f.id}:${Math.round(want.to.x)}:${Math.round(want.to.z)}`;
+    if (world.time < (failed.get(key) ?? -Infinity)) continue;
+    // Keep a reserve: the road is paid from what is left after a few of its own cost.
+    const cost = (road.cost_m_k_per_100m * armyScale(world) * dist(want.from, want.to)) / 100;
+    if (availableM(world, f) < cost * ROAD_RESERVE) continue;
+    const res = startRoadJob(world, f.id, want.from, want.to);
+    if (res.ok) return;
+    failed.set(key, world.time + LINK_RETRY_S);
+  }
+}
+
+/** A road link that failed to start is not tried again at that site for this long (s). */
+const LINK_RETRY_S = 300;
+const linkFailed = new WeakMap<World, Map<string, number>>();
+function linkFailures(world: World): Map<string, number> {
+  let m = linkFailed.get(world);
+  if (!m) linkFailed.set(world, (m = new Map()));
+  return m;
 }
 
 /** Road work is only ordered when the stock holds this many times its cost. */
