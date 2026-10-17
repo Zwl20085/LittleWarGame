@@ -18,6 +18,7 @@ import { fundSecond } from './econai';
 import { createHighCommand, thinkHighCommand } from './command';
 import { initialDirective } from './directive';
 import { buildFrontInfoFor } from './frontai';
+import { updateInfiltration } from './infiltration';
 import type { Faction, MatchConfig, Unit } from './types';
 import { hostileMask } from './spatial';
 import { DEG, dist } from './vec';
@@ -369,7 +370,10 @@ export function step(match: Match): void {
     updateMovement(world, u);
     updateHeight(world, u);
   }
-  if (world.tick % Math.round(hz / 2) === 0) updateVisibility(world);
+  if (world.tick % Math.round(hz / 2) === 0) {
+    updateVisibility(world);
+    updateInfiltration(world, match.front); // 3.0 zone of control, contacts, rear reports (infiltration.ts)
+  }
   if (world.tick % (2 * hz) === 0) {
     match.supplyNodes = world.factions.map((f) => (f.alive ? convoyNodes(world, f.id) : []));
   }

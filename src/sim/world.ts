@@ -293,6 +293,7 @@ export class World {
       unstuckAt: -1e9,
       rearming: false,
       rearmAt: 0,
+      zocUntil: 0,
     };
     this.units.set(u.id, u);
     this.aliveUnits.push(u);

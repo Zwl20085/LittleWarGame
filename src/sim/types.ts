@@ -91,7 +91,7 @@ export interface Unit {
   /** Breakthrough target (objective id or `hq:<faction>`): spearhead units drive past the front. */
   spearhead: string | null;
   /** Operational role: holds the line, raids enemy supply, or guards our own convoy routes. */
-  opRole: 'line' | 'raid' | 'rearguard' | 'garrison' | 'occupy' | 'maneuver' | 'infiltrate' | 'siege';
+  opRole: 'line' | 'raid' | 'rearguard' | 'garrison' | 'occupy' | 'maneuver' | 'infiltrate' | 'siege' | 'hunt' | 'screen';
   /** Settlement this unit garrisons / occupies under a high-command directive. */
   opObjective: string | null;
   /** Preferred wall-slide side (+1 / −1) when a building blocks the way. */
@@ -137,6 +137,8 @@ export interface Unit {
   rearming: boolean;
   /** 2.2: earliest time to search for a rearm point again after none was found. */
   rearmAt: number;
+  /** 3.0 (zoc.ts): inside an enemy front's zone of control until this time (moves at infiltration.zoc_speed_mul). */
+  zocUntil: number;
 }
 
 /** 正面推进 / 侧面迂回 / 钳形攻势 / 武装渗透 / 筑垒围攻. */

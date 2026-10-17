@@ -26,6 +26,7 @@ import { dist, headingTo, type V2 } from './vec';
 import type { World } from './world';
 import { ARMOUR_AB, orphanTank, paceArmour } from './armour';
 import { thinkEconRaid } from './econwar';
+import { infiltrationDuty } from './infiltration';
 
 /** Deterministic per-unit spread offset so a squad group doesn't stack on one point. */
 function spread(u: Unit, radius: number): V2 {
@@ -151,6 +152,7 @@ export function thinkUnit(world: World, u: Unit): void {
   if (u.opRole === 'siege' && thinkSiegeParty(world, u, s)) return;
   if (u.opRole === 'raid' && thinkOpRaid(world, u)) return;
   if (u.opRole === 'rearguard' && thinkRearGuard(world, u)) return;
+  if (infiltrationDuty(world, u)) return; // 3.0 hunt / rear screen / zone-of-control chase
   // 2.1: a unit on a binding line order keeps its place on the line (no truck hunts / escorts away from it).
   const onLine = boundLine(s);
   // 2.2 (V22_SPEC §7): light tanks stay with their armour group; recon hunts the trucks.

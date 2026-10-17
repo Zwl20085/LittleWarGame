@@ -18,6 +18,8 @@ export interface MatchSpec {
   readonly factions: number;
   readonly src: string;
   readonly data: string;
+  /** Information mode of the match (default open). */
+  readonly infoMode?: 'open' | 'fog';
 }
 
 export interface LabMatch {
@@ -56,7 +58,7 @@ export async function createLabMatch(spec: MatchSpec): Promise<LabMatch> {
   const rd = (f: string): string => readFileSync(resolve(spec.data, f), 'utf8');
   const data = build(rd('units.csv'), rd('weapons.csv'), rd('rules.json'));
   const m = create(data, {
-    mapId: 'generated', mapSize: spec.mapSize, factions: spec.factions, infoMode: 'open', seed: spec.seed,
+    mapId: 'generated', mapSize: spec.mapSize, factions: spec.factions, infoMode: spec.infoMode ?? 'open', seed: spec.seed,
     difficulty: 'normal', playerSlot: 0, spectate: true,
   });
   return { world: m.world, step: () => { stepFn(m); m.world.fx.length = 0; } };

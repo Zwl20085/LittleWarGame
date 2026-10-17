@@ -7,6 +7,7 @@ import type { World } from './world';
 import { updateWorksCover } from './works';
 import { isStructure, updateStructureGarrison } from './structures';
 import { pocketExit } from './pocket';
+import { zocMul } from './zoc';
 
 /** Set a movement destination; path is (re)computed lazily and rate-limited. */
 export function moveTo(world: World, u: Unit, dest: V2, force = false): void {
@@ -164,7 +165,7 @@ function handleMount(world: World, u: Unit, wantsMove: boolean): boolean {
 export function speedOf(world: World, u: Unit, heading: number): number {
   if (u.mounted) {
     const g = world.terrain.groundAt(u.pos.x, u.pos.z);
-    return MOTOR.speed * groundSpeedMul(g, true) * (world.data.rules.proposed_defaults.tempo_move_multiplier ?? 1);
+    return MOTOR.speed * groundSpeedMul(g, true) * (world.data.rules.proposed_defaults.tempo_move_multiplier ?? 1) * zocMul(world, u);
   }
   const veh = u.def.kind === 'vehicle';
   // Ground type and grade change slowly along a path: sample them every few ticks (perf).
@@ -183,7 +184,7 @@ export function speedOf(world: World, u: Unit, heading: number): number {
   s *= status;
   if (veh && u.hp < u.def.maxHp * 0.25) s *= COMBAT.lowHpVehicleSpeedMul;
   if (veh && u.ammo <= 0) s *= world.data.rules.supply.empty_vehicle_speed_multiplier;
-  return s;
+  return s * zocMul(world, u);
 }
 
 /** Advance along path with hull-turn limits and light separation. */
