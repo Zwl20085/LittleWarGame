@@ -433,12 +433,12 @@
         "personality": "mechanized",
         "production": {"howitzer": 1.7, "medium_tank": 1.3, "light_tank": 1.1, "mg": 0.7},
         "caps": {"motor_inf": 2.0, "medium_tank": 1.5, "howitzer": 2.0, "light_tank": 1.3},
-        "invest": 0.8, "occupy": 0.7, "occupy_broken": 1.6, "broken_ratio": 0.6,
+        "invest": 0.8, "occupy": 1.1, "occupy_broken": 1.6, "broken_ratio": 0.6,
         "attack_ratio": 1.5, "defend_below": 0.35, "defend_exit": 0.55, "defend_kind": "defend", "contract_below": 0,
         "retreat_hp": 0.25,
         "raid_rate": 0.7, "raid_targets": {"econ": 1, "convoy": 1, "rail": 0, "zone": 0}, "raid_on_defence": false,
-        "front_density": 1.3, "picket_gap": 1.35, "temperament": -0.05, "main_share": 1.8, "armour_main_share": 0.9,
-        "offensive": {"mode": "battle", "after_s": 300, "min_fullness": 0.5, "max_s": 420, "break_share": 0.6, "cooldown_s": 60, "force_after_s": 0, "force_ratio": 0, "between": "advance"},
+        "front_density": 1.3, "picket_gap": 1.35, "temperament": -0.05, "main_share": 1.5, "armour_main_share": 0.9,
+        "offensive": {"mode": "battle", "after_s": 600, "min_fullness": 0.7, "max_s": 420, "break_share": 0.6, "cooldown_s": 180, "force_after_s": 0, "force_ratio": 0, "between": "advance"},
         "upgrades": ["motorization", "gun_1", "arty_range", "truck_capacity", "armour_1", "staff", "gun_2", "armour_2", "ap_grenades", "inf_guns", "gun_3", "armour_3", "eng_speed"]
       }
     }
