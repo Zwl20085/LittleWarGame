@@ -8,7 +8,7 @@
 // Metrics:
 //   cross  — a 20-unit force (8 rifles, 4 motorized, 4 medium tanks, 2 AT guns, 2 trucks) ordered from
 //            its capital to the farthest settlement on its rail net (large map, all stations on the
-//            route made its own): seconds until 18 of 20 are within 150 m, and how many rode a train;
+//            route made its own): seconds until 10 and 16 of 20 are within 150 m, and how many rode a train;
 //   war    — 4-FFA AI war: share of moving unit-seconds on a road (and road or town street), share of
 //            engagements within 150 m of a road junction / bridge (all, and outside settlements),
 //            convoy delivery time (truck leaves its stock → starts handing over), rail trips, cuts,
@@ -121,9 +121,9 @@ function runCross(t: Task): CrossResult {
     if (process.env.XDBG && sec - t0 < 30 && sec % 5 === 0) console.log('DBG', sec, plan.stations.join('>'), w.transport!.lines.map((l) => l.owner).join(','), force.map((u) => u.rail?.stage ?? '-').join(','));
     for (const u of force) if (!arrivedAt.has(u.id) && u.hp > 0 && dist(u.pos, plan.dest) < 150) arrivedAt.set(u.id, sec - t0);
     const there = arrivedAt.size;
-    if (arrived === null && there >= 18) arrived = sec - t0;
-  }, () => arrived !== null);
-  if (process.env.XDBG) console.log('END', force.map((u) => `${u.def.id}:${arrivedAt.get(u.id) ?? 'x'}:${u.rail?.stage ?? '-'}:${Math.round(dist(u.pos, plan.dest))}:${u.status}`).join(' '));
+    if (arrived === null && there >= 16) arrived = sec - t0;
+  }, () => arrivedAt.size >= force.length);
+  if (process.env.XDBG) console.log('END', force.map((u) => `${u.def.id}:${arrivedAt.get(u.id) ?? 'x'}:${u.rail?.stage ?? '-'}:${Math.round(dist(u.pos, plan.dest))}:${u.status}:pf${u.pathFailed}:p${u.path.length}:${Math.round(u.pos.x)},${Math.round(u.pos.z)}:sp${u.speedNow.toFixed(1)}`).join(' '), 'dest', Math.round(plan.dest.x), Math.round(plan.dest.z));
   const times = [...arrivedAt.values()].sort((x, y) => x - y);
   return { arrivedS: arrived, medianS: times.length >= 10 ? times[9] : null, rode: rode.size, routeM: plan.routeM, straightM: dist(exit, plan.dest), simMsPerTick: s.simMs / Math.max(1, s.ticks) };
 }
@@ -212,7 +212,7 @@ async function main(): Promise<void> {
     `# Lab 3.0 — transport (roads and railways)`, '',
     `Seeds ${seeds.join(', ')} · war ${minutes} min 4-FFA ${size} · cross on a large 4-FFA map · sets: ${sets.join(' ') || 'none'} · wall ${((performance.now() - t0) / 60000).toFixed(1)} min`, '',
     '## 20-unit force across the map (capital → farthest own rail settlement)', '',
-    mdTable(['variant', 'seed', 'route m', 'straight m', 'seconds to 10/20', 'seconds to 18/20', 'rode a train', 'sim ms/tick'],
+    mdTable(['variant', 'seed', 'route m', 'straight m', 'seconds to 10/20', 'seconds to 16/20', 'rode a train', 'sim ms/tick'],
       variants.flatMap((v) => cross(v).map((r, i) => [v, seeds[i], Math.round(r.routeM), Math.round(r.straightM), r.medianS ?? '–', r.arrivedS ?? `> ${CROSS_CAP_S}`, r.rode, r.simMsPerTick]))),
     '', '## AI war', '',
     mdTable(['variant', 'moving on road', 'on road or street', 'fights', 'fights ≤150 m of a junction', 'same, outside settlements', 'convoy trips', 'convoy mean s', 'convoy median s', 'rail trips', 'rider-min', 'lines cut', 'roads built', 'repairs', 'sim ms/tick', 'result'],

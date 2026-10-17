@@ -321,7 +321,8 @@ describe('fronts 2.1: binding orders, more fronts, zone garrisons', () => {
     const troops = lineTroops(world, 0, s.id).filter((u) => !u.routing && !u.manual && u.behavior === 'advance' && u.fortId === null && !u.rearming && !u.moving);
     expect(troops.length).toBeGreaterThan(3);
     const off = troops.map((u) => lineOffset(u.pos, line.a, line.b, hq));
-    expect(off.filter((o) => o.d <= 80).length / off.length).toBeGreaterThan(0.9);
+    // 3.0 (roads, V30_SPEC §10): slower off-road movement shifts the slot layout by a few metres; one of ten units may stand 80–95 m off.
+    expect(off.filter((o) => o.d <= 80).length / off.length).toBeGreaterThanOrEqual(0.9);
     expect(off.every((o) => o.ahead <= 80)).toBe(true);
   }, 120_000);
 
