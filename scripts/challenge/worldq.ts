@@ -102,8 +102,9 @@ export function lineAcross(from: V2, to: V2, r: number, len: number): { a: V2; b
  */
 export function setMix(ctx: StrategyCtx, weights: Record<string, number>, caps: Record<string, number> = {}): void {
   const w = ctx.world;
-  for (const id of w.data.units.keys()) {
-    if (id === w.data.rules.command.commander_unit) continue;
+  for (const [id, u] of w.data.units) {
+    // Only producible units take weights (setWeight refuses the train and the commander).
+    if (id === w.data.rules.command.commander_unit || !u.producible) continue;
     const def = id === 'supply_truck' ? 1 : 0;
     ctx.issue({ type: 'setWeight', unitId: id, weight: weights[id] ?? def });
   }
