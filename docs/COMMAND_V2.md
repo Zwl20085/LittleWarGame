@@ -154,3 +154,28 @@ User (2026-10-10): the supreme HQ gives ONE command; every front decides its own
   click (Playwright: 13 / 25 palette and 17 / 25 card clicks lost in 2.1). `dom.PressGuard` holds the
   panel's re-render while a pointer is down on it; `scripts/clickcheck.mjs` (and `--noguard` for the A/B)
   checks 25+ button, map and card clicks. A press off the terrain and every refused command show a toast.
+
+## 8. 3.0 — unlimited fronts, front tiers, directive compliance (as built)
+
+- **No front cap.** `command.fronts_max` is gone; `fronts.soft_max` (32) is a perf guard only. Hotkeys 1–8 open the
+  first eight cards; the card list scrolls. Front planning is staggered: `thinkFronts(world, f, chunk)` plans
+  `fronts.fronts_per_think_tick` (8) fronts per tick (chunk k of faction f on tick ≡ f + 4k mod 2 s); the faction-wide
+  passes run with chunk 0. Per-front helpers take the front's units (`issueFrontOrder(…, units?)`, `nextTarget(…, units?)`)
+  instead of an O(units) scan per front; `frontById` uses an id map cached per `f.fronts` array; the UI counts troops
+  with one `frontGroups` pass.
+- **Tiers** (`frontTiers.ts`, rules `fronts.tiers`): ≥ 12 / 24 / 40 combat units = 军 / 集团军 / 方面军 (Corps / Army /
+  Army Group): batteries share a barrage point (target-score bonus), morale loss −5/8/12 %, hit probability +5/8/12 %,
+  supply and reinforcement weight ×1.1/1.2/1.3. Fewer than 0.5 units per 100 m of the front's stretch: *stretched*
+  (−6 % hit, +8 % morale loss). Lab switch `FRONT_TIERS_AB.on`.
+- **Theatre**: fronts wanted also grow with army size (one per 16 troops) and frontage (one per 700 m of line), never
+  more than tier-1 fronts the troops can make; a new axis opens with a tier-1 share; a cluster of ≥ 12 free troops far
+  from its fronts opens a front where it stands; a front under 7 combat units for 120 s merges into its neighbour.
+- **Compliance** (`compliance.ts`, rules `command.compliance*`): each front answers a directive other than advance with
+  compliance = base + proximity to the capital + temperament − risk (force ratio at its objective, exposed own towns,
+  ammunition, a winning assault it would break off). Below `compliance_threshold` it declines (card: 拒绝执行 — 敌优势
+  r:1，将危及 X), logs `log.frontDeclined` and a `battle.responses` record, and acts on its own (theatre.orderFront).
+  Accepting fronts move after `delay_s_per_km` × km from the capital (1–30 s; nearer fronts first; the previous order
+  stands meanwhile). A defend on the own capital is never declined within `home_recall_m`. **Insist**: the same directive
+  again within 30 s, or the HUD toggle 强制执行 / Force (`setDirective.force`), sets `Directive.forced`: every front obeys
+  at once. Obeyed orders under a player directive stay binding as in 2.2. The AI supreme HQ's directives use the same
+  model. Lab switch `COMPLIANCE_AB.on`; labs `scripts/lab30/fronts.ts`, `scripts/lab30/directive.ts`.
