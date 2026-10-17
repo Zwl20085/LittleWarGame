@@ -386,7 +386,8 @@
     "hunt_radius_m": 1800,
     "hunt_ratio": 1.5,
     "hunt_max_units": 12,
-    "hunt_max_s": 240
+    "hunt_max_s": 240,
+    "hunt_repath_s": 15
   },
   "doctrines": {
     "comment": "3.0 AI doctrines (V30_SPEC §1, sim/doctrines.ts, sim/doctrineai.ts, docs/DOCTRINES.md). Each AI supreme HQ has one: builder 优先发育, blitz 一波直捣黄龙, attrition 稳扎稳打, maneuver 寻机决战. The profile scales the existing AI levers (production mix and caps, investment appetite, occupation detachments, directive thresholds, damaged-unit retreat, raid cadence and targets, troops per front, compliance temperament, main-effort share, armour on the main front) and picks the doctrine offensive (late: convert a late lead; strike: one deep offensive on an enemy capital when the ratio is met, then re-arm; battle: hunt an isolated enemy front at attack_ratio). enabled=false = no doctrine effects (2.2 AI). The player's faction is never steered by its doctrine (it only colours the music in spectate).",

@@ -472,6 +472,7 @@ function assign(u: Unit, rep: Report, t: Task): void {
 
 function release(u: Unit): void {
   tasks.delete(u);
+  chases.delete(u);
   if (u.opRole === 'hunt' || u.opRole === 'screen') {
     u.opRole = 'line';
     u.opTarget = null;
@@ -561,12 +562,35 @@ function nearestMember(world: World, u: Unit, rep: Report): Unit | null {
   return best;
 }
 
-/** A far chase aims at a 50 m lattice point (a moving target does not re-plan a long route every think). */
-const CHASE_SNAP_M = 50;
+/**
+ * Far chases (WP-M2): a hunter more than CHASE_NEAR_M from its target aims at the report position
+ * snapped to the flow-field goal lattice (nav.ts, 128 m), so every hunter of a report shares one
+ * cached field, and keeps that aim while the target stays within CHASE_HOLD_M of it. It re-aims
+ * only when the target leaves that radius or after infiltration.hunt_repath_s. (The 3.0 chase
+ * re-aimed at a 50 m lattice point near the moving target every think: a long chase built new
+ * flow fields again and again, 2-6 % of sim CPU and the slowest late-war ticks.)
+ */
+const CHASE_LATTICE_M = 128;
 const CHASE_NEAR_M = 150;
+const CHASE_HOLD_M = 150;
 
-/** Fight what is in range, else close on `at`. */
-function closeOn(world: World, u: Unit, at: V2): void {
+interface Chase { readonly aim: V2; readonly until: number }
+const chases = new WeakMap<Unit, Chase>();
+
+const snapChase = (p: V2): V2 => ({ x: Math.round(p.x / CHASE_LATTICE_M) * CHASE_LATTICE_M, z: Math.round(p.z / CHASE_LATTICE_M) * CHASE_LATTICE_M });
+
+/** The held far-chase aim of `u` toward `at` (from `report` when that is close enough to the target). */
+function chaseAim(world: World, u: Unit, at: V2, report: V2 | undefined): V2 {
+  const held = chases.get(u);
+  if (held && world.time < held.until && dist(at, held.aim) <= CHASE_HOLD_M) return held.aim;
+  const fromReport = report ? snapChase(report) : null;
+  const aim = fromReport && dist(fromReport, at) <= CHASE_HOLD_M ? fromReport : snapChase(at);
+  chases.set(u, { aim, until: world.time + infilRules(world).hunt_repath_s });
+  return aim;
+}
+
+/** Fight what is in range, else close on `at` (a far chase aims via chaseAim). */
+function closeOn(world: World, u: Unit, at: V2, report?: V2): void {
   selectTarget(world, u, at);
   const t = world.unitAlive(u.targetId);
   const range = u.primary?.range ?? 0;
@@ -574,8 +598,11 @@ function closeOn(world: World, u: Unit, at: V2): void {
     stop(u);
     return;
   }
-  const far = dist(u.pos, at) > CHASE_NEAR_M;
-  moveTo(world, u, far ? { x: Math.round(at.x / CHASE_SNAP_M) * CHASE_SNAP_M, z: Math.round(at.z / CHASE_SNAP_M) * CHASE_SNAP_M } : at);
+  if (dist(u.pos, at) > CHASE_NEAR_M) moveTo(world, u, chaseAim(world, u, at, report));
+  else {
+    chases.delete(u);
+    moveTo(world, u, at);
+  }
 }
 
 /**
@@ -590,6 +617,7 @@ export function infiltrationDuty(world: World, u: Unit): boolean {
   const r = infilRules(world);
   if (!t || world.time > e.until || u.opRole !== 'line' || u.manual || !world.knows(u.owner, t) || Math.hypot(u.pos.x - e.ax, u.pos.z - e.az) > r.engage_leash_m) {
     engaged.delete(u);
+    chases.delete(u);
     return false;
   }
   closeOn(world, u, t.pos);
@@ -611,7 +639,7 @@ function taskDuty(world: World, u: Unit): boolean {
       return false;
     }
     const m = nearestMember(world, u, rep);
-    closeOn(world, u, m ? m.pos : rep.pos);
+    closeOn(world, u, m ? m.pos : rep.pos, rep.pos);
     u.status = 'status.hunting';
     return true;
   }

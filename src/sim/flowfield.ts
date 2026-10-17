@@ -9,6 +9,11 @@
  *   read as unreachable, which is safe for steepest descent because a descent from `start` only
  *   ever moves to cells strictly cheaper than `dist[start]` (< frontier). Later requests from
  *   farther away simply resume the same search.
+ * - Two storage forms (WP-M2). A field being expanded is hot: one dense Int32 per cell, the
+ *   loop below unchanged. A field that only serves lookups is cold: just the 32-cell chunks of the
+ *   linear cell index the search touched (10-30 % of a large map). nav.ts keeps a few fields hot and
+ *   cools the least recently used one when another has to expand again. Untouched cells read
+ *   FIELD_INF in both forms, exactly as before, so every value, and every path, is unchanged.
  */
 
 /** Distance value of an unreached / not-yet-settled cell. */
@@ -60,8 +65,28 @@ export class EdgeTable {
   }
 }
 
+/** Cells per storage chunk of the compact form (a power of two; a strip of one row of the linear cell index). */
+const CHUNK_SHIFT = 5;
+const CHUNK = 1 << CHUNK_SHIFT;
+const CHUNK_MASK = CHUNK - 1;
+/** Chunk table entry of an untouched chunk. */
+const NO_CHUNK = 0xffff;
+const EMPTY = new Int32Array(0);
+
+/**
+ * Supplies dense working buffers (nav.ts FieldPool): `heat(f)` must call `f.warm(buffer)`, cooling
+ * another field to free one if it has to.
+ */
+export interface FieldHost {
+  heat(f: FlowField): void;
+}
+
 export class FlowField {
-  readonly dist: Int32Array;
+  /** Dense form (one Int32 per cell) while the field is hot (being expanded), else null. */
+  dense: Int32Array | null;
+  /** Compact form while cold: per chunk its ordinal in `slab`, or NO_CHUNK when untouched. */
+  readonly chunkOf: Uint16Array;
+  private slab: Int32Array = EMPTY;
   used = 0;
   /** Every bucket below this distance has been fully processed (those cells are final). */
   private frontier = 0;
@@ -69,25 +94,102 @@ export class FlowField {
   /** Bucket ring of Dial's algorithm; slots are created on first use. */
   private buckets: (number[] | undefined)[] | null;
 
-  /** `buffer` (optional) is recycled storage of an evicted field, avoiding a fresh 400 KB allocation. */
-  constructor(private readonly edges: EdgeTable, n: number, goal: number, buffer?: Int32Array) {
-    this.dist = buffer && buffer.length === n ? buffer : new Int32Array(n);
-    this.dist.fill(FIELD_INF);
+  /**
+   * Starts hot. `dense` (length n) and `chunkOf` are recycled buffers of other fields (optional);
+   * `host` hands out dense buffers when a cold field has to expand again.
+   */
+  constructor(private readonly edges: EdgeTable, readonly n: number, goal: number, opts: { dense?: Int32Array; chunkOf?: Uint16Array; host?: FieldHost } = {}) {
+    const chunks = (n + CHUNK_MASK) >> CHUNK_SHIFT;
+    if (chunks >= NO_CHUNK) throw new Error(`flow field: ${n} cells exceed the chunk table`);
+    this.chunkOf = opts.chunkOf && opts.chunkOf.length === chunks ? opts.chunkOf : new Uint16Array(chunks);
+    this.host = opts.host ?? null;
+    this.dense = opts.dense && opts.dense.length === n ? opts.dense : new Int32Array(n);
+    this.dense.fill(FIELD_INF);
+    this.dense[goal] = 0;
     this.buckets = new Array<number[] | undefined>(edges.ring);
-    this.dist[goal] = 0;
     this.buckets[0] = [goal];
+  }
+
+  private readonly host: FieldHost | null;
+
+  /** Bytes held by this field's typed arrays. */
+  get bytes(): number {
+    return this.chunkOf.byteLength + (this.dense ? this.dense.byteLength : this.slab.byteLength);
+  }
+
+  /** Cells of the 32-cell chunks the search has touched (diagnostics; scans a hot field). */
+  get touchedCells(): number {
+    if (!this.dense) return this.slab.length;
+    let t = 0;
+    for (let c = 0; c < this.chunkOf.length; c++) if (this.chunkTouched(this.dense, c)) t += CHUNK;
+    return t;
+  }
+
+  /** Raw distance of cell k (tentative or final; FIELD_INF when untouched). */
+  at(k: number): number {
+    const d = this.dense;
+    if (d !== null) return d[k];
+    const o = this.chunkOf[k >> CHUNK_SHIFT];
+    return o === NO_CHUNK ? FIELD_INF : this.slab[(o << CHUNK_SHIFT) | (k & CHUNK_MASK)];
   }
 
   /** Final cost-to-goal of cell k, or FIELD_INF when unreachable or not yet settled. */
   value(k: number): number {
-    const v = this.dist[k];
+    const v = this.at(k);
     return v < this.frontier ? v : FIELD_INF;
+  }
+
+  private chunkTouched(d: Int32Array, c: number): boolean {
+    const end = Math.min(this.n, (c + 1) << CHUNK_SHIFT);
+    for (let k = c << CHUNK_SHIFT; k < end; k++) if (d[k] !== FIELD_INF) return true;
+    return false;
+  }
+
+  /** Make the dense form current in `buffer` (length n) from the compact form. */
+  warm(buffer: Int32Array): void {
+    if (this.dense) return;
+    buffer.fill(FIELD_INF);
+    const slab = this.slab;
+    for (let c = 0; c < this.chunkOf.length; c++) {
+      const o = this.chunkOf[c];
+      if (o === NO_CHUNK) continue;
+      const at = c << CHUNK_SHIFT;
+      const len = Math.min(CHUNK, this.n - at);
+      buffer.set(slab.subarray(o << CHUNK_SHIFT, (o << CHUNK_SHIFT) + len), at);
+    }
+    this.dense = buffer;
+    this.slab = EMPTY;
+  }
+
+  /** Store the touched chunks compactly and give back the dense buffer. */
+  cool(): Int32Array {
+    const d = this.dense!;
+    const chunkOf = this.chunkOf;
+    let used = 0;
+    for (let c = 0; c < chunkOf.length; c++) {
+      if (this.chunkTouched(d, c)) chunkOf[c] = used++;
+      else chunkOf[c] = NO_CHUNK;
+    }
+    const slab = new Int32Array(used << CHUNK_SHIFT).fill(FIELD_INF);
+    for (let c = 0; c < chunkOf.length; c++) {
+      const o = chunkOf[c];
+      if (o === NO_CHUNK) continue;
+      const at = c << CHUNK_SHIFT;
+      slab.set(d.subarray(at, Math.min(this.n, at + CHUNK)), o << CHUNK_SHIFT);
+    }
+    this.slab = slab;
+    this.dense = null;
+    return d;
   }
 
   /** Expand the search until cell `k` is final (or the whole reachable area is). Returns cells popped. */
   settle(k: number): number {
-    const dist = this.dist;
-    if (dist[k] < this.frontier || this.pending === 0) return 0;
+    if (this.at(k) < this.frontier || this.pending === 0) return 0;
+    if (!this.dense) {
+      if (this.host) this.host.heat(this);
+      else this.warm(new Int32Array(this.n));
+    }
+    const dist = this.dense!;
     const buckets = this.buckets!;
     const B = buckets.length;
     const W = this.edges.w;
@@ -126,3 +228,4 @@ export class FlowField {
     return popped;
   }
 }
+

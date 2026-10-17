@@ -1,12 +1,157 @@
 import { TERRAIN_MOVE } from './config';
-import { EdgeTable, FIELD_INF, FlowField } from './flowfield';
+import { EdgeTable, FIELD_INF, FlowField, type FieldHost } from './flowfield';
 import { Ground, type Terrain } from './terrain';
 import { clamp, dist2, type V2 } from './vec';
 
 /** Flow-field goals snap to this lattice (fewer distinct fields to build and cache). */
 const GOAL_LATTICE_M = 128;
-/** Cached flow fields per navigation grid (each ~0.8 MB on a large map). */
-const FIELD_CACHE = 128;
+/**
+ * Flow-field cache budget shared by every movement class of one terrain (WP-M2), in bytes of field
+ * storage. Least recently used fields are evicted across classes. A cold field keeps only the
+ * chunks its search touched (flowfield.ts), 0.1-0.5 MB on a large map; HOT_FIELDS fields stay
+ * dense while they expand. Before: 128 dense fields per class, ~0.9 GB of array buffers on the
+ * large map at 30 min with 44 % of builds re-creating an evicted field. The cache never changes a
+ * result: a field's values depend only on the grid and the goal (see flowfield.ts).
+ */
+const FIELD_BUDGET_BYTES = 192 * 1024 * 1024;
+let fieldBudgetBytes = FIELD_BUDGET_BYTES;
+/** Dense (expanding) fields kept per terrain; the least recently used one is cooled for another. */
+const HOT_FIELDS = 6;
+
+/** Test hook: set the shared flow-field budget (bytes); returns the previous one. */
+export function setFieldBudgetBytes(bytes: number): number {
+  const prev = fieldBudgetBytes;
+  fieldBudgetBytes = bytes;
+  return prev;
+}
+
+/** Shared flow-field cache of one terrain's nav grids. */
+class FieldPool implements FieldHost {
+  bytes = 0;
+  clock = 0;
+  readonly grids: NavGrid[] = [];
+  /** Hot fields (dense form). */
+  private readonly hot: FlowField[] = [];
+  /** Dense buffers and chunk tables of evicted / cooled fields, for reuse (counted in `bytes`). */
+  private spareDense: Int32Array | null = null;
+  private spareChunks: Uint16Array | null = null;
+  /** Times a cold field had to be made dense again (diagnostics). */
+  static warms = 0;
+
+  /** A new (hot) field of `n` cells toward `goal`. */
+  create(edges: EdgeTable, n: number, goal: number): FlowField {
+    const dense = this.takeDense(null);
+    const chunkOf = this.spareChunks ?? undefined;
+    if (chunkOf) {
+      this.bytes -= chunkOf.byteLength;
+      this.spareChunks = null;
+    }
+    const f = new FlowField(edges, n, goal, { dense: dense ?? undefined, chunkOf, host: this });
+    this.hot.push(f);
+    this.bytes += f.bytes;
+    return f;
+  }
+
+  heat(f: FlowField): void {
+    FieldPool.warms++;
+    const before = f.bytes;
+    f.warm(this.takeDense(f) ?? new Int32Array(f.n));
+    this.hot.push(f);
+    this.bytes += f.bytes - before;
+    this.trim(f);
+  }
+
+  /** A dense buffer: the spare one, or one freed by cooling the oldest hot field when HOT_FIELDS are hot. */
+  private takeDense(keep: FlowField | null): Int32Array | null {
+    let buf: Int32Array | null = null;
+    if (this.hot.length >= HOT_FIELDS) {
+      let oldest = -1;
+      for (let i = 0; i < this.hot.length; i++) if (this.hot[i] !== keep && (oldest < 0 || this.hot[i].used < this.hot[oldest].used)) oldest = i;
+      if (oldest >= 0) {
+        const f = this.hot[oldest];
+        this.hot.splice(oldest, 1);
+        const before = f.bytes;
+        buf = f.cool();
+        this.bytes += f.bytes - before + buf.byteLength;
+        this.spareDense ??= buf;
+        if (this.spareDense !== buf) this.bytes -= buf.byteLength;
+      }
+    }
+    const d = this.spareDense;
+    if (d) {
+      this.bytes -= d.byteLength;
+      this.spareDense = null;
+    }
+    return d;
+  }
+
+  /** A field left the cache (evicted or dropped): keep its buffers for reuse. */
+  dropped(f: FlowField): void {
+    this.bytes -= f.bytes;
+    const i = this.hot.indexOf(f);
+    if (i >= 0) {
+      this.hot.splice(i, 1);
+      if (!this.spareDense && f.dense) {
+        this.spareDense = f.dense;
+        this.bytes += f.dense.byteLength;
+      }
+    }
+    if (!this.spareChunks) {
+      this.spareChunks = f.chunkOf;
+      this.bytes += f.chunkOf.byteLength;
+    }
+  }
+
+  /** Evict least recently used fields (any movement class) until the budget holds. */
+  trim(keep: FlowField): void {
+    while (this.bytes > fieldBudgetBytes) {
+      let grid: NavGrid | null = null;
+      let k = -1;
+      let used = Infinity;
+      for (const g of this.grids) {
+        const o = g.oldestField(keep);
+        if (o && o.used < used) { used = o.used; k = o.k; grid = g; }
+      }
+      if (!grid) return;
+      grid.evictField(k);
+    }
+  }
+}
+
+const fieldPools = new WeakMap<Terrain, FieldPool>();
+
+/**
+ * A* scratch arrays (cost so far, parent, generation stamps). One set per terrain, shared by every
+ * movement class (WP-M2, 16 bytes per cell per class before): a search runs to completion before
+ * the next starts, and the shared generation counter keeps stamps of different grids apart.
+ */
+interface SearchScratch {
+  readonly g: Float32Array;
+  readonly from: Int32Array;
+  readonly stamp: Uint32Array;
+  readonly closedAt: Uint32Array;
+  gen: number;
+}
+
+const searchScratches = new WeakMap<Terrain, SearchScratch>();
+
+function searchScratch(terrain: Terrain, n: number): SearchScratch {
+  let s = searchScratches.get(terrain);
+  if (!s) {
+    s = { g: new Float32Array(n), from: new Int32Array(n), stamp: new Uint32Array(n), closedAt: new Uint32Array(n), gen: 1 };
+    searchScratches.set(terrain, s);
+  }
+  return s;
+}
+
+function fieldPool(terrain: Terrain): FieldPool {
+  let p = fieldPools.get(terrain);
+  if (!p) {
+    p = new FieldPool();
+    fieldPools.set(terrain, p);
+  }
+  return p;
+}
 /** Passable regions of at most this many cells are closed (pathing traps, see pruneIslands). */
 const ISLAND_MAX_CELLS = 6;
 /** Nav cell size (m); every movement class uses the same lattice. */
@@ -141,11 +286,8 @@ export class NavGrid {
   readonly nx: number;
   readonly nz: number;
   readonly cost: Float32Array; // 0 = blocked, else seconds-per-metre multiplier
-  private readonly g: Float32Array;
-  private readonly from: Int32Array;
-  private readonly stamp: Uint32Array;
-  private readonly closedAt: Uint32Array;
-  private gen = 1;
+  /** A* scratch, shared by every movement class of the terrain (searches never overlap). */
+  private readonly search: SearchScratch;
 
   /** 1 where a cell touches a building: string-pulling then checks the 2 m raster too. */
   private readonly built: Uint8Array;
@@ -157,15 +299,14 @@ export class NavGrid {
     this.nz = Math.floor(terrain.depth / this.cell) + 1;
     const n = this.nx * this.nz;
     this.cost = new Float32Array(n);
-    this.g = new Float32Array(n);
-    this.from = new Int32Array(n);
-    this.stamp = new Uint32Array(n);
-    this.closedAt = new Uint32Array(n);
+    this.search = searchScratch(terrain, n);
     this.built = new Uint8Array(n);
     this.walk = new Uint8Array(n);
     const base = navBase(terrain);
     for (let j = 0; j < this.nz; j++) for (let i = 0; i < this.nx; i++) this.cost[j * this.nx + i] = this.cellCost(base, i, j);
     this.pruneIslands();
+    this.pool = fieldPool(terrain);
+    this.pool.grids.push(this);
   }
 
   /**
@@ -239,6 +380,7 @@ export class NavGrid {
     for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) sampleBase(base, terrain, i, j);
     for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) this.cost[j * this.nx + i] = this.cellCost(base, i, j);
     this.edges = null;
+    for (const f of this.fields.values()) this.pool.dropped(f);
     this.fields.clear();
     this.pruneIslands();
   }
@@ -500,12 +642,26 @@ export class NavGrid {
   static fieldHits = 0;
   /** Cache evictions and distinct goal cells ever requested (perf diagnostics). */
   static evictions = 0;
+  /** Builds of a goal this grid's cache had evicted before (perf diagnostics). */
+  static rebuilds = 0;
   static readonly goalCells = new Set<number>();
   /** Cells settled by flow-field searches (perf diagnostics). */
   static expanded = 0;
   private readonly fields = new Map<number, FlowField>();
-  private fieldClock = 0;
+  /** Goal cells evicted from this grid's cache (for the rebuild count). */
+  private readonly evicted = new Set<number>();
+  private readonly pool: FieldPool;
   private edges: EdgeTable | null = null;
+
+  /** Bytes of flow-field storage cached for this grid's terrain, all movement classes (diagnostics). */
+  get fieldPoolBytes(): number {
+    return this.pool.bytes;
+  }
+
+  /** Cold fields made dense again to expand further (diagnostics). */
+  static get fieldWarms(): number {
+    return FieldPool.warms;
+  }
 
   /**
    * Dijkstra cost-to-goal field shared by every unit heading to the same (quantised) goal.
@@ -520,28 +676,41 @@ export class NavGrid {
     const g0 = this.nearestPassable(snapped, q * 0.75) ?? this.nearestPassable(goal, 48);
     if (!g0) return null;
     const gi = this.idx(g0);
+    const pool = this.pool;
     const hit = this.fields.get(gi);
     if (hit) {
-      hit.used = ++this.fieldClock;
+      hit.used = ++pool.clock;
       NavGrid.fieldHits++;
       return hit;
     }
-    let spare: Int32Array | undefined;
-    if (this.fields.size >= FIELD_CACHE) {
-      let oldK = -1;
-      let oldU = Infinity;
-      for (const [k, v] of this.fields) if (v.used < oldU) { oldU = v.used; oldK = k; }
-      spare = this.fields.get(oldK)?.dist;
-      this.fields.delete(oldK);
-      NavGrid.evictions++;
-    }
+    if (this.evicted.delete(gi)) NavGrid.rebuilds++;
     if (NavGrid.goalCells.size < 50000) NavGrid.goalCells.add(gi * 4 + (this.cls.vehicle ? 1 : 0) + (this.cls.maxSlopeDeg === 25 ? 2 : 0));
     this.edges ??= new EdgeTable(this.cost, this.nx, this.nz, this.cell);
-    const field = new FlowField(this.edges, this.nx * this.nz, gi, spare);
-    field.used = ++this.fieldClock;
+    const field = pool.create(this.edges, this.nx * this.nz, gi);
+    field.used = ++pool.clock;
     this.fields.set(gi, field);
     NavGrid.builds++;
+    pool.trim(field);
     return field;
+  }
+
+  /** Drop the cached field of goal cell `k` (the shared cache's eviction). Returns it. */
+  evictField(k: number): FlowField | undefined {
+    const f = this.fields.get(k);
+    if (!f) return undefined;
+    this.fields.delete(k);
+    this.evicted.add(k);
+    this.pool.dropped(f);
+    NavGrid.evictions++;
+    return f;
+  }
+
+  /** Least recently used cached field of this grid other than `except` (the shared cache's eviction). */
+  oldestField(except: FlowField): { k: number; used: number } | null {
+    let k = -1;
+    let used = Infinity;
+    for (const [key, f] of this.fields) if (f !== except && f.used < used) { used = f.used; k = key; }
+    return k < 0 ? null : { k, used };
   }
 
   private static readonly descent = new Int32Array(4096);
@@ -567,16 +736,15 @@ export class NavGrid {
     const nz = this.nz;
     // Every cell on a steepest descent from a settled start is final (strictly cheaper than the
     // start, hence below the frontier), so raw distances can be read without the frontier test.
-    const dist = field.dist;
     const cells = NavGrid.descent;
     const limit = Math.min(cells.length, horizonCells);
     let n = 0;
     cells[n++] = cur;
-    while (n < limit && dist[cur] > 0) {
+    while (n < limit && field.at(cur) > 0) {
       const ci = cur % nx;
       const cj = (cur / nx) | 0;
       let best = cur;
-      let bv = dist[cur];
+      let bv = field.at(cur);
       const i0 = ci > 0 ? -1 : 0;
       const i1 = ci < nx - 1 ? 1 : 0;
       const j0 = cj > 0 ? -1 : 0;
@@ -584,7 +752,7 @@ export class NavGrid {
       for (let dj = j0; dj <= j1; dj++) {
         const row = (cj + dj) * nx + ci;
         for (let di = i0; di <= i1; di++) {
-          const v = dist[row + di];
+          const v = field.at(row + di);
           if (v < bv) { bv = v; best = row + di; }
         }
       }
@@ -592,7 +760,7 @@ export class NavGrid {
       cur = best;
       cells[n++] = cur;
     }
-    const partial = dist[cur] > 0;
+    const partial = field.at(cur) > 0;
     const pts: V2[] = new Array(n);
     for (let k = 0; k < n; k++) pts[k] = { x: (cells[k] % nx) * this.cell, z: ((cells[k] / nx) | 0) * this.cell };
     // Last stretch from the shared lattice goal to the exact destination.
@@ -622,18 +790,22 @@ export class NavGrid {
     const si = this.idx(s0);
     const gi = this.idx(g0);
     if (si === gi) return { ok: true, points: [g0], partial: false };
-    const gen = ++this.gen;
+    const sc = this.search;
+    const gen = ++sc.gen;
+    const gArr = sc.g;
+    const from = sc.from;
+    const stamp = sc.stamp;
     const nx = this.nx;
     const gx = gi % nx;
     const gz = (gi / nx) | 0;
     const heap = new Heap();
     const hMul = this.cls.hMul ?? 0.74;
-    this.g[si] = 0;
-    this.stamp[si] = gen;
-    this.from[si] = -1;
+    gArr[si] = 0;
+    stamp[si] = gen;
+    from[si] = -1;
     heap.push(si, 0);
     // Closed set as a generation-stamped array (no per-search Set allocation).
-    const closed = this.closedAt;
+    const closed = sc.closedAt;
     let found = false;
     let expanded = 0;
     // Best effort: when the goal is cut off (a pocket behind steep ground, an island), the path
@@ -668,11 +840,11 @@ export class NavGrid {
           if (c <= 0) continue;
           if (!relaxCorners && di !== 0 && dj !== 0 && (this.cost[cj * nx + ni] <= 0 || this.cost[nj * nx + ci] <= 0)) continue;
           const step = (di !== 0 && dj !== 0 ? 1.4142 : 1) * this.cell * (c + this.cost[cur]) * 0.5;
-          const ng = this.g[cur] + step;
-          if (this.stamp[nidx] === gen && ng >= this.g[nidx]) continue;
-          this.stamp[nidx] = gen;
-          this.g[nidx] = ng;
-          this.from[nidx] = cur;
+          const ng = gArr[cur] + step;
+          if (stamp[nidx] === gen && ng >= gArr[nidx]) continue;
+          stamp[nidx] = gen;
+          gArr[nidx] = ng;
+          from[nidx] = cur;
           const hx = Math.abs(ni - gx);
           const hz = Math.abs(nj - gz);
           const h = (Math.max(hx, hz) + 0.4142 * Math.min(hx, hz)) * this.cell * hMul;
@@ -682,7 +854,7 @@ export class NavGrid {
     }
     if (!found && closest === si) return { ok: false, reason: 'UNREACHABLE' };
     const raw: V2[] = [];
-    for (let c = found ? gi : closest; c !== -1 && c !== si; c = this.from[c]) raw.push({ x: (c % nx) * this.cell, z: ((c / nx) | 0) * this.cell });
+    for (let c = found ? gi : closest; c !== -1 && c !== si; c = from[c]) raw.push({ x: (c % nx) * this.cell, z: ((c / nx) | 0) * this.cell });
     raw.reverse();
     if (found) raw[raw.length - 1] = g0;
     const out: V2[] = [];

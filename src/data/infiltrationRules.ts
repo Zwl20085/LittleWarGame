@@ -45,13 +45,15 @@ export interface InfiltrationRules {
   readonly hunt_ratio: number;
   readonly hunt_max_units: number;
   readonly hunt_max_s: number;
+  /** A far chase keeps its aim (the report position on the 128 m field lattice) at most this long while the target stays within 150 m of it. */
+  readonly hunt_repath_s: number;
 }
 
 /** Validate the block (loader.ts): fail fast with a clear message. */
 export function validateInfiltrationRules(r: InfiltrationRules | undefined): void {
   if (!r) throw new Error('rules.json: infiltration block is required');
   const pos = ['zoc_m', 'zoc_hold_s', 'contact_gap_m', 'engage_leash_m', 'engage_s', 'picket_gap_m', 'reaction_back_m', 'reaction_leash_m',
-    'report_cluster_m', 'report_match_m', 'report_forget_s', 'screen_radius_m', 'screen_pick_m', 'hunt_radius_m', 'hunt_max_s'] as const;
+    'report_cluster_m', 'report_match_m', 'report_forget_s', 'screen_radius_m', 'screen_pick_m', 'hunt_radius_m', 'hunt_max_s', 'hunt_repath_s'] as const;
   for (const k of pos) if (!(r[k] > 0)) throw new Error(`rules.json: infiltration.${k} must be > 0`);
   if (!(r.zoc_speed_mul > 0 && r.zoc_speed_mul <= 1)) throw new Error('rules.json: infiltration.zoc_speed_mul must be in (0, 1]');
   if (!(r.picket_max_share >= 0 && r.picket_max_share <= 1) || !(r.reaction_share >= 0 && r.reaction_share <= 1)) throw new Error('rules.json: infiltration shares must be in [0, 1]');
