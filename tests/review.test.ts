@@ -8,7 +8,9 @@ import { assignJob, dropJob } from '../src/sim/structures';
 import { jobFront, roadSegmentOk, startRoadJob, transportSecond } from '../src/sim/transportjobs';
 import type { TransportJob } from '../src/sim/transportstate';
 import type { ManualTask } from '../src/sim/types';
+import { selectTarget } from '../src/sim/combat';
 import { picketGap, picketSlots } from '../src/sim/pickets';
+import { holdsLine } from '../src/sim/zoc';
 import { dist, headingTo, type V2 } from '../src/sim/vec';
 import type { World } from '../src/sim/world';
 
@@ -139,6 +141,27 @@ describe('review MED 12: pickets drop the vacated slot from coverage', () => {
     const finals = liners.map((u) => out[u.id]);
     expect(Math.min(...finals.map((q) => dist(q, far)))).toBeLessThanOrEqual(half);
     expect(Math.min(...finals.map((q) => dist(q, near)))).toBeLessThanOrEqual(half);
+  }, 120_000);
+});
+
+describe('review MED 4: train riders hold no line and are not targets', () => {
+  it('holdsLine and selectTarget skip a unit aboard a train', () => {
+    const match = createMatch(data, { mapId: 'generated', factions: 4, infoMode: 'open', seed: 11, difficulty: 'normal', playerSlot: 0, spectate: true });
+    const w = match.world;
+    const nav = w.nav(false, 35);
+    const p = nav.nearestPassable({ x: w.terrain.width / 2, z: w.terrain.depth / 2 }, 400)!;
+    const shooter = w.spawnUnit(0, 'infantry', p, w.factions[0].fronts[0].id);
+    const rider = w.spawnUnit(1, 'infantry', nav.nearestPassable({ x: p.x + 60, z: p.z }, 30) ?? { x: p.x + 60, z: p.z }, w.factions[1].fronts[0].id);
+    rider.behavior = 'advance';
+    expect(holdsLine(rider)).toBe(true);
+    w.spatial.rebuild(w.aliveUnits);
+    selectTarget(w, shooter, null);
+    expect(shooter.targetId).toBe(rider.id);
+    rider.rail = { stage: 'aboard', from: -1, to: -1, dest: { ...rider.pos }, trainId: -1, since: 0 };
+    expect(holdsLine(rider)).toBe(false);
+    shooter.targetSince = -1e9;
+    selectTarget(w, shooter, null);
+    expect(shooter.targetId).toBeNull();
   }, 120_000);
 });
 

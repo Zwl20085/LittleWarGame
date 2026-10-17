@@ -110,7 +110,8 @@ export function selectTarget(world: World, u: Unit, objective: V2 | null): void 
   // 3.0: the batteries of a tiered front concentrate on its barrage point (frontTiers.ts).
   const focus = isIndirect(w) ? barrageFocus(world, u) : null;
   for (const t of cands) {
-    if (t.hp <= 0 || !world.isHostile(u.owner, t.owner)) continue;
+    // Review MEDIUM 4: riders aboard a train are hidden (the train is the target, not its passengers).
+    if (t.hp <= 0 || t.rail?.stage === 'aboard' || !world.isHostile(u.owner, t.owner)) continue;
     const suit = suitability(w, t);
     if (suit <= 0) continue;
     const block = canEngage(world, u, w, t);
