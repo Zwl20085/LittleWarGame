@@ -1,6 +1,7 @@
 import type { SnapshotCursor } from './snapshot';
+import { fogFiltered, trainSeen } from './fogview';
 import { BRIDGE_W, paintRoad, roadHalfWidth } from './transportjobs';
-import type { BuiltRoad, RailLine, RailStation, Train } from './transportstate';
+import type { BuiltRoad, RailLine, RailStation, Train, TransportJobView } from './transportstate';
 import type { RailRide, Unit } from './types';
 import type { V2 } from './vec';
 import type { World } from './world';
@@ -21,6 +22,8 @@ const STATES: Train['state'][] = ['boarding', 'running', 'unloading'];
 export interface TransportSnap {
   readonly lineState: Int8Array;
   readonly trains: Float32Array;
+  /** Open engineer jobs (review MEDIUM 11): kind and rail line for all, the worker for the observer's own. */
+  readonly jobs: readonly TransportJobView[];
   readonly version: number;
   /** Null unless the geometry changed since the last snapshot of this cursor. */
   readonly geo: {
@@ -30,19 +33,24 @@ export interface TransportSnap {
   } | null;
 }
 
-export function packTransport(w: World, cur: SnapshotCursor): TransportSnap | null {
+export function packTransport(w: World, cur: SnapshotCursor, observer = -1): TransportSnap | null {
   const st = w.transport;
   if (!st) return null;
   const lineState = Int8Array.from(st.lines, (l) => (l.cut ? LINE_CUT : l.owner));
-  const trains = new Float32Array(st.trains.length * TRAIN_STRIDE);
-  st.trains.forEach((t, k) => {
-    trains.set([t.id, t.owner, t.pos.x, t.pos.z, t.prev.x, t.prev.z, t.heading, t.riders.length, STATES.indexOf(t.state)], k * TRAIN_STRIDE);
+  // Review HIGH 2: in fog only the trains the observer sees, and the load of its own trains only.
+  const fog = observer >= 0 && fogFiltered(w, observer);
+  const sent = fog ? st.trains.filter((t) => trainSeen(w, observer, t)) : st.trains;
+  const trains = new Float32Array(sent.length * TRAIN_STRIDE);
+  sent.forEach((t, k) => {
+    const riders = fog && t.owner !== observer ? 0 : t.riders.length;
+    trains.set([t.id, t.owner, t.pos.x, t.pos.z, t.prev.x, t.prev.z, t.heading, riders, STATES.indexOf(t.state)], k * TRAIN_STRIDE);
   });
   const geo = cur.transportVersion !== st.version
     ? { stations: st.stations.map((s) => ({ pos: s.pos, placeIdx: s.placeIdx })), lines: st.lines.map((l) => ({ a: l.a, b: l.b, pts: l.pts, built: l.built })), builtRoads: st.builtRoads }
     : null;
   cur.transportVersion = st.version;
-  return { lineState, trains, version: st.version, geo };
+  const jobs = st.jobs.map((j) => ({ owner: j.owner, kind: j.kind, lineId: j.lineId, worker: j.owner === observer ? j.worker : -1 }));
+  return { lineState, trains, jobs, version: st.version, geo };
 }
 
 export function applyTransport(w: World, snap: TransportSnap): void {
@@ -74,6 +82,7 @@ export function applyTransport(w: World, snap: TransportSnap): void {
     st.lines[i].cut = v === LINE_CUT;
     st.lines[i].owner = v === LINE_CUT ? -1 : v;
   }
+  st.jobView = [...(snap.jobs ?? [])];
   const b = snap.trains;
   st.trains.length = 0;
   for (let o = 0; o < b.length; o += TRAIN_STRIDE) {

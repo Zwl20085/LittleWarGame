@@ -145,6 +145,7 @@ export class Hud {
     this.fronts.dispose();
     this.economy.dispose();
     this.engineering.dispose();
+    this.zone.dispose();
     this.upgrades.dispose();
     this.ctx.renderer.orderLines.label = null;
     this.ctx.renderer.orderLines.zoneLabel = null;

@@ -1,7 +1,7 @@
 import { zoneById, zoneJobCost, zoneOutput, zoneRules, type EconZone } from '../sim/econZones';
 import { dist, type V2 } from '../sim/vec';
 import type { GameContext } from './context';
-import { h } from './dom';
+import { h, PressGuard } from './dom';
 import { t } from './i18n';
 
 /** A click within this of a zone's centre opens its panel (m). */
@@ -15,10 +15,17 @@ export class ZonePanel {
   readonly el: HTMLElement;
   private zoneId: number | null = null;
   private sig = '';
+  /** Review MEDIUM 11: no rebuild between press and release (a rebuild swallowed the Upgrade click). */
+  private readonly guard: PressGuard;
 
   constructor(private readonly ctx: GameContext) {
     this.el = h('div', { class: 'town panel paper-stack', role: 'dialog' });
     this.el.style.display = 'none';
+    this.guard = new PressGuard(this.el);
+  }
+
+  dispose(): void {
+    this.guard.dispose();
   }
 
   /** Map click on empty ground: open the zone under it (true) or close (false). */
@@ -58,7 +65,7 @@ export class ZonePanel {
     const afford = !!cost && !!f && f.p >= cost.p && f.m >= cost.m;
     const out = zoneOutput(w, z);
     const sig = JSON.stringify([z.id, z.owner, z.level, z.target, Math.round(z.progress * 20), Math.round((z.hp / Math.max(1, z.maxHp)) * 20), z.ruined, z.linked, afford, Math.round(out.p), Math.round(out.m)]);
-    if (sig === this.sig) return;
+    if (sig === this.sig || this.guard.held) return;
     this.sig = sig;
     const max = zoneRules(w)?.levels.length ?? 3;
     const state = z.ruined ? t('zone.ruined')

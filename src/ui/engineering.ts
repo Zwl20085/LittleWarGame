@@ -10,10 +10,14 @@ export function stationName(w: World, placeIdx: number): string {
   return w.map.cities[-1 - placeIdx]?.name[lang()] ?? '?';
 }
 
-/** Engineers that are free to take a job (the mirror has no job list, so units on a manual order do not count). */
+/** Open jobs as the mirror knows them (snapshot job view; the worker's own list when run in-process). */
+const jobsOf = (w: World): readonly { kind: string; lineId: number; owner: number; worker: number }[] => w.transport?.jobView ?? w.transport?.jobs ?? [];
+
+/** Engineers that are free to take a job: not on a manual order, not riding, not already a transport worker (review MEDIUM 11). */
 function freeEngineers(w: World, owner: number): number {
+  const busy = new Set(jobsOf(w).filter((j) => j.owner === owner).map((j) => j.worker));
   let n = 0;
-  for (const u of w.aliveUnits) if (u.owner === owner && u.hp > 0 && u.def.id === 'engineer' && !u.manual) n++;
+  for (const u of w.aliveUnits) if (u.owner === owner && u.hp > 0 && u.def.id === 'engineer' && !u.manual && !u.rail && !busy.has(u.id)) n++;
   return n;
 }
 
@@ -56,11 +60,12 @@ export class EngineeringPanel {
     return t(m.station === null ? 'eng.pickStation' : 'eng.pickTown');
   }
 
-  private cutLines(w: World): { id: number; a: number; b: number; held: boolean }[] {
+  private cutLines(w: World): { id: number; a: number; b: number; held: boolean; busy: boolean }[] {
     const st = w.transport;
     const me = this.ctx.playerId;
     if (!st) return [];
-    const out: { id: number; a: number; b: number; held: boolean }[] = [];
+    const repairing = new Set(jobsOf(w).filter((j) => j.kind === 'rail' && j.lineId >= 0).map((j) => j.lineId));
+    const out: { id: number; a: number; b: number; held: boolean; busy: boolean }[] = [];
     for (const l of st.lines) {
       if (!l.cut) continue;
       const sa = st.stations[l.a];
@@ -68,7 +73,7 @@ export class EngineeringPanel {
       const oa = stationOwner(w, sa);
       const ob = stationOwner(w, sb);
       if (oa !== me && ob !== me) continue;
-      out.push({ id: l.id, a: sa.placeIdx, b: sb.placeIdx, held: oa === me && ob === me });
+      out.push({ id: l.id, a: sa.placeIdx, b: sb.placeIdx, held: oa === me && ob === me, busy: repairing.has(l.id) });
     }
     return out;
   }
@@ -100,7 +105,7 @@ export class EngineeringPanel {
       ...(cuts.length === 0 ? [h('div', { class: 'small' }, t('eng.noCut'))] : []),
       ...cuts.map((c) => h('div', { class: 'row' },
         h('span', { class: 'small' }, t('eng.line', { n: c.id + 1, a: stationName(w, c.a), b: stationName(w, c.b) }), c.held ? '' : ` ${t('eng.notHeld')}`),
-        h('button', { class: 'btn', disabled: !c.held, onclick: () => this.ctx.issue({ type: 'repairRail', lineId: c.id }) }, t('eng.fix')))),
+        h('button', { class: 'btn', disabled: !c.held || c.busy, onclick: () => this.ctx.issue({ type: 'repairRail', lineId: c.id }) }, t(c.busy ? 'eng.repairing' : 'eng.fix')))),
     );
   }
 }

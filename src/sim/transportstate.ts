@@ -94,6 +94,15 @@ export interface BuiltRoad {
   readonly gaps?: readonly (readonly [V2, V2])[];
 }
 
+/** What the main thread knows of the engineer jobs (transportsnap.ts): enough for the Engineering panel. */
+export interface TransportJobView {
+  readonly owner: number;
+  readonly kind: TransportJobKind;
+  readonly lineId: number;
+  /** The observer's own jobs only (−1 for other factions' jobs). */
+  readonly worker: number;
+}
+
 export interface TransportState {
   readonly roads: RoadNet;
   readonly stations: RailStation[];
@@ -105,6 +114,8 @@ export interface TransportState {
   /** Engineer roads laid so far (render + snapshot). */
   readonly builtRoads: BuiltRoad[];
   nextId: number;
+  /** Main-thread mirror only: the open jobs as last reported by the worker (the worker uses `jobs`). */
+  jobView?: TransportJobView[];
   /** Bumped when lines / stations / built roads change (render rebuilds its meshes). */
   version: number;
 }

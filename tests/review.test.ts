@@ -8,7 +8,11 @@ import { freeHand } from '../src/sim/fortplans';
 import { normalizedWeights } from '../src/sim/production';
 import { createMatch, type Match } from '../src/sim/sim';
 import { assignJob, dropJob } from '../src/sim/structures';
-import { applyTransport, packTransport } from '../src/sim/transportsnap';
+import { applyTransport, packTransport, TRAIN_STRIDE } from '../src/sim/transportsnap';
+import type { EconZone } from '../src/sim/econZones';
+import { fogFiltered, pointSeen } from '../src/sim/fogview';
+import { makeSnapshot, type SnapshotCursor } from '../src/sim/snapshot';
+import type { Train } from '../src/sim/transportstate';
 import { completeJob, jobFront, needRoadLinks, roadSegmentOk, startRoadJob, thinkTransport, transportSecond } from '../src/sim/transportjobs';
 import type { TransportJob } from '../src/sim/transportstate';
 import type { ManualTask } from '../src/sim/types';
@@ -259,6 +263,8 @@ describe('review MED 10: cached anchor grid gives the exact rear-depth answer', 
     check();
     const o = w.objectives.find((x) => x.owner === 1)!;
     o.owner = 2;
+    // Owners are checked once per tick (they only change between the sim's passes).
+    w.tick += 1;
     check();
   }, 120_000);
 });
@@ -297,6 +303,65 @@ describe('review MED 5: engineer roads and their bridges reach the main-thread m
     if (bridged) expect(mirror.terrain.bridges.length).toBeGreaterThan(bridges);
     expect(mirror.transport!.roads.edges.length).toBe(worker.transport!.roads.edges.length);
     expect(mirror.transport!.roads.edges.length).toBeGreaterThan(edges);
+  }, 180_000);
+});
+
+describe('review HIGH 2: zones and trains respect the observer\'s fog', () => {
+  const cursor = (): SnapshotCursor => ({ lastLog: null, frontVersion: -1, viewVersion: -1, statusIndex: new Map(), statusSent: 0, sent: 0, defIndex: null, transportVersion: -1 });
+
+  it('an enemy zone is hidden until seen, then shown as last seen; enemy trains only in sight, without their load', () => {
+    const match = createMatch(data, { mapId: 'generated', factions: 4, infoMode: 'fog', seed: 7, difficulty: 'normal', playerSlot: 0 });
+    const w = match.world;
+    expect(fogFiltered(w, 0)).toBe(true);
+    // Far from everything of faction 0: the capital of faction 2.
+    const far = w.hqPos(2);
+    expect(pointSeen(w, 0, far)).toBe(false);
+    const zone: EconZone = { id: 990001, kind: 'ezone1', pos: { ...far }, facing: 0, owner: 2, level: 1, target: 1, hp: 100, maxHp: 100, progress: 1, ruined: false, linked: true };
+    w.econZones.push(zone);
+    const cur = cursor();
+    expect(makeSnapshot(match, cur, 0).econZones.some((z) => z.id === zone.id)).toBe(false);
+    // A train of faction 2 there, loaded: not sent.
+    const train = { id: 77, owner: 2, from: 0, to: 0, path: [], cum: [], len: 0, lines: [], state: 'running', s: 0, pos: { ...far }, prev: { ...far }, heading: 0, riders: [1, 2, 3], timer: 0 } as Train;
+    w.transport!.trains.push(train);
+    expect(makeSnapshot(match, cur, 0).transport!.trains.length / TRAIN_STRIDE).toBe(0);
+    // A scout of faction 0 next to it: zone and train visible, the train's riders not.
+    const scout = w.spawnUnit(0, 'infantry', { x: far.x + 20, z: far.z }, w.factions[0].fronts[0].id);
+    const seen = makeSnapshot(match, cur, 0);
+    expect(seen.econZones.find((z) => z.id === zone.id)?.level).toBe(1);
+    const tr = seen.transport!.trains;
+    expect(tr.length).toBe(TRAIN_STRIDE);
+    expect(tr[7]).toBe(0);
+    // The scout leaves; the zone is upgraded out of sight: the player still sees level 1.
+    scout.hp = 0;
+    w.aliveUnits.splice(w.aliveUnits.indexOf(scout), 1);
+    zone.level = 3;
+    const later = makeSnapshot(match, cur, 0);
+    expect(later.econZones.find((z) => z.id === zone.id)?.level).toBe(1);
+    expect(later.transport!.trains.length).toBe(0);
+    // Open mode / spectators: everything.
+    const spec = createMatch(data, { mapId: 'generated', factions: 4, infoMode: 'fog', seed: 7, difficulty: 'normal', playerSlot: 0, spectate: true });
+    expect(fogFiltered(spec.world, 0)).toBe(false);
+  }, 180_000);
+});
+
+describe('review MED 11: the main thread knows the open engineer jobs', () => {
+  it('packTransport sends kind / line for every job and the worker only for the observer\'s own', () => {
+    const opts = { mapId: 'generated', factions: 4, infoMode: 'open', seed: 11, difficulty: 'normal', playerSlot: 0, spectate: true } as const;
+    const worker = createMatch(data, opts).world;
+    const mirror = createMatch(data, opts).world;
+    const st = worker.transport!;
+    st.jobs.push(
+      { id: 1, owner: 0, kind: 'rail', a: { x: 0, z: 0 }, b: { x: 1, z: 1 }, lineId: 3, fromStation: -1, toPlace: -1, workSeconds: 10, progress: 0, workedAt: 0, worker: 42, startedAt: 0 },
+      { id: 2, owner: 1, kind: 'road', a: { x: 0, z: 0 }, b: { x: 1, z: 1 }, lineId: -1, fromStation: -1, toPlace: -1, workSeconds: 10, progress: 0, workedAt: 0, worker: 43, startedAt: 0 },
+    );
+    const cur = { lastLog: null, frontVersion: -1, viewVersion: -1, statusIndex: new Map(), statusSent: 0, sent: 0, defIndex: null, transportVersion: -1 };
+    const snap = packTransport(worker, cur, 0)!;
+    expect(snap.jobs).toEqual([
+      { owner: 0, kind: 'rail', lineId: 3, worker: 42 },
+      { owner: 1, kind: 'road', lineId: -1, worker: -1 },
+    ]);
+    applyTransport(mirror, snap);
+    expect(mirror.transport!.jobView).toEqual(snap.jobs);
   }, 180_000);
 });
 
