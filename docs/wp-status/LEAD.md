@@ -39,7 +39,11 @@ its own note in this folder (`WP-*.md`) on its worktree branch `worktree-agent-<
 
 - WP-N README/media (worktree-agent-a8afeff94d884d5c5) — merged; version 3.0.0 set. README media ~27 MB/readme (target 25). Known gaps: roadside.gif no inside-building moment; rail.gif no engineer road (pre-REV stall); works.gif no fortress / no mine hit.
 
-## Release checklist (after T, M2, N follow-up merge)
+- WP-M2 perf follow-up — merged 7d743fd (field memory 876→316 MB; large map still 6.2–7.7×).
+- WP-T tuning — merged. Pace 0.33→1.00 elim/h (target 1.5 not reachable without a beaten-side economy change → 3.0.x); works bunker 50 % / fortress 29 %; maneuver 24/43 %; inf_guns no-op fixed; wheeled off-road 0.55.
+- Incident: an agent removed scratch worktrees through their node_modules junction and gutted the main node_modules (restored with `npm install`). Rule: never `rm -rf` a junction; `rmdir` it.
+
+## Release checklist (in progress)
 1. Full gates on the release tree: `npm run typecheck && npm test`, `npx tsx scripts/challenge.ts --all --seeds 7,11,13 --minutes 40 --jobs 6` (AI holds 2.x 21/21), `npx tsx scripts/soak.ts 45 7,11,13`, `npm run updater:e2e`.
 2. `npm run build`, `npm run dist:win`; the user runs `npm run release:keygen` and pastes the public key before `npm run pack:game`.
 3. Release PR feat/v3.0 → main (user OK), `gh release create v3.0.0` with both exes + game-3.0.0.zip/.json/.sig.
