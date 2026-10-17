@@ -5,12 +5,15 @@ import { createMatch, type Match } from '../src/sim/sim';
 import { assignJob, dropJob } from '../src/sim/structures';
 import { jobFront, roadSegmentOk, startRoadJob, transportSecond } from '../src/sim/transportjobs';
 import type { TransportJob } from '../src/sim/transportstate';
+import type { ManualTask } from '../src/sim/types';
 import type { V2 } from '../src/sim/vec';
 import type { World } from '../src/sim/world';
 
 /** Code-review fixes (WP-REV): one regression test per finding where a unit test is feasible. */
 
 const data = loadGameData();
+/** A manual order that takes a unit out of the automation. */
+const HOLD: ManualTask = { type: 'hold', pos: { x: 0, z: 0 } };
 
 /** A clear road stretch near faction f's capital (open ground, buildable). */
 function roadSite(w: World, f: number): [V2, V2] {
@@ -44,7 +47,7 @@ describe('review HIGH 1 / MED 7: engineer transport jobs', () => {
     const [a, b] = roadSite(w, 2);
     f.m = 1e5;
     // The starting engineers are kept out of it (manual) so the test controls who is free.
-    for (const u of w.units.values()) if (u.owner === 2 && u.def.id === 'engineer') u.manual = true;
+    for (const u of w.units.values()) if (u.owner === 2 && u.def.id === 'engineer') u.manual = HOLD;
     const builder = w.spawnUnit(2, 'engineer', a, 0);
     assignJob(w, builder, { id: 987654 });
     const res = startRoadJob(w, 2, a, b);
@@ -58,7 +61,7 @@ describe('review HIGH 1 / MED 7: engineer transport jobs', () => {
     expect(res.job.worker).toBe(spare.id);
     expect(freeHand(f, spare, w)).toBe(false);
     dropJob(builder);
-    builder.manual = true;
+    builder.manual = HOLD;
   });
 
   it('a worker on a manual order for > 60 s is released and the job reassigned', () => {
@@ -66,7 +69,7 @@ describe('review HIGH 1 / MED 7: engineer transport jobs', () => {
     const job = w.transport!.jobs.find((j) => j.owner === 2) as TransportJob;
     const first = w.units.get(job.worker)!;
     const other = w.spawnUnit(2, 'engineer', jobFront(job), 0);
-    first.manual = true;
+    first.manual = HOLD;
     seconds(w, 30);
     expect(job.worker).toBe(first.id);
     seconds(w, 35);
