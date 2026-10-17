@@ -3,7 +3,8 @@ import { loadGameData } from '../src/data';
 import { createMatch, step } from '../src/sim/sim';
 import { CommandBus, type Command, type CommandOutcome } from '../src/sim/commands';
 import { thinkHighCommand } from '../src/sim/command';
-import { chooseDirective } from '../src/sim/directive';
+import { chooseDirective, setDirective } from '../src/sim/directive';
+import { COMPLIANCE_AB, directiveSig, homeRecall, obeyDelay, temperament } from '../src/sim/compliance';
 import { frontById } from '../src/sim/frontref';
 import { directiveMain, RESPONSE } from '../src/sim/frontresponse';
 import { frontDistance } from '../src/sim/frontops';
@@ -66,7 +67,7 @@ describe('directive (2.2 supreme-HQ command)', () => {
     const { world } = match;
     const f = world.factions[0];
     const axis = nearestEnemyHq(world, f);
-    expect(issue(match, { type: 'setDirective', kind: 'offensive', axis })).toEqual({ ok: true });
+    expect(issue(match, { type: 'setDirective', kind: 'offensive', axis, force: true })).toEqual({ ok: true });
     const main = frontById(f, directiveMain(f))!;
     expect(main).toBeDefined();
     // Main effort = the front whose line is nearest the axis objective (here an enemy capital).
@@ -93,7 +94,7 @@ describe('directive (2.2 supreme-HQ command)', () => {
     const { world } = match;
     const f = world.factions[0];
     const axis = nearestEnemyHq(world, f);
-    issue(match, { type: 'setDirective', kind: 'offensive', axis });
+    issue(match, { type: 'setDirective', kind: 'offensive', axis, force: true });
     const other = f.fronts.find((s) => s.id !== directiveMain(f) && dist(s.front, axis) > RESPONSE.supportM + 200);
     if (!other) return; // every front supports the axis on this map
     // Pile a strong enemy force on its objective.
@@ -111,7 +112,7 @@ describe('directive (2.2 supreme-HQ command)', () => {
     const match = setup(120);
     const { world } = match;
     const f = world.factions[0];
-    expect(issue(match, { type: 'setDirective', kind: 'defend' })).toEqual({ ok: true });
+    expect(issue(match, { type: 'setDirective', kind: 'defend', force: true })).toEqual({ ok: true });
     const lines = new Map(f.fronts.map((s) => [s.id, { ...s.order.a }]));
     for (const s of f.fronts) expect(s.order).toMatchObject({ kind: 'defend', manual: true });
     for (let t = 0; t < 180; t += 5) {
@@ -133,7 +134,7 @@ describe('directive (2.2 supreme-HQ command)', () => {
     const f = world.factions[0];
     const hq = world.hqPos(0);
     const before = new Map(f.fronts.map((s) => [s.id, dist(s.front, hq)]));
-    expect(issue(match, { type: 'setDirective', kind: 'contract' })).toEqual({ ok: true });
+    expect(issue(match, { type: 'setDirective', kind: 'contract', force: true })).toEqual({ ok: true });
     for (const s of f.fronts) {
       expect(['fallBack', 'defend']).toContain(s.order.kind);
       expect(s.order.manual).toBe(true);
@@ -156,7 +157,7 @@ describe('directive (2.2 supreme-HQ command)', () => {
     const a = nav.nearestPassable({ x: c.x - Math.sin(h) * 150, z: c.z + Math.cos(h) * 150 }, 30)!;
     const b = nav.nearestPassable({ x: c.x + Math.sin(h) * 150, z: c.z - Math.cos(h) * 150 }, 30)!;
     const zones = f.zones.length;
-    expect(issue(match, { type: 'setDirective', kind: 'fortify', line: { a, b } })).toEqual({ ok: true });
+    expect(issue(match, { type: 'setDirective', kind: 'fortify', line: { a, b }, force: true })).toEqual({ ok: true });
     const z = f.zones.find((x) => dist(x.a, a) < 1 && dist(x.b, b) < 1);
     expect(z).toBeDefined();
     expect(f.zones.length).toBeGreaterThan(zones);
@@ -188,5 +189,103 @@ describe('directive (2.2 supreme-HQ command)', () => {
     expect(dist(f.directive.axis!, world.hqPos(fin))).toBeLessThan(1);
     // The player's faction is never steered by the AI.
     expect(chooseDirective(world, world.factions[0])).toBe(false);
+  });
+});
+
+describe('directive compliance (3.0, V30_SPEC §6)', () => {
+  it('a front facing a much stronger enemy at the axis declines, says why, and the decline is logged', () => {
+    const match = setup(60);
+    const { world } = match;
+    const f = world.factions[0];
+    const axis = nearestEnemyHq(world, f);
+    const enemy = world.factions.find((e) => e.alive && dist(world.hqPos(e.id), axis) < 1)!;
+    for (let i = 0; i < 40; i++) world.spawnUnit(enemy.id, 'heavy_tank', world.terrain.freeNear({ x: axis.x + (i % 8) * 12 - 40, z: axis.z + Math.floor(i / 8) * 12 - 30 }, 60), enemy.fronts[0].id);
+    world.spatial.rebuild(world.aliveUnits);
+    expect(issue(match, { type: 'setDirective', kind: 'offensive', axis })).toEqual({ ok: true });
+    expect(f.directive.forced).toBe(false);
+    const main = frontById(f, directiveMain(f))!;
+    expect(main.obey).toBe('declined');
+    expect(main.compliance).toBeLessThan(world.data.rules.command.compliance_threshold);
+    expect(main.response.startsWith('resp.declined')).toBe(true);
+    if (main.response === 'resp.declined' || main.response === 'resp.declinedExpose') expect(Number(main.responseParams.r)).toBeGreaterThan(1);
+    // It does its own (non-binding) action instead of the binding attack on the axis.
+    expect(main.order.manual && main.order.kind === 'attack' && dist(main.order.a, axis) < 1).toBe(false);
+    const rec = world.battle.responses.filter((r) => r.f === 0 && r.front === main.id && r.result === 'declined');
+    expect(rec.length).toBe(1);
+    expect(rec[0].reason).toBe(main.response);
+    // Insist: the same directive again within insist_window_s is forced; every front obeys at once.
+    run(match, 5);
+    expect(issue(match, { type: 'setDirective', kind: 'offensive', axis })).toEqual({ ok: true });
+    expect(f.directive.forced).toBe(true);
+    expect(main.obey).toBe('forced');
+    expect(main.order).toMatchObject({ kind: 'attack', manual: true });
+    expect(dist(main.order.a, axis)).toBeLessThan(1);
+    expect(f.fronts.every((s) => s.obey === 'forced' || s.obey === '')).toBe(true);
+  }, 60_000);
+
+  it('the Force flag forces at once; force: false keeps the compliance model; compliance off = 2.2', () => {
+    const match = setup(30);
+    const { world } = match;
+    const f = world.factions[0];
+    expect(issue(match, { type: 'setDirective', kind: 'defend', force: true })).toEqual({ ok: true });
+    expect(f.directive.forced).toBe(true);
+    for (const s of f.fronts) expect(s.order).toMatchObject({ kind: 'defend', manual: true });
+    expect(issue(match, { type: 'setDirective', kind: 'defend', force: false })).toEqual({ ok: true });
+    expect(f.directive.forced).toBe(false);
+    expect(issue(match, { type: 'setDirective', kind: 'defend', force: 'yes' as never })).toEqual({ ok: false, reason: 'BAD_VALUE' });
+    COMPLIANCE_AB.on = false;
+    try {
+      issue(match, { type: 'setDirective', kind: 'contract', force: false });
+      for (const s of f.fronts) {
+        expect(s.obey).toBe('');
+        expect(['fallBack', 'defend']).toContain(s.order.kind);
+      }
+    } finally {
+      COMPLIANCE_AB.on = true;
+    }
+  });
+
+  it('home recall: a defend on the capital is never declined near home, and nearer fronts move first', () => {
+    const match = setup(240);
+    const { world } = match;
+    const f = world.factions[0];
+    const hq = world.hqPos(0);
+    // Make every front's commander as unwilling as possible: an assault it is winning.
+    expect(issue(match, { type: 'setDirective', kind: 'defend', axis: hq })).toEqual({ ok: true });
+    expect(homeRecall(world, f, f.directive)).toBe(true);
+    const near = f.fronts.filter((s) => s.obey !== '' && dist(s.front, hq) <= world.data.rules.command.home_recall_m * 0.8);
+    for (const s of near) expect(s.obey).not.toBe('declined');
+    const waiting = f.fronts.filter((s) => s.obey === 'pending').sort((a, b) => a.obeyAt - b.obeyAt);
+    expect(waiting.length).toBeGreaterThan(0);
+    // Delay grows with distance from the capital (by the front's troops), within the rules' bounds.
+    const c = world.data.rules.command.compliance;
+    for (const s of waiting) {
+      const d = s.obeyAt - world.time;
+      expect(d).toBeGreaterThanOrEqual(c.delay_min_s - 1e-6);
+      expect(d).toBeLessThanOrEqual(c.delay_max_s + 1e-6);
+    }
+    expect(obeyDelay(world, 500)).toBeLessThan(obeyDelay(world, 2500));
+    // Waiting fronts keep their previous order and show the countdown; each moves when its delay is over.
+    for (const s of waiting) expect(s.response).toBe('resp.pending');
+    const first = waiting[0];
+    run(match, Math.ceil(first.obeyAt - world.time) + 1);
+    expect(first.obey).toBe('obey');
+    expect(['defend', 'attack']).toContain(first.order.kind);
+    const obeyed = world.battle.responses.filter((r) => r.f === 0 && r.result === 'obeyed');
+    expect(obeyed.length).toBeGreaterThan(0);
+    // Obeyed in order of distance: the earliest obeyer is the nearest of those that obeyed.
+    for (let i = 1; i < obeyed.length; i++) expect(obeyed[i].delay).toBeGreaterThanOrEqual(obeyed[i - 1].delay);
+  }, 120_000);
+
+  it('the AI supreme HQ goes through the same model (its defend directive is answered with a delay)', () => {
+    const match = setup(30);
+    const { world } = match;
+    const f = world.factions[1];
+    setDirective(world, f, 'defend', null, null, false);
+    f.command.nextAt = 0;
+    thinkHighCommand(world, f);
+    expect(f.fronts.every((s) => s.compliance >= 0 && s.obey !== '')).toBe(true);
+    expect(temperament(world, f, f.fronts[0])).toBe(temperament(world, f, f.fronts[0]));
+    expect(directiveSig({ kind: 'defend', axis: { x: 100, z: 100 }, line: null })).toBe(directiveSig({ kind: 'defend', axis: { x: 104, z: 98 }, line: null }));
   });
 });

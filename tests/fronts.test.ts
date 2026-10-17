@@ -10,7 +10,8 @@ import { pickFront } from '../src/sim/production';
 import { HOME } from '../src/sim/homeguard';
 import { isCommander } from '../src/sim/formulas';
 import type { Faction, Front, FrontOrder, Unit, Zone } from '../src/sim/types';
-import { garrisonsZone } from '../src/sim/theatre';
+import { desiredFronts, garrisonsZone, theatreAxes } from '../src/sim/theatre';
+import { barrageBonus, combatCount, FRONT_TIERS_AB, frontAccuracyMul, frontMoraleLossMul, frontReinforceWeight, frontSupplyWeight, lineLength, scaleFronts, strayCluster, tierFor, updateFrontTier } from '../src/sim/frontTiers';
 import { directiveMain } from '../src/sim/frontresponse';
 import { dist, headingTo, type V2 } from '../src/sim/vec';
 import type { World } from '../src/sim/world';
@@ -265,7 +266,7 @@ describe('fronts 2.1: binding orders, more fronts, zone garrisons', () => {
     const obj = world.objectives.filter((o) => o.owner !== 0 && dist(o.pos, mid) > 600).sort((a, b) => dist(a.pos, mid) - dist(b.pos, mid))[0];
     expect(obj).toBeDefined();
     const bus = new CommandBus();
-    bus.issue(match, 0, { type: 'setDirective', kind: 'offensive', axis: obj.pos });
+    bus.issue(match, 0, { type: 'setDirective', kind: 'offensive', axis: obj.pos, force: true });
     bus.flush(match);
     const s = frontById(f, directiveMain(f))!;
     expect(s).toBeDefined();
@@ -302,7 +303,7 @@ describe('fronts 2.1: binding orders, more fronts, zone garrisons', () => {
     const hq = world.hqPos(0);
     const p = world.nav(false, 35).nearestPassable({ x: hq.x + (s0.front.x - hq.x) * 0.5, z: hq.z + (s0.front.z - hq.z) * 0.5 }, 60)!;
     const bus = new CommandBus();
-    bus.issue(match, 0, { type: 'setDirective', kind: 'defend', axis: p });
+    bus.issue(match, 0, { type: 'setDirective', kind: 'defend', axis: p, force: true });
     bus.flush(match);
     // The front nearest the threatened place holds a line through it.
     const s = frontById(f, directiveMain(f))!;
@@ -352,17 +353,31 @@ describe('fronts 2.1: binding orders, more fronts, zone garrisons', () => {
     expect(ht.recall).not.toContain(s.id);
   });
 
-  it('allows 8 fronts, plans fronts without units, and runs the player\'s fronts', () => {
+  it('3.0: no 8-front cap (soft_max is a perf guard), staggered planning, plans fronts without units, runs the player\'s fronts', () => {
     const match = setup(60, false);
     const { world } = match;
     const ai = world.factions[1];
     ai.p = 1e6;
-    const max = world.data.rules.command.fronts_max;
-    expect(max).toBe(8);
+    expect('fronts_max' in world.data.rules.command).toBe(false);
+    const soft = world.data.rules.fronts.soft_max;
+    expect(soft).toBeGreaterThanOrEqual(24);
     const objs = world.objectives.filter((o) => o.owner !== ai.id);
     let k = 0;
-    while (ai.fronts.length < max) expect(createFront(world, ai, objs[k++ % objs.length], 0)).not.toBeNull();
+    while (ai.fronts.length < soft) expect(createFront(world, ai, objs[k++ % objs.length], 0)).not.toBeNull();
     expect(createFront(world, ai, objs[0], 0)).toBeNull();
+    // Every id resolves (index map over the replaced fronts array).
+    for (const s of ai.fronts) expect(frontById(ai, s.id)).toBe(s);
+    // Staggered: chunk 1 plans fronts 8–15 only; a chunk past the last front is a no-op.
+    const per = world.data.rules.fronts.fronts_per_think_tick;
+    for (const s of ai.fronts) s.tier = 99;
+    thinkFronts(world, ai, 1);
+    ai.fronts.forEach((s, i) => expect(s.tier === 99).toBe(i < per || i >= 2 * per));
+    for (const s of ai.fronts) s.tier = 99;
+    thinkFronts(world, ai, Math.ceil(soft / per) + 1);
+    expect(ai.fronts.every((s) => s.tier === 99)).toBe(true);
+    // In the sim every front is planned within one 2 s cycle.
+    run(match, 2);
+    expect(ai.fronts.every((s) => s.tier !== 99)).toBe(true);
     // Fronts with no troops (only a commander) plan without errors.
     thinkFronts(world, ai);
     ai.command.nextAt = 0;
@@ -405,4 +420,93 @@ describe('fronts 2.1: binding orders, more fronts, zone garrisons', () => {
     run(match, 60);
     expect(f.fronts.filter((x) => garrisonsZone(x)).length).toBe(1);
   }, 60_000);
+});
+
+describe('front tiers (3.0, V30_SPEC §5)', () => {
+  it('tiers follow the combat units with hysteresis; effects scale with the tier; stretched costs', () => {
+    const { world } = setup(5);
+    const rules = world.data.rules.fronts;
+    expect(rules.tiers.map((x) => x.min_units)).toEqual([12, 24, 40]);
+    expect(tierFor(rules, 11, 0)).toBe(0);
+    expect(tierFor(rules, 12, 0)).toBe(1);
+    expect(tierFor(rules, 24, 1)).toBe(2);
+    expect(tierFor(rules, 40, 2)).toBe(3);
+    // Kept down to min_units − hysteresis once reached.
+    expect(tierFor(rules, 11, 1)).toBe(1);
+    expect(tierFor(rules, 12 - rules.hysteresis_units - 1, 1)).toBe(0);
+    const f = world.factions[1];
+    const s = f.fronts[0];
+    const u = [...world.units.values()].find((x) => x.owner === f.id && x.frontId === s.id && !x.fixed && x.def.id === 'infantry')!;
+    expect(u).toBeDefined();
+    s.tier = 0;
+    s.stretched = false;
+    expect(frontAccuracyMul(world, u)).toBe(1);
+    expect(frontMoraleLossMul(world, u)).toBe(1);
+    s.tier = 3;
+    expect(frontAccuracyMul(world, u)).toBeCloseTo(1 + rules.tiers[2].accuracy);
+    expect(frontMoraleLossMul(world, u)).toBeCloseTo(1 - rules.tiers[2].morale);
+    expect(frontSupplyWeight(world, f, s.id)).toBe(rules.tiers[2].supply_weight);
+    expect(frontReinforceWeight(world, s)).toBe(rules.tiers[2].reinforce_weight);
+    s.tier = 0;
+    s.stretched = true;
+    expect(frontAccuracyMul(world, u)).toBeCloseTo(1 - rules.stretched_accuracy);
+    expect(frontMoraleLossMul(world, u)).toBeCloseTo(1 + rules.stretched_morale);
+    // Lab switch off: no effects.
+    FRONT_TIERS_AB.on = false;
+    expect(frontAccuracyMul(world, u)).toBe(1);
+    FRONT_TIERS_AB.on = true;
+  });
+
+  it('updateFrontTier sets tier, stretched line and a barrage point; tiered batteries prefer it', () => {
+    const { world } = setup(5);
+    const f = world.factions[1];
+    const s = f.fronts[0];
+    const units = frontUnits(world, f.id, s.id);
+    s.segment = [];
+    s.line = null;
+    updateFrontTier(world, f, s, units);
+    expect(s.tier).toBe(tierFor(world.data.rules.fronts, combatCount(units), 0));
+    expect(s.stretched).toBe(false);
+    // A 4 km line held by a few units is stretched.
+    s.line = { a: { x: 0, z: 0 }, b: { x: 4000, z: 0 } };
+    updateFrontTier(world, f, s, units.slice(0, 5));
+    expect(s.stretched).toBe(true);
+    s.line = null;
+    expect(lineLength({ ...s, segment: [{ x: 0, z: 0 }, { x: 16, z: 0 }, { x: 32, z: 0 }, { x: 500, z: 0 }] })).toBe(32);
+    expect(barrageBonus(world, { x: 0, z: 0 }, { pos: { x: 10, z: 0 } } as Unit)).toBe(world.data.rules.fronts.barrage_bonus);
+    expect(barrageBonus(world, null, { pos: { x: 10, z: 0 } } as Unit)).toBe(0);
+  });
+
+  it('the theatre wants more fronts for a larger army and a longer frontage', () => {
+    const { world } = setup(5);
+    const f = world.factions[1];
+    const axes = theatreAxes(world, f);
+    for (const s of f.fronts) s.segment = [];
+    const small = desiredFronts(world, axes, 40, undefined, undefined, undefined, scaleFronts(world, f, 40));
+    const big = desiredFronts(world, axes, 120, undefined, undefined, undefined, scaleFronts(world, f, 120));
+    expect(big).toBeGreaterThan(small);
+    expect(big).toBeGreaterThanOrEqual(6);
+    // Never more fronts than tier-1 fronts the troops can make; the soft max bounds it.
+    expect(scaleFronts(world, f, 30)).toBeLessThanOrEqual(Math.floor(30 / 12));
+    expect(desiredFronts(world, axes, 10_000, undefined, undefined, undefined, 1000)).toBe(world.data.rules.fronts.soft_max);
+    // Frontage: a 5.6 km front line asks for ≥ 8 fronts when the troops allow it.
+    const seg = Array.from({ length: 351 }, (_, i) => ({ x: i * 16, z: 0 }));
+    f.fronts[0].segment = seg;
+    expect(scaleFronts(world, f, 200)).toBeGreaterThanOrEqual(8);
+  });
+
+  it('strayCluster finds a tier-1 cluster of free troops far from their front', () => {
+    const { world } = setup(5);
+    const f = world.factions[1];
+    const s = f.fronts[0];
+    const hq = world.hqPos(f.id);
+    const far = { x: hq.x + (s.front.x > hq.x ? -1 : 1) * 1500, z: hq.z + (s.front.z > hq.z ? -1 : 1) * 1500 };
+    const fake = Array.from({ length: 14 }, (_, i) => ({ ...[...world.units.values()].find((u) => u.owner === f.id && u.def.id === 'infantry')!, id: 90_000 + i, pos: { x: far.x + i * 5, z: far.z }, behavior: 'advance' as const })) as Unit[];
+    const groups = new Map<number, Unit[]>([[s.id, fake]]);
+    const c = strayCluster(world, f, groups, () => true);
+    expect(c).not.toBeNull();
+    expect(c!.n).toBe(14);
+    expect(dist(c!.pos, far)).toBeLessThan(60);
+    expect(strayCluster(world, f, new Map([[s.id, fake.slice(0, 5)]]), () => true)).toBeNull();
+  });
 });
