@@ -9,6 +9,57 @@ const GOAL_LATTICE_M = 128;
 const FIELD_CACHE = 128;
 /** Passable regions of at most this many cells are closed (pathing traps, see pruneIslands). */
 const ISLAND_MAX_CELLS = 6;
+/** Nav cell size (m); every movement class uses the same lattice. */
+const NAV_CELL = 8;
+
+/**
+ * Class-independent terrain samples per nav cell, shared by every movement class's grid (3.0
+ * perf round). A grid is built lazily the first time a unit of its class needs one (the heavy
+ * tank class minutes into a war), and sampling ground, slope and the building raster for all
+ * 0.35 M cells of a large map stalled that tick for ~0.3 s per class. The samples are pure
+ * reads of the terrain, kept current by `refreshArea` (the only path for runtime terrain
+ * changes), so a grid built from them is identical to one built from the terrain directly.
+ */
+interface NavBase {
+  readonly nx: number;
+  readonly nz: number;
+  readonly ground: Uint8Array;
+  /** slopeAt, clamped to 10° on roads, fords and ford banks (the effective nav slope). */
+  readonly slope: Float64Array;
+  /** buildingCover(x, z, 0.75 cell) on town / open ground, else 0. */
+  readonly built: Float64Array;
+  /** 1 where buildingH > 0 at the cell centre. */
+  readonly house: Uint8Array;
+}
+
+const BASES = new WeakMap<Terrain, NavBase>();
+
+function sampleBase(base: NavBase, terrain: Terrain, i: number, j: number): void {
+  const x = Math.min(i * NAV_CELL, terrain.width);
+  const z = Math.min(j * NAV_CELL, terrain.depth);
+  const k = j * base.nx + i;
+  const g = terrain.groundAt(x, z);
+  base.ground[k] = g;
+  if (g === Ground.Water) return;
+  // Roads (graded, incl. bridge causeways) and fords with their banks ignore the slope limit:
+  // slopeAt samples ±4 m and would otherwise "see" the carved channel beside a bridge or ford.
+  const crossing = g === Ground.Road || g === Ground.Ford || nearFord(terrain, x, z);
+  base.slope[k] = crossing ? Math.min(terrain.slopeAt(x, z), 10) : terrain.slopeAt(x, z);
+  base.built[k] = g === Ground.Town || g === Ground.Open ? terrain.buildingCover(x, z, NAV_CELL * 0.75) : 0;
+  base.house[k] = terrain.buildingH(x, z) > 0 ? 1 : 0;
+}
+
+function navBase(terrain: Terrain): NavBase {
+  let base = BASES.get(terrain);
+  if (base) return base;
+  const nx = Math.floor(terrain.width / NAV_CELL) + 1;
+  const nz = Math.floor(terrain.depth / NAV_CELL) + 1;
+  const n = nx * nz;
+  base = { nx, nz, ground: new Uint8Array(n), slope: new Float64Array(n), built: new Float64Array(n), house: new Uint8Array(n) };
+  for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) sampleBase(base, terrain, i, j);
+  BASES.set(terrain, base);
+  return base;
+}
 
 export interface NavClass {
   readonly vehicle: boolean;
@@ -86,7 +137,7 @@ export type PathResult = { ok: true; points: V2[]; partial: boolean; bestEffort?
 
 /** Coarse navigation grid (8 m) per movement class; derived from the same Terrain as LOS. */
 export class NavGrid {
-  readonly cell = 8;
+  readonly cell = NAV_CELL;
   readonly nx: number;
   readonly nz: number;
   readonly cost: Float32Array; // 0 = blocked, else seconds-per-metre multiplier
@@ -112,7 +163,8 @@ export class NavGrid {
     this.closedAt = new Uint32Array(n);
     this.built = new Uint8Array(n);
     this.walk = new Uint8Array(n);
-    for (let j = 0; j < this.nz; j++) for (let i = 0; i < this.nx; i++) this.cost[j * this.nx + i] = this.cellCost(terrain, i, j);
+    const base = navBase(terrain);
+    for (let j = 0; j < this.nz; j++) for (let i = 0; i < this.nx; i++) this.cost[j * this.nx + i] = this.cellCost(base, i, j);
     this.pruneIslands();
   }
 
@@ -153,25 +205,21 @@ export class NavGrid {
   }
 
   /** Travel-cost multiplier of cell (i, j) from the current terrain (0 = blocked). */
-  private cellCost(terrain: Terrain, i: number, j: number): number {
-    const x = Math.min(i * this.cell, terrain.width);
-    const z = Math.min(j * this.cell, terrain.depth);
-    const g = terrain.groundAt(x, z);
-    this.walk[j * this.nx + i] = 0;
+  private cellCost(base: NavBase, i: number, j: number): number {
+    const k = j * this.nx + i;
+    const g = base.ground[k] as Ground;
+    this.walk[k] = 0;
     if (g === Ground.Water) return 0;
-    // Roads (graded, incl. bridge causeways) and fords with their banks ignore the slope limit:
-    // slopeAt samples ±4 m and would otherwise "see" the carved channel beside a bridge or ford.
-    const crossing = g === Ground.Road || g === Ground.Ford || nearFord(terrain, x, z);
-    const slope = crossing ? Math.min(terrain.slopeAt(x, z), 10) : terrain.slopeAt(x, z);
+    const slope = base.slope[k];
     if (slope > this.cls.maxSlopeDeg) return 0;
     const mul = this.cls.mul ? this.cls.mul(g) : groundSpeedMul(g, this.cls.vehicle);
     const slopeMul = clamp(1 - 0.02 * slope, 0.45, 1);
     // Buildings: cells mostly inside one are walls; partly built-up cells are costly, so routes
     // follow the streets (the 2 m raster in movement does the exact collision).
-    const built = g === Ground.Town || g === Ground.Open ? terrain.buildingCover(x, z, this.cell * 0.75) : 0;
-    this.built[j * this.nx + i] = built > 0 ? 1 : 0;
-    this.walk[j * this.nx + i] = 1;
-    if (built > 0.55 || terrain.buildingH(x, z) > 0) return 0;
+    const built = base.built[k];
+    this.built[k] = built > 0 ? 1 : 0;
+    this.walk[k] = 1;
+    if (built > 0.55 || base.house[k] === 1) return 0;
     const fordMul = g === Ground.Ford ? this.cls.ford ?? 1 : 1;
     return (fordMul * (1 + built * (this.cls.vehicle ? 4 : 2))) / (mul * slopeMul);
   }
@@ -186,7 +234,10 @@ export class NavGrid {
     const i1 = clamp(Math.ceil(Math.max(x0, x1) / this.cell), 0, this.nx - 1);
     const j0 = clamp(Math.floor(Math.min(z0, z1) / this.cell), 0, this.nz - 1);
     const j1 = clamp(Math.ceil(Math.max(z0, z1) / this.cell), 0, this.nz - 1);
-    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) this.cost[j * this.nx + i] = this.cellCost(terrain, i, j);
+    // Resample the shared terrain base first (idempotent: every grid refreshes the same box).
+    const base = navBase(terrain);
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) sampleBase(base, terrain, i, j);
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) this.cost[j * this.nx + i] = this.cellCost(base, i, j);
     this.edges = null;
     this.fields.clear();
     this.pruneIslands();

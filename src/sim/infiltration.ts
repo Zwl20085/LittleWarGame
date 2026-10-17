@@ -171,9 +171,42 @@ const EXACT = new Float64Array(32);
  * decides "deep / not deep" exactly whenever the margin allows (gridDeep), else the caller scans.
  */
 const ANCHOR_CELL_M = 100;
-const ANCHOR_REFRESH_S = 10;
-interface AnchorGrid { readonly at: number; readonly owners: Int16Array; readonly nx: number; readonly nz: number; readonly nf: number; readonly d: Float64Array; checkedTick: number }
+/**
+ * The grid values are a pure function of which factions are alive and who holds each settlement
+ * (capitals and settlement positions are static), so the grid is rebuilt only when the set of
+ * living factions changes; a settlement changing hands is applied incrementally (3.0 perf round:
+ * the full rebuild on every capture, cells × settlements distance pairs, was ~7 % of sim CPU on
+ * the large map). Every value equals what a full rebuild would compute (same distances, min).
+ */
+interface AnchorGrid { readonly owners: Int16Array; readonly nx: number; readonly nz: number; readonly nf: number; readonly d: Float64Array; checkedTick: number }
 const anchorGrids = new WeakMap<World, AnchorGrid>();
+const cellCentre = (i: number): number => (i + 0.5) * ANCHOR_CELL_M;
+
+/** Settlement `oi` changed hands `from` → `to`: update the cells of both factions exactly. */
+function anchorHandover(world: World, g: AnchorGrid, oi: number, from: number, to: number): void {
+  const o = world.objectives[oi];
+  const nf = g.nf;
+  const alive = (f: number): boolean => f >= 0 && f < nf && g.owners[f] === 1;
+  for (let j = 0; j < g.nz; j++) for (let i = 0; i < g.nx; i++) {
+    const c = (j * g.nx + i) * nf;
+    const p = { x: cellCentre(i), z: cellCentre(j) };
+    const d = dist(o.pos, p);
+    if (alive(to) && d < g.d[c + to]) g.d[c + to] = d;
+    // The old holder's value came from this settlement: rescan its remaining anchors for the cell.
+    if (alive(from) && g.d[c + from] === d) g.d[c + from] = ownAnchorDistance(world, from, p);
+  }
+}
+
+/** anchorDistances(…)[f] for one faction (alive), from the current owners. */
+function ownAnchorDistance(world: World, f: number, p: V2): number {
+  let best = dist(world.hqPos(f), p);
+  for (const o of world.objectives) {
+    if (o.owner !== f) continue;
+    const d = dist(o.pos, p);
+    if (d < best) best = d;
+  }
+  return best;
+}
 
 function anchorOwners(world: World): Int16Array {
   const nf = world.factions.length;
@@ -188,7 +221,16 @@ function anchorGrid(world: World): AnchorGrid {
   // Owners can only change between ticks: check once per tick, not once per unit.
   if (g && g.checkedTick === world.tick) return g;
   const owners = anchorOwners(world);
-  if (g && world.time - g.at < ANCHOR_REFRESH_S && g.owners.length === owners.length && g.owners.every((v, i) => v === owners[i])) {
+  const nf0 = world.factions.length;
+  let sameAlive = !!g && g.owners.length === owners.length;
+  for (let i = 0; sameAlive && i < nf0; i++) sameAlive = g!.owners[i] === owners[i];
+  if (g && sameAlive) {
+    for (let i = nf0; i < owners.length; i++) {
+      if (g.owners[i] === owners[i]) continue;
+      const from = g.owners[i];
+      g.owners[i] = owners[i];
+      anchorHandover(world, g, i - nf0, from, owners[i]);
+    }
     g.checkedTick = world.tick;
     return g;
   }
@@ -198,10 +240,10 @@ function anchorGrid(world: World): AnchorGrid {
   const d = new Float64Array(nx * nz * nf);
   const tmp = new Float64Array(32);
   for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) {
-    anchorDistances(world, { x: (i + 0.5) * ANCHOR_CELL_M, z: (j + 0.5) * ANCHOR_CELL_M }, tmp);
+    anchorDistances(world, { x: cellCentre(i), z: cellCentre(j) }, tmp);
     d.set(tmp.subarray(0, nf), (j * nx + i) * nf);
   }
-  const grid: AnchorGrid = { at: world.time, owners, nx, nz, nf, d, checkedTick: world.tick };
+  const grid: AnchorGrid = { owners, nx, nz, nf, d, checkedTick: world.tick };
   anchorGrids.set(world, grid);
   return grid;
 }
