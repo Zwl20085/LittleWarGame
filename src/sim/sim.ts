@@ -26,6 +26,8 @@ import { FACTION_COLORS, ROMAN, World } from './world';
 import { scaledData } from './scale';
 import { sampleStats, STATS_SAMPLE_SECONDS } from './stats';
 import { battleSecond } from './events';
+import { aboard, initTransport, railSecond, railTick } from './rail';
+import { transportSecond } from './transportjobs';
 import { canSpot, observerOf } from './terrainrules';
 import type { V2 } from './vec';
 
@@ -114,6 +116,8 @@ export function createMatch(baseData: GameData, config: MatchConfig): Match {
   // 2.2: production / supply places and their starting stocks (settlements.ts).
   initPlaces(world);
   seedStocks(world);
+  // 3.0 road graph, rail lines and stations (rail.ts).
+  initTransport(world);
   for (const u of world.units.values()) updateHeight(world, u);
   world.spatial.rebuild(world.aliveUnits);
   const front = new FrontlineField(world, null);
@@ -354,7 +358,7 @@ export function step(match: Match): void {
       u.hp = 0;
       continue;
     }
-    if (world.time >= u.thinkAt) {
+    if (world.time >= u.thinkAt && !aboard(u)) {
       thinkUnit(world, u);
       const slow = u.def.id === 'howitzer' || u.def.id === 'mortar' ? 1 : 0.4;
       u.thinkAt = world.time + slow + ((u.id * 7) % 10) / 50;
@@ -367,6 +371,7 @@ export function step(match: Match): void {
     updateMovement(world, u);
     updateHeight(world, u);
   }
+  railTick(world);
   if (world.tick % Math.round(hz / 2) === 0) updateVisibility(world);
   if (world.tick % (2 * hz) === 0) {
     match.supplyNodes = world.factions.map((f) => (f.alive ? convoyNodes(world, f.id) : []));
@@ -378,6 +383,8 @@ export function step(match: Match): void {
   world.removeDead();
   if (world.tick % hz === 0) {
     economySecond(match);
+    railSecond(world, match.front);
+    transportSecond(world);
     battleSecond(world);
   }
   // Front field every 2 s, then one faction's front info per tick: the ~10 ms burst of doing

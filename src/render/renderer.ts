@@ -22,6 +22,7 @@ import { registerEconModels } from './econModels';
 import { FrontLines } from './frontLines';
 import { fortModel } from './models';
 import { PontoonView } from './pontoon';
+import { RailField } from './railField';
 import { ScreenOverlay } from './screenOverlay';
 import { TerrainView } from './terrainView';
 import { UnitCounters } from './unitCounters';
@@ -70,6 +71,7 @@ export class GameRenderer {
   private readonly objectiveMarkers: ObjectiveMarkers;
   private readonly fortViews = new Map<number, THREE.Group>();
   private readonly pontoonViews = new Map<number, PontoonView>();
+  private readonly railField: RailField;
   private readonly fieldWorks: FieldWorks;
   /** Pillboxes / bunkers (instanced; works agent). */
   private readonly structureViews: StructureViews;
@@ -168,6 +170,9 @@ export class GameRenderer {
     this.scene.add(this.orderLines.group);
     this.objectiveMarkers = new ObjectiveMarkers(w.objectives, w.terrain);
     this.scene.add(this.objectiveMarkers.group);
+    // 3.0 railways, stations, trains and engineer roads (railField.ts).
+    this.railField = new RailField(w.terrain, () => w.transport, (owner) => w.factions[owner]?.color ?? '#888888');
+    this.scene.add(this.railField.group);
     this.buildCities();
     this.freezeStatic();
   }
@@ -540,6 +545,7 @@ export class GameRenderer {
     this.effects.update(dt);
     this.syncObjectives();
     this.syncForts(dt);
+    this.railField.update(alpha);
     this.paintFront(this.match.frontView ?? this.match.front);
     this.drawOverlays(realDt);
     for (let i = this.orderMarkers.length - 1; i >= 0; i--) {
@@ -641,6 +647,7 @@ export class GameRenderer {
 
   dispose(): void {
     this.structureViews.dispose();
+    this.railField.dispose();
     this.extraViews.dispose();
     this.objectiveMarkers.dispose();
     this.overlay.dispose();

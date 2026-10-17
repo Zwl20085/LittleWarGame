@@ -302,3 +302,43 @@ export function vehicleGeometry(kind: string, id: string): THREE.BufferGeometry 
   }
 }
 
+/** 3.0 train (rail.ts): locomotive + two wagons, total length (m), origin mid-train on the rails, +x forward. */
+export const TRAIN_LEN = 34;
+
+/** Steam locomotive with tender, then a covered van and a flat wagon; faction band on the cab and van. */
+export function trainGeometry(): THREE.BufferGeometry {
+  const k = new Kit();
+  const [pc, pt] = paint(0.55);
+  const black = new THREE.Color('#2b2a28');
+  const bogies = (x0: number, len: number): void => {
+    k.box(len, 0.35, 2.6, x0, 1.0, 0, DARK);
+    for (const dx of [-len * 0.33, len * 0.33]) for (const z of [-0.75, 0.75]) k.wheel(0.5, 0.15, 8, x0 + dx, 0.5, z, WHEEL);
+  };
+  // Locomotive (front 12 m): boiler, smokebox, chimney, dome, cab, tender.
+  const lx = TRAIN_LEN / 2 - 6;
+  bogies(lx, 11);
+  for (const dx of [-3.4, -1.2, 1.0, 3.2]) for (const z of [-1.0, 1.0]) k.wheel(0.75, 0.16, 10, lx + dx * 0.8, 0.75, z, black);
+  k.cyl(1.0, 1.0, 7, 12, lx + 1.6, 2.3, 0, black, 0, 0, 0, -Math.PI / 2);
+  k.cyl(1.05, 1.05, 0.6, 12, lx + 5.2, 2.3, 0, DARK, 0, 0, 0, -Math.PI / 2);
+  k.cyl(0.32, 0.26, 1.2, 8, lx + 4.4, 3.6, 0, DARK);
+  k.cyl(0.38, 0.42, 0.6, 8, lx + 1.8, 3.4, 0, black);
+  k.box(2.4, 2.8, 2.7, lx - 2.9, 2.8, 0, pc, pt);
+  k.box(2.6, 0.2, 2.9, lx - 2.9, 4.3, 0, DARK);
+  k.box(0.2, 0.5, 2.72, lx - 1.7, 3.1, 0, ZERO, 1);
+  k.box(0.6, 0.4, 0.5, lx + 5.6, 1.6, 0, LAMP);
+  // Tender behind the cab.
+  k.box(3.2, 2.0, 2.6, lx - 5.6, 2.2, 0, black);
+  // Covered van (middle 10 m).
+  const vx = TRAIN_LEN / 2 - 12 - 0.8 - 5;
+  bogies(vx, 10);
+  k.box(9.6, 2.8, 2.8, vx, 2.6, 0, pc, pt);
+  k.box(9.8, 0.25, 3.0, vx, 4.1, 0, DARK);
+  k.box(1.6, 2.2, 0.08, vx, 2.4, 1.42, WOOD);
+  k.box(3.0, 0.5, 2.82, vx + 2.5, 3.2, 0, ZERO, 1);
+  // Flat wagon (rear 10 m) with a tarp-covered load.
+  const fx = vx - 10.8;
+  bogies(fx, 10);
+  k.box(9.6, 0.3, 2.8, fx, 1.35, 0, WOOD);
+  k.box(6.5, 1.6, 2.4, fx, 2.3, 0, CANVAS);
+  return k.build();
+}

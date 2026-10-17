@@ -257,5 +257,33 @@
     "path_retry_seconds": 2,
     "path_blocked_warning_seconds": 10,
     "hold_requires_explicit_resume": true
+  },
+  "transport": {
+    "comment": "3.0 roads and railways (V30_SPEC §10, transport.ts / roadnet.ts / rail.ts / transportjobs.ts). enabled=false restores the 2.2 ground multipliers (road 1.05 foot / 1.35 vehicle, open 1) and switches rail and the engineer road/rail jobs off (lab A/B). On a road (or a town street) every class moves at on_road; off it at off_road[class], stacked with the forest / town / mud and grade modifiers. Class: vehicles tracked, crews towed, infantry infantry, overridden per unit by class_of.",
+    "enabled": true,
+    "on_road": 1.0,
+    "off_road": {"tracked": 0.6, "wheeled": 0.4, "infantry": 0.75, "towed": 0.5},
+    "class_of": {"supply_truck": "wheeled", "train": "wheeled", "mg": "infantry", "mortar": "infantry"},
+    "town_counts_as_road": true,
+    "ford_nav_cost": 2.5,
+    "ford_comment": "Extra navigation cost (×) of a ford cell: routes prefer bridges; movement speed on a ford is unchanged (mud).",
+    "road_job": {"max_len_m": 600, "cost_m_k_per_100m": 2, "seconds_per_100m": 30, "half_width_m": 5, "max_slope_deg": 18, "bridge_max_span_m": 70},
+    "rail": {
+      "enabled": true,
+      "capacity": 6,
+      "board_radius_m": 300,
+      "min_trip_m": 700,
+      "min_saving": 0.4,
+      "depart_wait_s": 15,
+      "unload_s": 6,
+      "trains_per_faction": 4,
+      "city_link_max_m": 1400,
+      "stock_transfer_per_min_k": 3,
+      "check_seconds": 2,
+      "frontline_sample_m": 100,
+      "repair": {"cost_p_k": 2, "cost_m_k": 12, "work_seconds": 150},
+      "extend": {"max_len_m": 1200, "cost_m_k_per_100m": 4, "seconds_per_100m": 60}
+    },
+    "ai": {"enabled": true, "think_seconds": 30, "link_max_m": 600, "max_open_jobs": 1}
   }
 }

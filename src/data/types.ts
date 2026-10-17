@@ -27,6 +27,8 @@ export interface UnitDef {
   readonly turretTurnDegps: number;
   readonly setupSeconds: number;
   readonly packSeconds: number;
+  /** false: never produced (commander: appointed; train: rail stock, rail.ts). */
+  readonly producible: boolean;
 }
 
 export interface WeaponDef {
@@ -147,6 +149,44 @@ export interface EconBuildingRules {
   readonly fill_per_min_k?: number;
 }
 
+/** Movement class for the 3.0 off-road multipliers (rules.json transport.off_road). */
+export type MoveClass = 'tracked' | 'wheeled' | 'infantry' | 'towed';
+
+/** rules.json `transport` (3.0 roads and railways, V30_SPEC §10). */
+export interface TransportRules {
+  readonly enabled: boolean;
+  readonly on_road: number;
+  readonly off_road: Record<MoveClass, number>;
+  readonly class_of?: Record<string, MoveClass>;
+  readonly town_counts_as_road?: boolean;
+  readonly ford_nav_cost?: number;
+  readonly road_job: {
+    readonly max_len_m: number;
+    readonly cost_m_k_per_100m: number;
+    readonly seconds_per_100m: number;
+    readonly half_width_m: number;
+    readonly max_slope_deg: number;
+    readonly bridge_max_span_m: number;
+  };
+  readonly rail: {
+    readonly enabled: boolean;
+    readonly capacity: number;
+    readonly board_radius_m: number;
+    readonly min_trip_m: number;
+    readonly min_saving: number;
+    readonly depart_wait_s: number;
+    readonly unload_s: number;
+    readonly trains_per_faction: number;
+    readonly city_link_max_m: number;
+    readonly stock_transfer_per_min_k: number;
+    readonly check_seconds: number;
+    readonly frontline_sample_m: number;
+    readonly repair: { readonly cost_p_k: number; readonly cost_m_k: number; readonly work_seconds: number };
+    readonly extend: { readonly max_len_m: number; readonly cost_m_k_per_100m: number; readonly seconds_per_100m: number };
+  };
+  readonly ai?: { readonly enabled: boolean; readonly think_seconds: number; readonly link_max_m: number; readonly max_open_jobs: number };
+}
+
 export interface EconRules {
   readonly slots: Record<string, number>;
   readonly captured_hp_ratio: number;
@@ -261,6 +301,8 @@ export interface Rules {
   readonly logistics?: LogisticsRules;
   /** 2.2 economic buildings (V22_SPEC §5). */
   readonly econ?: EconRules;
+  /** 3.0 roads and railways (V30_SPEC §10; optional for old rule sets = 2.2 movement). */
+  readonly transport?: TransportRules;
   readonly morale: {
     readonly suppression_enter: number;
     readonly suppression_exit: number;

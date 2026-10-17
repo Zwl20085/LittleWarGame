@@ -1,5 +1,7 @@
 import type { GameData } from '../data/types';
 import { NavGrid } from './nav';
+import { navCostFns } from './transport';
+import type { TransportState } from './transportstate';
 import { Rng } from './rng';
 import { SpatialHash } from './spatial';
 import { Terrain } from './terrain';
@@ -82,6 +84,8 @@ export class World {
       g.refreshArea(this.terrain, Math.min(a.x, b.x) - pad, Math.min(a.z, b.z) - pad, Math.max(a.x, b.x) + pad, Math.max(a.z, b.z) + pad);
     }
   };
+  /** 3.0 roads and railways (road graph, rail lines, trains, engineer road / rail jobs; initTransport). */
+  transport: TransportState | null = null;
   /** Sound-ranged enemy batteries (counter-battery intel). */
   readonly batteryReveals: BatteryReveal[] = [];
   result: MatchResult | null = null;
@@ -139,7 +143,7 @@ export class World {
     const key = maxSlopeDeg * 2 + (vehicle ? 1 : 0);
     let g = this.navCache.get(key);
     if (!g) {
-      g = new NavGrid(this.terrain, { vehicle, maxSlopeDeg });
+      g = new NavGrid(this.terrain, { vehicle, maxSlopeDeg, ...navCostFns(this.data.rules, vehicle) });
       this.navCache.set(key, g);
     }
     return g;
@@ -293,6 +297,7 @@ export class World {
       unstuckAt: -1e9,
       rearming: false,
       rearmAt: 0,
+      rail: null,
     };
     this.units.set(u.id, u);
     this.aliveUnits.push(u);

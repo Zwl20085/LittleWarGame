@@ -112,7 +112,7 @@ function apply(match: Match, env: CommandEnvelope): CommandOutcome {
       return OK;
     case 'queueUnit':
       // Front commanders are appointed by the supreme HQ, never bought.
-      if (!w.data.units.has(c.unitId) || c.unitId === w.data.rules.command.commander_unit) return fail('BAD_VALUE');
+      if (!w.data.units.get(c.unitId)?.producible || c.unitId === w.data.rules.command.commander_unit) return fail('BAD_VALUE');
       if (c.frontId !== -1 && !f.fronts.some((x) => x.id === c.frontId)) return fail('NO_FRONT');
       if (c.placeId !== undefined) {
         // 2.2: queue at a chosen place, which must be ours and have a slot of the unit's facility.

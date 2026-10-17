@@ -13,6 +13,12 @@ const ISLAND_MAX_CELLS = 6;
 export interface NavClass {
   readonly vehicle: boolean;
   readonly maxSlopeDeg: number;
+  /** 3.0 (transport.ts): speed multiplier per ground type; default the 2.2 table. */
+  readonly mul?: (g: Ground) => number;
+  /** 3.0: extra travel cost (×) of a ford cell (routes prefer bridges). */
+  readonly ford?: number;
+  /** A* heuristic factor: the cheapest cost per metre of any cell (2.2: 1 / 1.35). */
+  readonly hMul?: number;
 }
 
 const groundKey = (g: Ground): keyof typeof TERRAIN_MOVE =>
@@ -158,7 +164,7 @@ export class NavGrid {
     const crossing = g === Ground.Road || g === Ground.Ford || nearFord(terrain, x, z);
     const slope = crossing ? Math.min(terrain.slopeAt(x, z), 10) : terrain.slopeAt(x, z);
     if (slope > this.cls.maxSlopeDeg) return 0;
-    const mul = groundSpeedMul(g, this.cls.vehicle);
+    const mul = this.cls.mul ? this.cls.mul(g) : groundSpeedMul(g, this.cls.vehicle);
     const slopeMul = clamp(1 - 0.02 * slope, 0.45, 1);
     // Buildings: cells mostly inside one are walls; partly built-up cells are costly, so routes
     // follow the streets (the 2 m raster in movement does the exact collision).
@@ -166,7 +172,8 @@ export class NavGrid {
     this.built[j * this.nx + i] = built > 0 ? 1 : 0;
     this.walk[j * this.nx + i] = 1;
     if (built > 0.55 || terrain.buildingH(x, z) > 0) return 0;
-    return (1 + built * (this.cls.vehicle ? 4 : 2)) / (mul * slopeMul);
+    const fordMul = g === Ground.Ford ? this.cls.ford ?? 1 : 1;
+    return (fordMul * (1 + built * (this.cls.vehicle ? 4 : 2))) / (mul * slopeMul);
   }
 
   /**
@@ -569,6 +576,7 @@ export class NavGrid {
     const gx = gi % nx;
     const gz = (gi / nx) | 0;
     const heap = new Heap();
+    const hMul = this.cls.hMul ?? 0.74;
     this.g[si] = 0;
     this.stamp[si] = gen;
     this.from[si] = -1;
@@ -616,7 +624,7 @@ export class NavGrid {
           this.from[nidx] = cur;
           const hx = Math.abs(ni - gx);
           const hz = Math.abs(nj - gz);
-          const h = (Math.max(hx, hz) + 0.4142 * Math.min(hx, hz)) * this.cell * 0.74;
+          const h = (Math.max(hx, hz) + 0.4142 * Math.min(hx, hz)) * this.cell * hMul;
           heap.push(nidx, ng + h);
         }
       }
