@@ -89,13 +89,19 @@ export class EngineeringPanel {
     const eng = freeEngineers(w, this.ctx.playerId);
     const m = this.ctx.mode;
     const tool = m.kind === 'engineer' ? m.tool : '';
-    const sig = JSON.stringify([cuts, eng, tool, lang()]);
+    const me = w.factions[this.ctx.playerId];
+    const sig = JSON.stringify([cuts, eng, tool, lang(), me?.autoEngineering, me?.autoEngReason]);
     if (sig === this.sig || this.guard.held) return;
     this.sig = sig;
     const pick = (mode: typeof m): void => { this.ctx.mode = mode; this.sig = ''; };
     this.el.innerHTML = '';
     this.el.append(
       h('div', { class: 'title' }, t('eng.title'), h('button', { class: 'btn icon close', onclick: () => this.toggle() }, '×')),
+      // 3.0.1: the engineers work on their own unless the player takes them over.
+      ...(me ? [h('div', { class: 'row' },
+        h('button', { class: `btn ${me.autoEngineering ? 'on' : ''}`, title: t('auto.engTip'), 'aria-pressed': String(me.autoEngineering), onclick: () => this.ctx.issue({ type: 'setAutoEngineering', on: !me.autoEngineering }) },
+          t(me.autoEngineering ? 'auto.engOn' : 'auto.engOff')),
+        me.autoEngineering && me.autoEngReason ? h('span', { class: 'small' }, t(me.autoEngReason)) : null)] : []),
       h('div', { class: 'row' },
         h('button', { class: `btn ${tool === 'road' ? 'on' : ''}`, onclick: () => pick(tool === 'road' ? { kind: 'normal' } : { kind: 'engineer', tool: 'road', a: null }) }, t('eng.road')),
         h('button', { class: `btn ${tool === 'extend' ? 'on' : ''}`, onclick: () => pick(tool === 'extend' ? { kind: 'normal' } : { kind: 'engineer', tool: 'extend', station: null }) }, t('eng.extend'))),

@@ -1,6 +1,7 @@
 import { COMMAND_EN, COMMAND_ZH } from './i18n-command';
 import { WORKS_EN, WORKS_ZH } from './i18n-works';
 import { UPGRADE_EN, UPGRADE_ZH } from './i18n-upgrades';
+import { AUTO_EN, AUTO_ZH } from './i18n-auto';
 
 export type Lang = 'zh' | 'en';
 
@@ -178,6 +179,7 @@ const zh: Dict = {
   'cam.noFollow': '先选中部队或展开一个方面卡，再按 F 跟随', 'cam.followLost': '跟随目标已不存在',
   'set.dayCycle': '昼夜推移（黎明 → 正午 → 黄昏）', 'set.depthBlur': '低角度近景景深（仅高画质）',
   ...UPGRADE_ZH,
+  ...AUTO_ZH,
 };
 
 const en: Dict = {
@@ -340,6 +342,7 @@ const en: Dict = {
   'cam.noFollow': 'Select a unit or expand a front card, then press F to follow', 'cam.followLost': 'The followed unit or front is gone',
   'set.dayCycle': 'Time of day drifts (dawn → noon → dusk)', 'set.depthBlur': 'Depth blur at low close-in angles (high quality only)',
   ...UPGRADE_EN,
+  ...AUTO_EN,
 };
 
 /** Historical-flavour equipment names (fictional factions; user-approved naming). */

@@ -21,6 +21,17 @@ export function unitUpgradeNames(u: Unit): string[] {
   return out;
 }
 
+/** 3.0.1 Auto-research toggle with the staff's plan and savings (Upgrades panel and economy panel). */
+export function autoResearchRow(f: Faction, set: (on: boolean) => void): HTMLElement {
+  const s = f.upgrades;
+  const saving = f.autoResearch && s.fundP + s.fundM >= 1 ? t('auto.researchFund', { p: Math.round(s.fundP), m: Math.round(s.fundM) }) : '';
+  const want = f.autoResearch && s.want && !s.research ? t('auto.researchWant', { name: t(`upg.${s.want}`) }) : '';
+  return h('div', { class: 'row' },
+    h('button', { class: `btn ${f.autoResearch ? 'on' : ''}`, title: t('auto.researchTip'), 'aria-pressed': String(f.autoResearch), onclick: () => set(!f.autoResearch) },
+      t(f.autoResearch ? 'auto.researchOn' : 'auto.researchOff')),
+    want || saving ? h('span', { class: 'small' }, [want, saving].filter(Boolean).join(' · ')) : null);
+}
+
 /**
  * 3.0 Upgrades panel (V30_SPEC §9): the tree with prices and research times, the research under
  * way with its progress and a cancel button. Toggled by its HUD button or Y.
@@ -67,12 +78,13 @@ export class UpgradesPanel {
     }
     this.el.style.display = '';
     const res = f.upgrades.research;
-    const sig = JSON.stringify([f.upgrades.owned, res?.id, Math.round(researchProgress(w, f) * 50), Math.round(f.p / 10), Math.round(f.m / 10)]);
+    const sig = JSON.stringify([f.upgrades.owned, res?.id, Math.round(researchProgress(w, f) * 50), Math.round(f.p / 10), Math.round(f.m / 10), f.autoResearch, f.upgrades.want, Math.round(f.upgrades.fundP + f.upgrades.fundM)]);
     if (sig === this.sig || this.guard.held) return;
     this.sig = sig;
     this.el.innerHTML = '';
     this.el.append(
       h('div', { class: 'title' }, t('upg.title'), h('button', { class: 'btn icon close', onclick: () => this.toggle() }, '×')),
+      autoResearchRow(f, (on) => this.ctx.issue({ type: 'setAutoResearch', on })),
       this.current(f),
       h('div', { class: 'upg-list' }, ...UPGRADE_IDS.map((id) => this.row(f, id))),
       h('div', { class: 'small' }, t('upg.note')),

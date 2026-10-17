@@ -1,5 +1,6 @@
+import { autoCommandActive, autoResumeAt, autoResumeS } from '../sim/directive';
 import { frontById, frontGroups } from '../sim/fronts';
-import type { Directive, DirectiveKind, Front, OrderKind } from '../sim/types';
+import type { Directive, DirectiveKind, Faction, Front, OrderKind } from '../sim/types';
 import { dist, type V2 } from '../sim/vec';
 import type { World } from '../sim/world';
 import type { GameContext } from './context';
@@ -242,6 +243,20 @@ export class FrontsPanel {
     h('span', { class: 'hq-n' }, d.manual ? fmtTime(d.issuedAt) : t('dir.byAi')));
   }
 
+  /** 3.0.1 自动统帅 / Auto HQ: the toggle and what the HQ is doing (its directive, or the pause left on your order). */
+  private autoRow(w: World, f: Faction): HTMLElement {
+    const on = f.autoCommand;
+    const active = autoCommandActive(w, f);
+    const status = !on ? '' : active ? t('auto.cmdNow', { dir: t(`dir.${f.directive.kind}`) })
+      : t('auto.cmdPaused', { t: fmtTime(Math.ceil(Math.max(0, autoResumeAt(w, f) - w.time) / 10) * 10) });
+    return h('div', { class: 'row auto-hq' },
+      h('button', {
+        class: `btn ${on ? 'on' : ''}`, 'aria-pressed': String(on), title: t('auto.cmdTip', { min: Math.round(autoResumeS(w) / 60) }),
+        onclick: () => this.ctx.issue({ type: 'setAutoCommand', on: !on }),
+      }, t(on ? 'auto.cmdOn' : 'auto.cmdOff')),
+      status ? h('span', { class: 'small' }, status) : null);
+  }
+
   /** Supreme-HQ card: title, capital alert, staff notes, the directive in force and the directive palette. */
   private renderCommand(): void {
     const w = this.ctx.match.world;
@@ -251,7 +266,8 @@ export class FrontsPanel {
     const d = f.directive;
     const m = this.ctx.mode;
     const armed = m.kind === 'directive' ? m.directive : null;
-    const sig = JSON.stringify([armed, d, this.forceOn, home?.active, Math.round((home?.eta ?? 0) / 10), home?.recall.length, dirs.map((x) => [x.kind, x.obj, x.assigned])]);
+    const autoLeft = f.autoCommand && !autoCommandActive(w, f) ? Math.ceil((autoResumeAt(w, f) - w.time) / 10) : -1;
+    const sig = JSON.stringify([armed, d, this.forceOn, f.autoCommand, autoLeft, home?.active, Math.round((home?.eta ?? 0) / 10), home?.recall.length, dirs.map((x) => [x.kind, x.obj, x.assigned])]);
     if (sig === this.cmdSig) return;
     this.cmdSig = sig;
     this.command.innerHTML = '';
@@ -285,6 +301,7 @@ export class FrontsPanel {
         class: `btn force-toggle ${this.forceOn ? 'on' : ''} ${d.forced ? 'forced' : ''}`, 'aria-pressed': String(this.forceOn), title: t('dir.forceTip'),
         onclick: () => this.toggleForce(),
       }, t('dir.force')),
+      this.autoRow(w, f),
       h('div', { class: 'order-how' }, armed ? t(`dir.pick.${armed}`) : t('dir.how')),
       this.zones.el,
     );
