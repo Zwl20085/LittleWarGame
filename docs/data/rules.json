@@ -460,7 +460,7 @@
     "comment": "3.0 roads and railways (V30_SPEC §10, transport.ts / roadnet.ts / rail.ts / transportjobs.ts). enabled=false restores the 2.2 ground multipliers (road 1.05 foot / 1.35 vehicle, open 1) and switches rail and the engineer road/rail jobs off (lab A/B). On a road (or a town street) every class moves at on_road; off it at off_road[class], stacked with the forest / town / mud and grade modifiers. Class: vehicles tracked, crews towed, infantry infantry, overridden per unit by class_of.",
     "enabled": true,
     "on_road": 1.0,
-    "off_road": {"tracked": 0.6, "wheeled": 0.4, "infantry": 0.75, "towed": 0.5},
+    "off_road": {"tracked": 0.6, "wheeled": 0.55, "infantry": 0.75, "towed": 0.5},
     "class_of": {"supply_truck": "wheeled", "train": "wheeled", "mg": "infantry", "mortar": "infantry"},
     "town_counts_as_road": true,
     "ford_nav_cost": 2.5,
