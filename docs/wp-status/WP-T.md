@@ -1,48 +1,31 @@
-# WP-T status — balance & pace tuning (resume point)
+# WP-T status — balance & pace tuning
 
 Branch `worktree-agent-ab891e6b96ae2b9b8`; feat/v3.0 merged in at 4c3e73d (WP-REV) and 428147f (e4af9b6:
-perf, refactor, README, 3.0.0). State: **in progress** — final runs on the merged tree pending.
+perf, refactor, README, 3.0.0). State: **complete** (report delivered). Full write-up: docs/BALANCE_LAB.md,
+"2026-10-17 3.0 tuning round". typecheck + vitest green (43 files, 364 tests).
 
-## Tooling (committed)
-- `LAB_SET="a.b=1;unit.x.cost_p*=1.1"` env overrides in soak, challenge, anomaly runner and every lab30 suite
-  (`scripts/lab/overrides.ts envOverrides`); `:=` sets an optional rules leaf. Soak prints `ELIMINATIONS n at [...]`.
-- `scripts/lab30/pace.ts` per-faction finish target / finisher / directive / doctrine phase / ring probe.
-- `scripts/lab30/upgrade.ts --parts engage` (`upgradeEngage.ts`): fixed single engagements per combat item.
-- `defence.ts`: kill attribution by defender type, `--tiers`. Soak/pace: `FINISH_BROKEN=0`, `FINISH_SET='{...}'`.
-- Scratch runners in the session scratchpad (soakp.sh = 6 seeds in parallel; multi.sh = assault variants).
+## Commits
+- 4258d29 / 700fdc1 lab tooling: `LAB_SET` env overrides everywhere (soak, challenge, anomaly, lab30), `:=`
+  override, soak `ELIMINATIONS` line, `scripts/lab30/pace.ts`, upgrade lab `--parts engage`
+  (`upgradeEngage.ts`), assault kill attribution + `--tiers`.
+- dc5b5b1 fix(upgrades): inf_guns never fired during an attack-move (dead item).
+- (upgrade prices) balance(upgrades): ap_grenades, inf_guns, armour_3, gun_3 repriced from the engagement lab.
+- b622e41 balance(works): bunker 0 → 50 %, fortress 0 → 29 % (AT guns in concrete); 4768b0d test.
+- 87ffd8c + 902b638 balance(pace): broken-target finisher (storm.FINISH broken*) + lighter perimeter.
+- 51cc0d7 balance(doctrines): maneuver retune. 411c42a balance(transport): wheeled off-road 0.55; a14843a tests.
 
-## Done
-1. Works tiers (b622e41): bunker 0 → 50 %, fortress 0 → 29 % (AT guns in concrete were untouchable; cover lever).
-2. inf_guns was dead (dc5b5b1): gun team never fired while the squad attack-moved. Fixed.
-3. Upgrade prices (engagement lab, 3c… see git log): ap_grenades, inf_guns, armour_3, gun_3; all combat items in band.
-4. Finisher for a broken side (87ffd8c, storm.FINISH brokenHeldShare 0.65 / brokenArmyRatio 1.5 /
-   brokenStrongestRatio 0.8 / brokenFullness 0.7).
+## Results (final tree)
+- Pace (6 seeds × 60 min): eliminations 2 → 6 (0.33 → 1.00 /h); every seed now has a fallen capital
+  (36–59 min); 0/6 wars end. Goal 1.5 /h and 50 % ended NOT met — a beaten side keeps ~70 % of the leader's
+  income and ~400 pop at home; needs a beaten-side economy change (lead decision).
+- Assault win %: open 64, trenches 86, pillboxes 93, bunkers 50, fortress 29.
+- Doctrine matrix win / loss: builder 62/19, blitz 33/38, attrition 33/52, maneuver 24/43 (was 5/90);
+  fingerprints 71 %.
+- Upgrades (engagement value/cost ÷ median): all combat items 0.74–1.5.
+- Anomaly ammo_starved (4 seeds × 30 min): WP-I tree 22, wheeled 0.4 41, 0.55 24.
+- Challenge --all: 53/54 (2.x 21/21); shadow_strike seed 11 took a beaten side's capital at 35:02 (outmatched
+  per the lab). min_held_share 0.6 → 9/9 cheap-win holds but only 3 eliminations: lead to choose.
 
-## Pace (6 seeds × 60 min, eliminations; 0/6 wars ended in every config)
-| config | 7 | 11 | 13 | 17 | 19 | 23 | total | /h |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|
-| baseline (merged REV tree) | 0 | 1 | 0 | 1 | 0 | 0 | 2 | 0.33 |
-| + finisher v1 (ring-unsupported target, ratio 2) | 0 | 1 | 0 | 1 | 0 | 1 | 3 | 0.50 |
-| + finisher v2 (held share 0.65, ratio 1.5) | 0 | 0 | 1 | 2 | 0 | 0 | 3 | 0.50 |
-| v2 + K1 ring stands down < 0.7 held share | 1 | 1 | 0 | 0 | 1 | 1 | 4 | 0.67 |
-| v2 + K2 (K1 + 4 strongpoints, 6000 HP, crew respawn 150 s) | 1 | 2 | 0 | 1 | 2 | 1 | 7 | 1.17 |
-| v2 + K3 perimeter off (bound) | 1 | 1 | 0 | 1 | 1 | 1 | 5 | 0.83 |
-| K2 rerun on works/upgrade rules | 1 | 2 | 0 | 1 | 1 | 1 | 6 | 1.00 |
-| K2 + earlier finisher (fullness 0.55, strongest 0.7) | 1 | 2 | 0 | 1 | 1 | 1 | 6 | 1.00 |
-| K2 + capital_pop_share 0.15 | 1 | 1 | 0 | 1 | 1 | 0 | 4 | 0.67 |
-| K2 + finisher ratio 1.2 | 1 | 2 | 0 | 1 | 1 | 1 | 6 | 1.00 |
-
-Finding: the first capital falls at 37–55 min in every config; a beaten side (12–20 settlements) keeps ~70 %
-of the leader's income and pop 400 at home (capital pop share + capital econ buildings), so leaders sit at
-army ratio 1.0–1.4 and rarely commit. 50 % of wars ending inside 60 min would need three eliminations per war:
-not reachable by these levers.
-
-## Maneuver (doctrine lab --only maneuver, 3 seeds, 45 min)
-| | maneuver win / loss |
-|---|---|
-| feat/v3.0 | 5 / 90 % |
-| M1: occupy 0.7→1.1, main_share 1.8→1.3, battle after_s 300→600, cooldown 60→180, min_fullness 0.5→0.7 | 24 / 57 % |
-
-## Next
-Apply K2 + M1 (nudged) to rules.json, final soak / full doctrine lab / challenge / anomaly before-after on the
-merged tree, BALANCE_LAB.md 3.0 section, typecheck + tests, report.
+## Open
+- Beaten-side economy (capital base income / capital econ buildings / capital_pop_share) is the next lever.
+- fronts.test defend-order sample floor is sensitive to transport speed (now >= 3 settled squads).
