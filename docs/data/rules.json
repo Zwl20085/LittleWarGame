@@ -403,7 +403,7 @@
         "raid_rate": 0.6, "raid_targets": {"econ": 1, "convoy": 0.5, "rail": 0, "zone": 1}, "raid_on_defence": false,
         "front_density": 1.0, "picket_gap": 1.0, "temperament": 0, "main_share": 1.0, "armour_main_share": 0.6,
         "offensive": {"mode": "late", "after_s": 1500, "min_fullness": 0.8, "max_s": 900, "break_share": 0.6, "cooldown_s": 240, "force_after_s": 0, "force_ratio": 0, "between": "advance"},
-        "upgrades": ["truck_capacity", "engineer_speed", "staff", "full_motorization", "tank_armour"]
+        "upgrades": ["truck_capacity", "eng_speed", "staff", "motorization", "armour_1", "ap_grenades", "inf_guns", "gun_1", "arty_range", "armour_2", "gun_2", "armour_3", "gun_3"]
       },
       "blitz": {
         "personality": "balanced",
@@ -415,7 +415,7 @@
         "raid_rate": 0.5, "raid_targets": {"econ": 1, "convoy": 0.5, "rail": 0, "zone": 0}, "raid_on_defence": false,
         "front_density": 1.15, "picket_gap": 1.0, "temperament": 0.2, "main_share": 1.4, "armour_main_share": 0.8,
         "offensive": {"mode": "strike", "after_s": 540, "min_fullness": 0.7, "max_s": 720, "break_share": 0.6, "cooldown_s": 150, "force_after_s": 480, "force_ratio": 1.15, "between": "advance"},
-        "upgrades": ["tank_gun", "tank_armour", "full_motorization", "truck_capacity"]
+        "upgrades": ["gun_1", "armour_1", "motorization", "truck_capacity", "gun_2", "armour_2", "staff", "gun_3", "armour_3", "ap_grenades", "inf_guns", "arty_range", "eng_speed"]
       },
       "attrition": {
         "personality": "infantry",
@@ -427,7 +427,7 @@
         "raid_rate": 2.0, "raid_targets": {"econ": 1, "convoy": 1, "rail": 1, "zone": 1}, "raid_on_defence": true,
         "front_density": 1.5, "picket_gap": 0.7, "temperament": -0.1, "main_share": 1.0, "armour_main_share": 0.6,
         "offensive": {"mode": "late", "after_s": 1800, "min_fullness": 0.8, "max_s": 900, "break_share": 0.65, "cooldown_s": 300, "force_after_s": 0, "force_ratio": 0, "between": "advance"},
-        "upgrades": ["attached_guns", "artillery_range", "ap_grenades", "staff"]
+        "upgrades": ["inf_guns", "arty_range", "ap_grenades", "staff", "eng_speed", "truck_capacity", "armour_1", "gun_1", "motorization", "armour_2", "gun_2", "armour_3", "gun_3"]
       },
       "maneuver": {
         "personality": "mechanized",
@@ -439,7 +439,7 @@
         "raid_rate": 0.7, "raid_targets": {"econ": 1, "convoy": 1, "rail": 0, "zone": 0}, "raid_on_defence": false,
         "front_density": 1.3, "picket_gap": 1.35, "temperament": -0.05, "main_share": 1.8, "armour_main_share": 0.9,
         "offensive": {"mode": "battle", "after_s": 300, "min_fullness": 0.5, "max_s": 420, "break_share": 0.6, "cooldown_s": 60, "force_after_s": 0, "force_ratio": 0, "between": "advance"},
-        "upgrades": ["full_motorization", "tank_gun", "artillery_range", "truck_capacity"]
+        "upgrades": ["motorization", "gun_1", "arty_range", "truck_capacity", "armour_1", "staff", "gun_2", "armour_2", "ap_grenades", "inf_guns", "gun_3", "armour_3", "eng_speed"]
       }
     }
   },

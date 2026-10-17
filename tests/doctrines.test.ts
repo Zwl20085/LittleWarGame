@@ -5,8 +5,15 @@ import { buildGameData } from '../src/data/loader';
 import { createMatch } from '../src/sim/sim';
 import {
   assignDoctrines, DOCTRINE_AB, DOCTRINE_IDS, doctrineCaps, doctrineKnown, doctrineWeights, frontDensity, investWeight, markContact,
-  occupyWeight, profileOf, raidIntervalMul, retreatHp, temperamentBias,
+  occupyWeight, picketGapMul, profileOf, raidIntervalMul, raidsHeld, retreatHp, retreatHpOf, temperamentBias, DOCTRINE_RAID,
 } from '../src/sim/doctrines';
+import { picketGap } from '../src/sim/pickets';
+import { pointAlong, railSecond } from '../src/sim/rail';
+import { cutByRaid, pickRailTarget, RAIL_RAID, RAIL_RAID_STATS, railRaider } from '../src/sim/railraid';
+import { completeJob, startRailRepair } from '../src/sim/transportjobs';
+import type { RailLine } from '../src/sim/transportstate';
+import { nextWanted, upgradePriority } from '../src/sim/upgrades';
+import { dist, type V2 } from '../src/sim/vec';
 import { doctrineDirective, doctrinePhase } from '../src/sim/doctrineai';
 import { thinkInvestment } from '../src/sim/econai';
 import { investStyleOf } from '../src/sim/econZoneAi';
@@ -189,5 +196,143 @@ describe('doctrines: discovery and rules', () => {
     const bad2 = structuredClone(rules);
     bad2.doctrines.profiles.maneuver.offensive.mode = 'yolo';
     expect(() => buildGameData(rd('units.csv'), rd('weapons.csv'), JSON.stringify(bad2))).toThrow(/offensive.mode/);
+  });
+});
+
+describe('doctrines: seams wired (WP-Y)', () => {
+  /** A 4-FFA with attrition in slot 0 and builder in slot 1 (spectated: every slot is an AI; seed 7 has town-to-town lines). */
+  const ffa = (): World => createMatch(data, {
+    mapId: 'generated', factions: 4, infoMode: 'open', seed: 7, difficulty: 'normal', playerSlot: 0, spectate: true,
+    doctrines: ['attrition', 'builder', 'blitz', 'maneuver'],
+  }).world;
+
+  /** The longest line between two towns, held by faction f (rail.ts state refreshed). */
+  function heldLine(w: World, f: number): RailLine {
+    const st = w.transport!;
+    const line = [...st.lines].sort((a, b) => b.len - a.len || a.id - b.id).find((l) => st.stations[l.a].placeIdx >= 0 && st.stations[l.b].placeIdx >= 0)!;
+    for (const sid of [line.a, line.b]) w.objectives[st.stations[sid].placeIdx].owner = f;
+    w.tick = Math.ceil(w.tick / 40 + 1) * 40;
+    railSecond(w, null);
+    return line;
+  }
+
+  const frontAt = (w: World, f: number, cells: V2[]): void => {
+    w.frontInfo[f] = { cells, enemyDist: new Float32Array(1), nx: 1, nz: 1, cell: 1 };
+  };
+
+  it('rail raids: only a doctrine with rail weight raids rail; the target is an enemy-held line near our front', () => {
+    const w = ffa();
+    expect(railRaider(w, w.factions[0])).toBe(true);
+    for (const f of w.factions.slice(1)) expect(railRaider(w, f)).toBe(false);
+    const line = heldLine(w, 1);
+    expect(line.heldBy).toBe(1);
+    const mid = pointAlong(line.pts, line.cum, line.len / 2);
+    frontAt(w, 0, [{ x: mid.x + 200, z: mid.z }]);
+    const pick = pickRailTarget(w, w.factions[0], 400);
+    expect(pick).not.toBeNull();
+    expect(pick!.line).toBe(line.id);
+    expect(dist(pick!.pos, pick!.cell)).toBeLessThanOrEqual(RAIL_RAID.rangeM);
+    // Too far from our front, our own line, or a line already cut: not a target.
+    const far = RAIL_RAID.rangeM + line.len;
+    frontAt(w, 0, [{ x: mid.x + far, z: mid.z + far }]);
+    expect(pickRailTarget(w, w.factions[0], 400)?.line).not.toBe(line.id);
+    frontAt(w, 1, [{ x: mid.x + 200, z: mid.z }]);
+    expect(pickRailTarget(w, w.factions[1], 400)?.line).not.toBe(line.id);
+    line.cut = true;
+    expect(pickRailTarget(w, w.factions[0], 400)?.line).not.toBe(line.id);
+    line.cut = false;
+  });
+
+  it('rail raids: a cut by raiders stops the trains and goes through the normal engineer repair', () => {
+    const w = ffa();
+    const line = heldLine(w, 1);
+    expect(line.owner).toBe(1);
+    const before = RAIL_RAID_STATS.cuts ?? 0;
+    expect(cutByRaid(w, 0, line.id, -1)).toBe(1);
+    expect(RAIL_RAID_STATS.cuts).toBe(before + 1);
+    expect(line.cut).toBe(true);
+    // A cut line is not cut twice; the holder's own raiders never cut it.
+    expect(cutByRaid(w, 0, line.id, -1)).toBe(0);
+    w.tick += 40;
+    railSecond(w, null);
+    expect(line.owner).toBe(-1);
+    w.factions[1].p = 1e5;
+    w.factions[1].m = 1e5;
+    const job = startRailRepair(w, 1, line.id);
+    expect(job.ok).toBe(true);
+    if (job.ok) completeJob(w, job.job);
+    w.tick += 40;
+    railSecond(w, null);
+    expect(line.cut).toBe(false);
+    expect(line.owner).toBe(1);
+    expect(cutByRaid(w, 1, line.id, -1)).toBe(0);
+    // At a station every hostile whole line through it is cut.
+    const st = w.transport!;
+    const hostile = st.stations[line.a].lines.filter((id) => !st.lines[id].cut && st.lines[id].heldBy >= 0 && w.isHostile(0, st.lines[id].heldBy)).length;
+    expect(cutByRaid(w, 0, line.id, line.a)).toBe(hostile);
+    expect(line.cut).toBe(true);
+  });
+
+  it('picket spacing: attrition pickets tighter, maneuver looser, builder / blitz / the player / doctrines off neutral', () => {
+    const w = ffa();
+    const [attrition, builder, blitz, maneuver] = w.factions;
+    expect(picketGapMul(w, attrition)).toBeLessThan(1);
+    expect(picketGapMul(w, maneuver)).toBeGreaterThan(1);
+    expect(picketGapMul(w, builder)).toBe(1);
+    expect(picketGapMul(w, blitz)).toBe(1);
+    const r = w.data.rules.infiltration!;
+    expect(picketGap(r, 0, picketGapMul(w, attrition))).toBeLessThan(picketGap(r, 0));
+    expect(picketGap(r, 0, picketGapMul(w, maneuver))).toBeGreaterThan(picketGap(r, 0));
+    const p = duel(['attrition', 'blitz'], 21, false);
+    expect(picketGapMul(p, p.factions[0])).toBe(1);
+    DOCTRINE_AB.on = false;
+    try {
+      expect(picketGapMul(w, attrition)).toBe(1);
+    } finally {
+      DOCTRINE_AB.on = true;
+    }
+  });
+
+  it('upgrades: a doctrine AI buys in its doctrine order (rules profile = upgrades.ts row); doctrines off = personality row', () => {
+    const w = ffa();
+    for (const f of w.factions) {
+      expect(upgradePriority(f.doctrine)).toEqual(data.rules.doctrines!.profiles[f.doctrine].upgrades);
+      expect(nextWanted(f, data.rules.upgrades!, w)).toBe(upgradePriority(f.doctrine)[0]);
+    }
+    DOCTRINE_AB.on = false;
+    try {
+      const f = w.factions[0];
+      expect(nextWanted(f, data.rules.upgrades!, w)).toBe(upgradePriority(undefined, f.personality)[0]);
+    } finally {
+      DOCTRINE_AB.on = true;
+    }
+  });
+
+  it('home-defence reserve: capital guards keep the rules retreat threshold; no new raid on alert or past the raid share', () => {
+    const w = ffa();
+    const dflt = w.data.rules.morale.auto_retreat_hp_ratio;
+    const f = w.factions[0];
+    const u = [...w.aliveUnits].find((x) => x.owner === 0 && x.def.id === 'infantry')!;
+    u.opRole = 'line';
+    u.opObjective = null;
+    expect(retreatHpOf(w, u)).toBe(retreatHp(w, 0));
+    expect(retreatHpOf(w, u)).toBeGreaterThan(dflt);
+    u.opRole = 'garrison';
+    u.opObjective = 'hq:0';
+    expect(retreatHpOf(w, u)).toBe(dflt);
+    // A town garrison is not a capital guard.
+    u.opObjective = 'obj:3';
+    expect(retreatHpOf(w, u)).toBe(retreatHp(w, 0));
+    expect(raidsHeld(w, f)).toBe(false);
+    f.command.homeThreat.alert = true;
+    expect(raidsHeld(w, f)).toBe(true);
+    f.command.homeThreat.alert = false;
+    const army = [...w.aliveUnits].filter((x) => x.owner === 0 && !x.fixed && x.def.id !== 'supply_truck' && x.def.id !== 'commander');
+    for (const x of army.slice(0, Math.ceil(army.length * DOCTRINE_RAID.maxShare))) x.opRole = 'raid';
+    expect(raidsHeld(w, f)).toBe(true);
+    // The player is never held by a doctrine (2.2 raid rules only).
+    const p = duel(['attrition', 'blitz'], 21, false);
+    p.factions[0].command.homeThreat.alert = true;
+    expect(raidsHeld(p, p.factions[0])).toBe(false);
   });
 });

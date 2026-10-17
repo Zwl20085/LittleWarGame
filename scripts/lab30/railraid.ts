@@ -5,7 +5,7 @@
  * repairs (true → false), rail raid launches, and the builder's usable-line time (line-minutes it
  * could run trains on).
  *
- *   npx tsx scripts/lab30/railraid.ts [--seeds 7,11,13] [--minutes 30] [--jobs 6] [--src src] [--data docs/data] [--tag after]
+ *   npx tsx scripts/lab30/railraid.ts [--seeds 7,11,13] [--minutes 30] [--jobs 6] [--src src] [--data docs/data] [--ffa] [--tag after]
  *
  * `--src <frozen tree>/src --data <frozen tree>/docs/data` runs the "before" tree (no rail raids) for the A/B.
  * Output: media/stats/lab30/railraid-<tag>-<ts>.{md,json}.
@@ -59,8 +59,9 @@ async function main(): Promise<void> {
   const minutes = a.num('minutes', 30);
   const list: Spec[] = [];
   for (const seed of a.nums('seeds', '7,11,13')) {
-    for (const pair of [['attrition', 'builder'], ['builder', 'attrition']]) {
-      list.push({ seed, minutes, mapSize: 'medium', factions: 2, src, data, doctrines: pair, config: { doctrines: pair } });
+    const sets = a.has('ffa') ? [['attrition', 'builder', 'blitz', 'maneuver']] : [['attrition', 'builder'], ['builder', 'attrition']];
+    for (const pair of sets) {
+      list.push({ seed, minutes, mapSize: 'medium', factions: pair.length, src, data, doctrines: pair, config: { doctrines: pair } });
     }
   }
   console.log(`rail raid lab: ${list.length} matches (${tag}, src ${src})`);
@@ -68,11 +69,11 @@ async function main(): Promise<void> {
   const rows = outs.map((o) => [o.seed, o.doctrines.join(' v '), o.minutes, o.lines, o.cuts, o.raidCuts, o.repairs, o.launches, o.builderLineMin, o.attritionLineMin]);
   const sum = (k: keyof Out): number => outs.reduce((s, o) => s + (o[k] as number), 0);
   rows.push(['all', '', '', sum('lines'), sum('cuts'), sum('raidCuts'), sum('repairs'), sum('launches'), sum('builderLineMin'), sum('attritionLineMin')]);
-  const md = `# Rail raid lab (${tag})\n\nsrc ${src}, ${minutes} min, 1v1 attrition vs builder, both slot orders.\n\n`
-    + mdTable(['seed', 'slots', 'min', 'lines', 'cuts', 'by raids', 'repairs', 'raid launches', 'builder line-min', 'attrition line-min'], rows)
-    + `\n\nRail raid counters (all matches): ${Object.entries(why).sort().map(([k, v]) => `${k} ${v}`).join(', ') || 'none'}\n`;
   const why: Record<string, number> = {};
   for (const o of outs) for (const [k, v] of Object.entries(o.stats)) why[k] = (why[k] ?? 0) + v;
+  const md = `# Rail raid lab (${tag})\n\nsrc ${src}, ${minutes} min, ${a.has("ffa") ? "4-FFA attrition, builder, blitz, maneuver" : "1v1 attrition vs builder, both slot orders"}.\n\n`
+    + mdTable(['seed', 'slots', 'min', 'lines', 'cuts', 'by raids', 'repairs', 'raid launches', 'builder line-min', 'attrition line-min'], rows)
+    + `\n\nRail raid counters (all matches): ${Object.entries(why).sort().map(([k, v]) => `${k} ${v}`).join(', ') || 'none'}\n`;
   const p = writeReport(`railraid-${tag}-${stamp()}`, md, outs);
   console.log(md);
   console.log(`\nwritten ${p.md}`);

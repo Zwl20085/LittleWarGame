@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { loadGameData } from '../src/data';
 import { createMatch, step } from '../src/sim/sim';
 import { thinkHighCommand } from '../src/sim/command';
-import { HOME } from '../src/sim/homeguard';
+import { HOME, thinkHomeDefence } from '../src/sim/homeguard';
 import { angleDiff, dist, headingTo } from '../src/sim/vec';
 
 /** Round 3 home defence: forecast → graded recall → fortification → stand-down (docs/STRATEGY_LAB.md). */
@@ -57,5 +57,26 @@ describe('home defence (homeguard.ts)', () => {
     }
     expect(ht.active).toBe(false);
     expect(ht.recall.length).toBe(0);
+  });
+
+  it('WP-Y: on a breach a unit recovering at home above the rules retreat threshold rejoins as a guard', () => {
+    const { world } = setup();
+    const f = world.factions[0];
+    const hq = world.hqPos(0);
+    const dflt = world.data.rules.morale.auto_retreat_hp_ratio;
+    const near = world.terrain.freeNear({ x: hq.x + 60, z: hq.z }, 30);
+    const healed = world.spawnUnit(0, 'infantry', near, 0);
+    const weak = world.spawnUnit(0, 'infantry', { x: near.x + 6, z: near.z }, 0);
+    healed.hp = healed.def.maxHp * (dflt + 0.1);
+    weak.hp = weak.def.maxHp * dflt * 0.5;
+    for (const u of [healed, weak]) u.behavior = 'recover';
+    // A breach: an attacker has capture progress on the HQ point.
+    f.hqProgress = { 1: 1 };
+    thinkHomeDefence(world, f);
+    expect(f.command.homeThreat.breach).toBe(true);
+    expect(healed.opRole).toBe('garrison');
+    expect(healed.opObjective).toBe('hq:0');
+    expect(healed.behavior).toBe('advance');
+    expect(weak.behavior).toBe('recover');
   });
 });

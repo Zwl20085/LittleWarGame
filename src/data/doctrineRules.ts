@@ -73,7 +73,7 @@ export interface DoctrineProfileRules {
   /** Share of the faction's tanks the main front may hold under advance (armour.armourFront). */
   readonly armour_main_share: number;
   readonly offensive: DoctrineOffensiveRules;
-  /** Upgrade priorities (placeholder for WP-H, unit upgrades). */
+  /** AI upgrade purchase order (upgrades.ts UPGRADE_PRIORITY doctrine rows; upgrade ids). */
   readonly upgrades: readonly string[];
 }
 

@@ -11,7 +11,7 @@ import type { World } from './world';
 
 /**
  * 3.0 rail raids (doctrines `raid_targets.rail`, DOCTRINES.md "Seams"): an AI whose doctrine
- * weights rail raids (attrition) sends a small party (2–3 squads, an engineer first) at an enemy
+ * weights rail raids (attrition) sends a small party (3–4 squads, nearest first, at most one engineer) at an enemy
  * railway — a point on the track or a station near our front, thinly defended, reached through a
  * thin corridor (the econwar.ts party rules). A party member standing within `cutR` of the target
  * for `cutS` tears the track up: the line is cut exactly like a line whose station fell to an enemy
@@ -23,17 +23,20 @@ export const RAIL_RAID = {
   /** First launch attempt not before this; then every everyS × the doctrine's rail interval multiplier. */
   firstS: 420,
   everyS: 150,
-  partyMin: 2,
-  partyMax: 3,
+  partyMin: 3,
+  partyMax: 4,
   /** Track sample spacing for target points (m); line ends are the stations. */
   sampleM: 150,
-  /** A station end counts within this of the line's first / last point (m). */
-  stationM: 30,
   /** Demolition: a member within cutR of the target point for cutS seconds cuts the line. */
-  cutR: 35,
-  cutS: 20,
+  cutR: 60,
+  cutS: 10,
+  /** Distance falloff from our front (m): the nearest reachable track wins over a deep station. */
+  nearM: 300,
   /** Party time budget (s). */
-  maxS: 360,
+  maxS: 900,
+  /** Target within rangeM of our front cells (enemy-held track lies deep); party drawn within poolM of that front cell. */
+  rangeM: 1300,
+  poolM: 900,
 } as const;
 
 /** Lab counters: launches, cuts (lines cut by raids), why a launch did not happen. */
@@ -84,13 +87,13 @@ export function pickRailTarget(world: World, f: Faction, partyValue: number): Ra
       const pos = pointAlong(l.pts, l.cum, (k / n) * l.len);
       const station = k === 0 ? l.a : k === n ? l.b : -1;
       const { cell, d } = nearestCell(world, f.id, pos);
-      if (!cell || d > ECON_WAR.rangeM) continue;
+      if (!cell || d > RAIL_RAID.rangeM) continue;
       const defence = knownDefence(world, f.id, pos, ECON_WAR.defR);
       if (defence > partyValue * ECON_WAR.maxDefence) continue;
       const corridor = corridorDefence(world, f.id, cell, pos);
       if (corridor > partyValue * ECON_WAR.maxCorridor) continue;
       const worth = (station >= 0 ? linesAt(world, f.id, station).length : 1) * (l.owner >= 0 ? 1 : 0.5);
-      const score = worth / ((1 + (defence + corridor) / 300) * (1 + d / 700));
+      const score = worth / ((1 + (defence + corridor) / 300) * (1 + d / RAIL_RAID.nearM));
       if (!best || score > best.score + 1e-9) best = { line: l.id, station, pos, defence, score, cell };
     }
   }
@@ -131,15 +134,16 @@ export function planRailRaids(world: World, f: Faction): void {
   if (f.command.homeThreat.alert) return count('alert');
   if (raidsHeld(world, f)) return count('held');
   const rifle = world.data.units.get('infantry');
-  const typical = rifle ? 2 * (rifle.costP + rifle.costM) : 200;
+  const typical = rifle ? 4 * (rifle.costP + rifle.costM) : 200;
   const pick = pickRailTarget(world, f, typical);
   if (!pick) return count('noTarget');
   const bound = new Set(f.fronts.filter(boundOrder).map((s) => s.id));
   const pool: Unit[] = [];
   for (const u of world.aliveUnits) {
-    if (u.owner === f.id && RAIDER_IDS.has(u.def.id) && freeSquad(u, bound) && dist(u.pos, pick.cell) <= ECON_WAR.poolR) pool.push(u);
+    if (u.owner === f.id && RAIDER_IDS.has(u.def.id) && freeSquad(u, bound) && dist(u.pos, pick.cell) <= RAIL_RAID.poolM) pool.push(u);
   }
-  pool.sort((a, b) => raiderRank(a) - raiderRank(b) || dist(a.pos, pick.pos) - dist(b.pos, pick.pos) || a.id - b.id);
+  // Nearest first (time budget); at most one engineer.
+  pool.sort((a, b) => dist(a.pos, pick.pos) - dist(b.pos, pick.pos) || raiderRank(a) - raiderRank(b) || a.id - b.id);
   const size = Math.min(RAIL_RAID.partyMax, RAIL_RAID.partyMin + (pick.defence > 0 ? 1 : 0));
   const party: Unit[] = [];
   let eng = 0;
