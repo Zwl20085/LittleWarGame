@@ -1,5 +1,6 @@
 // Challenge lab: shared types. A strategy is a scripted supreme HQ that plays one faction purely
 // through the public command API (CommandBus.issue), like the UI would.
+import type { ExperienceLog } from './experience';
 import type { Command } from '../../src/sim/commands';
 import type { Match } from '../../src/sim/sim';
 import type { Faction } from '../../src/sim/types';
@@ -8,6 +9,8 @@ import type { World } from '../../src/sim/world';
 export interface ChallengeParams {
   /** Seconds after which `rush` launches its capital attack. */
   readonly rushAt: number;
+  /** Strategy variant (`--variant`), e.g. armour_raid `15-direct`; '' = the strategy's default. */
+  readonly variant: string;
 }
 
 /** What a strategy may use: the world (read-only by convention), its faction, and `issue`. */
@@ -27,6 +30,8 @@ export interface StrategyCtx {
 export interface Strategy {
   readonly id: string;
   readonly summary: string;
+  /** 3.0: no scripted player, all four factions are the normal AI (pacing / one-sidedness baseline). */
+  readonly aiOnly?: boolean;
   /** Called once before the first tick. */
   setup(ctx: StrategyCtx): void;
   /** Called once per game second. */
@@ -117,6 +122,10 @@ export interface CapitalEvent {
 export interface ChallengeReport {
   readonly strategy: string;
   readonly infoMode?: 'open' | 'fog';
+  readonly mapSize?: 'medium' | 'large';
+  readonly variant?: string;
+  /** 3.0 player-experience time series (experience.ts evaluates it). */
+  readonly experience?: ExperienceLog;
   /** Round-7 AI fixes switched off for this match (R7_OFF), '' = all on. */
   readonly r7off?: string;
   readonly seed: number;

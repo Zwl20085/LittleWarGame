@@ -7,7 +7,7 @@ const mean = (xs: number[]): number => (xs.length ? xs.reduce((a, b) => a + b, 0
 const fmt = (x: number, d = 0): string => (Number.isFinite(x) ? x.toFixed(d) : '—');
 
 export const label = (r: ChallengeReport, rushAt: number): string =>
-  `${r.strategy.startsWith('rush') ? `${r.strategy}@${Math.round(rushAt / 60)}m` : r.strategy}${r.infoMode === 'fog' ? '/fog' : ''}${r.r7off ? `/r7off:${r.r7off}` : ''}`;
+  `${r.strategy.startsWith('rush') ? `${r.strategy}@${Math.round(rushAt / 60)}m` : r.strategy}${r.variant ? `:${r.variant}` : ''}${r.infoMode === 'fog' ? '/fog' : ''}${r.mapSize === 'large' ? '/large' : ''}${r.r7off ? `/r7off:${r.r7off}` : ''}`;
 
 /** The AI faction the match is about: the capital the strategy attacked, else the nearest. */
 export const targetOf = (r: ChallengeReport): AiDefence => r.ai.find((a) => a.id === (r.attackTarget >= 0 ? r.attackTarget : r.nearestAi)) ?? r.ai[0];

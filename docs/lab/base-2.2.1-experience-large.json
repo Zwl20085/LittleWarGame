@@ -1,0 +1,4143 @@
+{
+ "generated": "2026-10-17T01:11:39.405Z",
+ "command": "npx tsx scripts/challenge.ts --suite diversity --seeds 7,11 --minutes 40 --jobs 7 --map-size large --variant 15-flank --experience --experience-out docs/lab/base-2.2.1-experience-large.json",
+ "bands": {
+  "dominatedShare": {
+   "pass": 0.4,
+   "warn": 0.6
+  },
+  "giniAt30": {
+   "pass": 0.45,
+   "warn": 0.6
+  },
+  "warnS": {
+   "pass": 90,
+   "warn": 45
+  },
+  "firstContactS": {
+   "low": 120,
+   "passFrom": 180,
+   "passTo": 900,
+   "warnTo": 1500
+  },
+  "firstCapitalLostS": {
+   "pass": 900,
+   "warn": 600
+  },
+  "eliminationsPerHour": {
+   "pass": 3,
+   "warn": 5
+  },
+  "idleShare": {
+   "pass": 0.15,
+   "warn": 0.3
+  },
+  "stuckShare": {
+   "pass": 0.03,
+   "warn": 0.08
+  },
+  "starvedShare": {
+   "pass": 0.25,
+   "warn": 0.45
+  }
+ },
+ "scenarios": [
+  {
+   "label": "rush@5m/large",
+   "n": 2,
+   "score": 85,
+   "verdict": "PASS",
+   "aiSurvival": 1,
+   "challengerCaptures": 0,
+   "capitalFalls": 1,
+   "minWarnS": 0,
+   "medianWarnS": 0,
+   "neverSeen": 1,
+   "cheapFlags": 0,
+   "dominatedShare": 0,
+   "leadChanges": 2,
+   "giniAt30": 0.16944683085147003,
+   "firstContactS": 405,
+   "firstCapitalLostS": 2121,
+   "eliminationsPerHour": 0.75,
+   "undecided": 2,
+   "idleShare": 0.04900618393602149,
+   "stuckShare": 0.003738029628883281,
+   "starvedShare": 0.502453200255457,
+   "scored": [
+    {
+     "name": "dominated share of time (> 70 % army)",
+     "value": 0,
+     "band": "pass",
+     "weight": 2
+    },
+    {
+     "name": "territory Gini at 30 min",
+     "value": 0.16944683085147003,
+     "band": "pass",
+     "weight": 1
+    },
+    {
+     "name": "cheap-win capital losses",
+     "value": 0,
+     "band": "pass",
+     "weight": 3
+    },
+    {
+     "name": "warning time before a capital loss (s)",
+     "value": 0,
+     "band": "fail",
+     "weight": 3
+    },
+    {
+     "name": "first contact (s)",
+     "value": 405,
+     "band": "pass",
+     "weight": 1
+    },
+    {
+     "name": "first capital lost (s)",
+     "value": 1060,
+     "band": "pass",
+     "weight": 2
+    },
+    {
+     "name": "eliminations per hour",
+     "value": 0.75,
+     "band": "pass",
+     "weight": 1
+    },
+    {
+     "name": "idle far from any front",
+     "value": 0.04900618393602149,
+     "band": "pass",
+     "weight": 1
+    },
+    {
+     "name": "stuck",
+     "value": 0.003738029628883281,
+     "band": "pass",
+     "weight": 1
+    },
+    {
+     "name": "supply-starved",
+     "value": 0.502453200255457,
+     "band": "fail",
+     "weight": 1
+    }
+   ]
+  },
+  {
+   "label": "turtle/large",
+   "n": 2,
+   "score": 85,
+   "verdict": "PASS",
+   "aiSurvival": 1,
+   "challengerCaptures": 0,
+   "capitalFalls": 1,
+   "minWarnS": 0,
+   "medianWarnS": 0,
+   "neverSeen": 1,
+   "cheapFlags": 0,
+   "dominatedShare": 0,
+   "leadChanges": 2,
+   "giniAt30": 0.2854286187113857,
+   "firstContactS": 474,
+   "firstCapitalLostS": 2210,
+   "eliminationsPerHour": 0.75,
+   "undecided": 2,
+   "idleShare": 0.04339349635292571,
+   "stuckShare": 0.003839921306349617,
+   "starvedShare": 0.5206955113096798,
+   "scored": [
+    {
+     "name": "dominated share of time (> 70 % army)",
+     "value": 0,
+     "band": "pass",
+     "weight": 2
+    },
+    {
+     "name": "territory Gini at 30 min",
+     "value": 0.2854286187113857,
+     "band": "pass",
+     "weight": 1
+    },
+    {
+     "name": "cheap-win capital losses",
+     "value": 0,
+     "band": "pass",
+     "weight": 3
+    },
+    {
+     "name": "warning time before a capital loss (s)",
+     "value": 0,
+     "band": "fail",
+     "weight": 3
+    },
+    {
+     "name": "first contact (s)",
+     "value": 474,
+     "band": "pass",
+     "weight": 1
+    },
+    {
+     "name": "first capital lost (s)",
+     "value": 1104.5,
+     "band": "pass",
+     "weight": 2
+    },
+    {
+     "name": "eliminations per hour",
+     "value": 0.75,
+     "band": "pass",
+     "weight": 1
+    },
+    {
+     "name": "idle far from any front",
+     "value": 0.04339349635292571,
+     "band": "pass",
+     "weight": 1
+    },
+    {
+     "name": "stuck",
+     "value": 0.003839921306349617,
+     "band": "pass",
+     "weight": 1
+    },
+    {
+     "name": "supply-starved",
+     "value": 0.5206955113096798,
+     "band": "fail",
+     "weight": 1
+    }
+   ]
+  },
+  {
+   "label": "two_axis/large",
+   "n": 2,
+   "score": 85,
+   "verdict": "PASS",
+   "aiSurvival": 1,
+   "challengerCaptures": 0,
+   "capitalFalls": 1,
+   "minWarnS": 0,
+   "medianWarnS": 0,
+   "neverSeen": 1,
+   "cheapFlags": 0,
+   "dominatedShare": 0,
+   "leadChanges": 1.5,
+   "giniAt30": 0.2543449745859977,
+   "firstContactS": 374,
+   "firstCapitalLostS": 2005,
+   "eliminationsPerHour": 0.75,
+   "undecided": 2,
+   "idleShare": 0.0377302943396149,
+   "stuckShare": 0.003526600704353798,
+   "starvedShare": 0.4983954005282818,
+   "scored": [
+    {
+     "name": "dominated share of time (> 70 % army)",
+     "value": 0,
+     "band": "pass",
+     "weight": 2
+    },
+    {
+     "name": "territory Gini at 30 min",
+     "value": 0.2543449745859977,
+     "band": "pass",
+     "weight": 1
+    },
+    {
+     "name": "cheap-win capital losses",
+     "value": 0,
+     "band": "pass",
+     "weight": 3
+    },
+    {
+     "name": "warning time before a capital loss (s)",
+     "value": 0,
+     "band": "fail",
+     "weight": 3
+    },
+    {
+     "name": "first contact (s)",
+     "value": 374,
+     "band": "pass",
+     "weight": 1
+    },
+    {
+     "name": "first capital lost (s)",
+     "value": 1002,
+     "band": "pass",
+     "weight": 2
+    },
+    {
+     "name": "eliminations per hour",
+     "value": 0.75,
+     "band": "pass",
+     "weight": 1
+    },
+    {
+     "name": "idle far from any front",
+     "value": 0.0377302943396149,
+     "band": "pass",
+     "weight": 1
+    },
+    {
+     "name": "stuck",
+     "value": 0.003526600704353798,
+     "band": "pass",
+     "weight": 1
+    },
+    {
+     "name": "supply-starved",
+     "value": 0.4983954005282818,
+     "band": "fail",
+     "weight": 1
+    }
+   ]
+  },
+  {
+   "label": "raid/large",
+   "n": 2,
+   "score": 94,
+   "verdict": "PASS",
+   "aiSurvival": 1,
+   "challengerCaptures": 0,
+   "capitalFalls": 1,
+   "minWarnS": 295,
+   "medianWarnS": 295,
+   "neverSeen": 0,
+   "cheapFlags": 0,
+   "dominatedShare": 0,
+   "leadChanges": 2,
+   "giniAt30": 0.27553940365134777,
+   "firstContactS": 402.5,
+   "firstCapitalLostS": 1698,
+   "eliminationsPerHour": 0.75,
+   "undecided": 2,
+   "idleShare": 0.04914474443934469,
+   "stuckShare": 0.002975753295762609,
+   "starvedShare": 0.5046960937101794,
+   "scored": [
+    {
+     "name": "dominated share of time (> 70 % army)",
+     "value": 0,
+     "band": "pass",
+     "weight": 2
+    },
+    {
+     "name": "territory Gini at 30 min",
+     "value": 0.27553940365134777,
+     "band": "pass",
+     "weight": 1
+    },
+    {
+     "name": "cheap-win capital losses",
+     "value": 0,
+     "band": "pass",
+     "weight": 3
+    },
+    {
+     "name": "warning time before a capital loss (s)",
+     "value": 295,
+     "band": "pass",
+     "weight": 3
+    },
+    {
+     "name": "first contact (s)",
+     "value": 402.5,
+     "band": "pass",
+     "weight": 1
+    },
+    {
+     "name": "first capital lost (s)",
+     "value": 848.5,
+     "band": "pass",
+     "weight": 2
+    },
+    {
+     "name": "eliminations per hour",
+     "value": 0.75,
+     "band": "pass",
+     "weight": 1
+    },
+    {
+     "name": "idle far from any front",
+     "value": 0.04914474443934469,
+     "band": "pass",
+     "weight": 1
+    },
+    {
+     "name": "stuck",
+     "value": 0.002975753295762609,
+     "band": "pass",
+     "weight": 1
+    },
+    {
+     "name": "supply-starved",
+     "value": 0.5046960937101794,
+     "band": "fail",
+     "weight": 1
+    }
+   ]
+  },
+  {
+   "label": "late_blitz/large",
+   "n": 2,
+   "score": 94,
+   "verdict": "PASS",
+   "aiSurvival": 1,
+   "challengerCaptures": 0,
+   "capitalFalls": 1,
+   "minWarnS": 138,
+   "medianWarnS": 138,
+   "neverSeen": 0,
+   "cheapFlags": 0,
+   "dominatedShare": 0,
+   "leadChanges": 3.5,
+   "giniAt30": 0.27276127992633514,
+   "firstContactS": 437,
+   "firstCapitalLostS": 1773,
+   "eliminationsPerHour": 0.75,
+   "undecided": 2,
+   "idleShare": 0.041324847770182166,
+   "stuckShare": 0.005430020229744483,
+   "starvedShare": 0.48738680775939386,
+   "scored": [
+    {
+     "name": "dominated share of time (> 70 % army)",
+     "value": 0,
+     "band": "pass",
+     "weight": 2
+    },
+    {
+     "name": "territory Gini at 30 min",
+     "value": 0.27276127992633514,
+     "band": "pass",
+     "weight": 1
+    },
+    {
+     "name": "cheap-win capital losses",
+     "value": 0,
+     "band": "pass",
+     "weight": 3
+    },
+    {
+     "name": "warning time before a capital loss (s)",
+     "value": 138,
+     "band": "pass",
+     "weight": 3
+    },
+    {
+     "name": "first contact (s)",
+     "value": 437,
+     "band": "pass",
+     "weight": 1
+    },
+    {
+     "name": "first capital lost (s)",
+     "value": 886,
+     "band": "pass",
+     "weight": 2
+    },
+    {
+     "name": "eliminations per hour",
+     "value": 0.75,
+     "band": "pass",
+     "weight": 1
+    },
+    {
+     "name": "idle far from any front",
+     "value": 0.041324847770182166,
+     "band": "pass",
+     "weight": 1
+    },
+    {
+     "name": "stuck",
+     "value": 0.005430020229744483,
+     "band": "pass",
+     "weight": 1
+    },
+    {
+     "name": "supply-starved",
+     "value": 0.48738680775939386,
+     "band": "fail",
+     "weight": 1
+    }
+   ]
+  },
+  {
+   "label": "human_like/large",
+   "n": 2,
+   "score": 94,
+   "verdict": "PASS",
+   "aiSurvival": 1,
+   "challengerCaptures": 0,
+   "capitalFalls": 0,
+   "minWarnS": null,
+   "medianWarnS": null,
+   "neverSeen": 0,
+   "cheapFlags": 0,
+   "dominatedShare": 0,
+   "leadChanges": 2,
+   "giniAt30": 0.20877659574468085,
+   "firstContactS": 450,
+   "firstCapitalLostS": null,
+   "eliminationsPerHour": 0,
+   "undecided": 2,
+   "idleShare": 0.04242327399042464,
+   "stuckShare": 0.004576020875150015,
+   "starvedShare": 0.4905738124305016,
+   "scored": [
+    {
+     "name": "dominated share of time (> 70 % army)",
+     "value": 0,
+     "band": "pass",
+     "weight": 2
+    },
+    {
+     "name": "territory Gini at 30 min",
+     "value": 0.20877659574468085,
+     "band": "pass",
+     "weight": 1
+    },
+    {
+     "name": "cheap-win capital losses",
+     "value": 0,
+     "band": "pass",
+     "weight": 3
+    },
+    {
+     "name": "warning time before a capital loss (s)",
+     "value": null,
+     "band": "pass",
+     "weight": 3
+    },
+    {
+     "name": "first contact (s)",
+     "value": 450,
+     "band": "pass",
+     "weight": 1
+    },
+    {
+     "name": "first capital lost (s)",
+     "value": -1,
+     "band": "pass",
+     "weight": 2
+    },
+    {
+     "name": "eliminations per hour",
+     "value": 0,
+     "band": "pass",
+     "weight": 1
+    },
+    {
+     "name": "idle far from any front",
+     "value": 0.04242327399042464,
+     "band": "pass",
+     "weight": 1
+    },
+    {
+     "name": "stuck",
+     "value": 0.004576020875150015,
+     "band": "pass",
+     "weight": 1
+    },
+    {
+     "name": "supply-starved",
+     "value": 0.4905738124305016,
+     "band": "fail",
+     "weight": 1
+    }
+   ]
+  },
+  {
+   "label": "rush_micro@5m/large",
+   "n": 2,
+   "score": 85,
+   "verdict": "PASS",
+   "aiSurvival": 1,
+   "challengerCaptures": 0,
+   "capitalFalls": 2,
+   "minWarnS": 0,
+   "medianWarnS": 123.5,
+   "neverSeen": 1,
+   "cheapFlags": 0,
+   "dominatedShare": 0,
+   "leadChanges": 2,
+   "giniAt30": 0.3032509211933912,
+   "firstContactS": 407,
+   "firstCapitalLostS": 1793,
+   "eliminationsPerHour": 1.5,
+   "undecided": 2,
+   "idleShare": 0.04165214442104315,
+   "stuckShare": 0.003396156176824457,
+   "starvedShare": 0.47983902397947265,
+   "scored": [
+    {
+     "name": "dominated share of time (> 70 % army)",
+     "value": 0,
+     "band": "pass",
+     "weight": 2
+    },
+    {
+     "name": "territory Gini at 30 min",
+     "value": 0.3032509211933912,
+     "band": "pass",
+     "weight": 1
+    },
+    {
+     "name": "cheap-win capital losses",
+     "value": 0,
+     "band": "pass",
+     "weight": 3
+    },
+    {
+     "name": "warning time before a capital loss (s)",
+     "value": 0,
+     "band": "fail",
+     "weight": 3
+    },
+    {
+     "name": "first contact (s)",
+     "value": 407,
+     "band": "pass",
+     "weight": 1
+    },
+    {
+     "name": "first capital lost (s)",
+     "value": 896,
+     "band": "pass",
+     "weight": 2
+    },
+    {
+     "name": "eliminations per hour",
+     "value": 1.5,
+     "band": "pass",
+     "weight": 1
+    },
+    {
+     "name": "idle far from any front",
+     "value": 0.04165214442104315,
+     "band": "pass",
+     "weight": 1
+    },
+    {
+     "name": "stuck",
+     "value": 0.003396156176824457,
+     "band": "pass",
+     "weight": 1
+    },
+    {
+     "name": "supply-starved",
+     "value": 0.47983902397947265,
+     "band": "fail",
+     "weight": 1
+    }
+   ]
+  },
+  {
+   "label": "armour_raid:15-flank/large",
+   "n": 2,
+   "score": 94,
+   "verdict": "PASS",
+   "aiSurvival": 1,
+   "challengerCaptures": 0,
+   "capitalFalls": 0,
+   "minWarnS": null,
+   "medianWarnS": null,
+   "neverSeen": 0,
+   "cheapFlags": 0,
+   "dominatedShare": 0,
+   "leadChanges": 1.5,
+   "giniAt30": 0.2846351954120646,
+   "firstContactS": 448.5,
+   "firstCapitalLostS": null,
+   "eliminationsPerHour": 0,
+   "undecided": 2,
+   "idleShare": 0.031225086880023605,
+   "stuckShare": 0.003866503009310053,
+   "starvedShare": 0.5300407084748142,
+   "scored": [
+    {
+     "name": "dominated share of time (> 70 % army)",
+     "value": 0,
+     "band": "pass",
+     "weight": 2
+    },
+    {
+     "name": "territory Gini at 30 min",
+     "value": 0.2846351954120646,
+     "band": "pass",
+     "weight": 1
+    },
+    {
+     "name": "cheap-win capital losses",
+     "value": 0,
+     "band": "pass",
+     "weight": 3
+    },
+    {
+     "name": "warning time before a capital loss (s)",
+     "value": null,
+     "band": "pass",
+     "weight": 3
+    },
+    {
+     "name": "first contact (s)",
+     "value": 448.5,
+     "band": "pass",
+     "weight": 1
+    },
+    {
+     "name": "first capital lost (s)",
+     "value": -1,
+     "band": "pass",
+     "weight": 2
+    },
+    {
+     "name": "eliminations per hour",
+     "value": 0,
+     "band": "pass",
+     "weight": 1
+    },
+    {
+     "name": "idle far from any front",
+     "value": 0.031225086880023605,
+     "band": "pass",
+     "weight": 1
+    },
+    {
+     "name": "stuck",
+     "value": 0.003866503009310053,
+     "band": "pass",
+     "weight": 1
+    },
+    {
+     "name": "supply-starved",
+     "value": 0.5300407084748142,
+     "band": "fail",
+     "weight": 1
+    }
+   ]
+  },
+  {
+   "label": "shadow_strike/large",
+   "n": 2,
+   "score": 94,
+   "verdict": "PASS",
+   "aiSurvival": 0.5,
+   "challengerCaptures": 1,
+   "capitalFalls": 1,
+   "minWarnS": 572,
+   "medianWarnS": 572,
+   "neverSeen": 0,
+   "cheapFlags": 0,
+   "dominatedShare": 0,
+   "leadChanges": 2.5,
+   "giniAt30": 0.22875630620750165,
+   "firstContactS": 369.5,
+   "firstCapitalLostS": 1684,
+   "eliminationsPerHour": 0.75,
+   "undecided": 2,
+   "idleShare": 0.046179615591959364,
+   "stuckShare": 0.00548593118499427,
+   "starvedShare": 0.5261930802137282,
+   "scored": [
+    {
+     "name": "dominated share of time (> 70 % army)",
+     "value": 0,
+     "band": "pass",
+     "weight": 2
+    },
+    {
+     "name": "territory Gini at 30 min",
+     "value": 0.22875630620750165,
+     "band": "pass",
+     "weight": 1
+    },
+    {
+     "name": "cheap-win capital losses",
+     "value": 0,
+     "band": "pass",
+     "weight": 3
+    },
+    {
+     "name": "warning time before a capital loss (s)",
+     "value": 572,
+     "band": "pass",
+     "weight": 3
+    },
+    {
+     "name": "first contact (s)",
+     "value": 369.5,
+     "band": "pass",
+     "weight": 1
+    },
+    {
+     "name": "first capital lost (s)",
+     "value": 841.5,
+     "band": "pass",
+     "weight": 2
+    },
+    {
+     "name": "eliminations per hour",
+     "value": 0.75,
+     "band": "pass",
+     "weight": 1
+    },
+    {
+     "name": "idle far from any front",
+     "value": 0.046179615591959364,
+     "band": "pass",
+     "weight": 1
+    },
+    {
+     "name": "stuck",
+     "value": 0.00548593118499427,
+     "band": "pass",
+     "weight": 1
+    },
+    {
+     "name": "supply-starved",
+     "value": 0.5261930802137282,
+     "band": "fail",
+     "weight": 1
+    }
+   ]
+  },
+  {
+   "label": "shadow_strike/fog/large",
+   "n": 2,
+   "score": 94,
+   "verdict": "PASS",
+   "aiSurvival": 1,
+   "challengerCaptures": 0,
+   "capitalFalls": 2,
+   "minWarnS": 117,
+   "medianWarnS": 319,
+   "neverSeen": 0,
+   "cheapFlags": 0,
+   "dominatedShare": 0,
+   "leadChanges": 1.5,
+   "giniAt30": 0.2712818750954344,
+   "firstContactS": 316,
+   "firstCapitalLostS": 1669,
+   "eliminationsPerHour": 1.5,
+   "undecided": 2,
+   "idleShare": 0.048494365860376906,
+   "stuckShare": 0.006807139522844084,
+   "starvedShare": 0.5525148576726026,
+   "scored": [
+    {
+     "name": "dominated share of time (> 70 % army)",
+     "value": 0,
+     "band": "pass",
+     "weight": 2
+    },
+    {
+     "name": "territory Gini at 30 min",
+     "value": 0.2712818750954344,
+     "band": "pass",
+     "weight": 1
+    },
+    {
+     "name": "cheap-win capital losses",
+     "value": 0,
+     "band": "pass",
+     "weight": 3
+    },
+    {
+     "name": "warning time before a capital loss (s)",
+     "value": 117,
+     "band": "pass",
+     "weight": 3
+    },
+    {
+     "name": "first contact (s)",
+     "value": 316,
+     "band": "pass",
+     "weight": 1
+    },
+    {
+     "name": "first capital lost (s)",
+     "value": 834,
+     "band": "pass",
+     "weight": 2
+    },
+    {
+     "name": "eliminations per hour",
+     "value": 1.5,
+     "band": "pass",
+     "weight": 1
+    },
+    {
+     "name": "idle far from any front",
+     "value": 0.048494365860376906,
+     "band": "pass",
+     "weight": 1
+    },
+    {
+     "name": "stuck",
+     "value": 0.006807139522844084,
+     "band": "pass",
+     "weight": 1
+    },
+    {
+     "name": "supply-starved",
+     "value": 0.5525148576726026,
+     "band": "fail",
+     "weight": 1
+    }
+   ]
+  },
+  {
+   "label": "backdoor/large",
+   "n": 2,
+   "score": 94,
+   "verdict": "PASS",
+   "aiSurvival": 1,
+   "challengerCaptures": 0,
+   "capitalFalls": 0,
+   "minWarnS": null,
+   "medianWarnS": null,
+   "neverSeen": 0,
+   "cheapFlags": 0,
+   "dominatedShare": 0,
+   "leadChanges": 1,
+   "giniAt30": 0.24134849134849135,
+   "firstContactS": 376,
+   "firstCapitalLostS": null,
+   "eliminationsPerHour": 0,
+   "undecided": 2,
+   "idleShare": 0.040876249266922654,
+   "stuckShare": 0.00657747483776899,
+   "starvedShare": 0.49879683654103985,
+   "scored": [
+    {
+     "name": "dominated share of time (> 70 % army)",
+     "value": 0,
+     "band": "pass",
+     "weight": 2
+    },
+    {
+     "name": "territory Gini at 30 min",
+     "value": 0.24134849134849135,
+     "band": "pass",
+     "weight": 1
+    },
+    {
+     "name": "cheap-win capital losses",
+     "value": 0,
+     "band": "pass",
+     "weight": 3
+    },
+    {
+     "name": "warning time before a capital loss (s)",
+     "value": null,
+     "band": "pass",
+     "weight": 3
+    },
+    {
+     "name": "first contact (s)",
+     "value": 376,
+     "band": "pass",
+     "weight": 1
+    },
+    {
+     "name": "first capital lost (s)",
+     "value": -1,
+     "band": "pass",
+     "weight": 2
+    },
+    {
+     "name": "eliminations per hour",
+     "value": 0,
+     "band": "pass",
+     "weight": 1
+    },
+    {
+     "name": "idle far from any front",
+     "value": 0.040876249266922654,
+     "band": "pass",
+     "weight": 1
+    },
+    {
+     "name": "stuck",
+     "value": 0.00657747483776899,
+     "band": "pass",
+     "weight": 1
+    },
+    {
+     "name": "supply-starved",
+     "value": 0.49879683654103985,
+     "band": "fail",
+     "weight": 1
+    }
+   ]
+  },
+  {
+   "label": "feint/large",
+   "n": 2,
+   "score": 94,
+   "verdict": "PASS",
+   "aiSurvival": 1,
+   "challengerCaptures": 0,
+   "capitalFalls": 1,
+   "minWarnS": 190,
+   "medianWarnS": 190,
+   "neverSeen": 0,
+   "cheapFlags": 0,
+   "dominatedShare": 0,
+   "leadChanges": 2.5,
+   "giniAt30": 0.22456886082098615,
+   "firstContactS": 369.5,
+   "firstCapitalLostS": 1931,
+   "eliminationsPerHour": 0.75,
+   "undecided": 2,
+   "idleShare": 0.038916628119053095,
+   "stuckShare": 0.00435505028189229,
+   "starvedShare": 0.5162921604977868,
+   "scored": [
+    {
+     "name": "dominated share of time (> 70 % army)",
+     "value": 0,
+     "band": "pass",
+     "weight": 2
+    },
+    {
+     "name": "territory Gini at 30 min",
+     "value": 0.22456886082098615,
+     "band": "pass",
+     "weight": 1
+    },
+    {
+     "name": "cheap-win capital losses",
+     "value": 0,
+     "band": "pass",
+     "weight": 3
+    },
+    {
+     "name": "warning time before a capital loss (s)",
+     "value": 190,
+     "band": "pass",
+     "weight": 3
+    },
+    {
+     "name": "first contact (s)",
+     "value": 369.5,
+     "band": "pass",
+     "weight": 1
+    },
+    {
+     "name": "first capital lost (s)",
+     "value": 965,
+     "band": "pass",
+     "weight": 2
+    },
+    {
+     "name": "eliminations per hour",
+     "value": 0.75,
+     "band": "pass",
+     "weight": 1
+    },
+    {
+     "name": "idle far from any front",
+     "value": 0.038916628119053095,
+     "band": "pass",
+     "weight": 1
+    },
+    {
+     "name": "stuck",
+     "value": 0.00435505028189229,
+     "band": "pass",
+     "weight": 1
+    },
+    {
+     "name": "supply-starved",
+     "value": 0.5162921604977868,
+     "band": "fail",
+     "weight": 1
+    }
+   ]
+  },
+  {
+   "label": "econ_war/large",
+   "n": 2,
+   "score": 94,
+   "verdict": "PASS",
+   "aiSurvival": 1,
+   "challengerCaptures": 0,
+   "capitalFalls": 1,
+   "minWarnS": 186,
+   "medianWarnS": 186,
+   "neverSeen": 0,
+   "cheapFlags": 0,
+   "dominatedShare": 0,
+   "leadChanges": 1.5,
+   "giniAt30": 0.2879416262733612,
+   "firstContactS": 515,
+   "firstCapitalLostS": 2059,
+   "eliminationsPerHour": 0.75,
+   "undecided": 2,
+   "idleShare": 0.03405293687780218,
+   "stuckShare": 0.0038153479764938695,
+   "starvedShare": 0.5525837894884988,
+   "scored": [
+    {
+     "name": "dominated share of time (> 70 % army)",
+     "value": 0,
+     "band": "pass",
+     "weight": 2
+    },
+    {
+     "name": "territory Gini at 30 min",
+     "value": 0.2879416262733612,
+     "band": "pass",
+     "weight": 1
+    },
+    {
+     "name": "cheap-win capital losses",
+     "value": 0,
+     "band": "pass",
+     "weight": 3
+    },
+    {
+     "name": "warning time before a capital loss (s)",
+     "value": 186,
+     "band": "pass",
+     "weight": 3
+    },
+    {
+     "name": "first contact (s)",
+     "value": 515,
+     "band": "pass",
+     "weight": 1
+    },
+    {
+     "name": "first capital lost (s)",
+     "value": 1029,
+     "band": "pass",
+     "weight": 2
+    },
+    {
+     "name": "eliminations per hour",
+     "value": 0.75,
+     "band": "pass",
+     "weight": 1
+    },
+    {
+     "name": "idle far from any front",
+     "value": 0.03405293687780218,
+     "band": "pass",
+     "weight": 1
+    },
+    {
+     "name": "stuck",
+     "value": 0.0038153479764938695,
+     "band": "pass",
+     "weight": 1
+    },
+    {
+     "name": "supply-starved",
+     "value": 0.5525837894884988,
+     "band": "fail",
+     "weight": 1
+    }
+   ]
+  },
+  {
+   "label": "siege/large",
+   "n": 2,
+   "score": 89,
+   "verdict": "PASS",
+   "aiSurvival": 1,
+   "challengerCaptures": 0,
+   "capitalFalls": 1,
+   "minWarnS": 52,
+   "medianWarnS": 52,
+   "neverSeen": 0,
+   "cheapFlags": 0,
+   "dominatedShare": 0,
+   "leadChanges": 2.5,
+   "giniAt30": 0.2869549805033676,
+   "firstContactS": 393,
+   "firstCapitalLostS": 1908,
+   "eliminationsPerHour": 0.75,
+   "undecided": 2,
+   "idleShare": 0.049982408959634204,
+   "stuckShare": 0.004303027123841242,
+   "starvedShare": 0.5229837361502514,
+   "scored": [
+    {
+     "name": "dominated share of time (> 70 % army)",
+     "value": 0,
+     "band": "pass",
+     "weight": 2
+    },
+    {
+     "name": "territory Gini at 30 min",
+     "value": 0.2869549805033676,
+     "band": "pass",
+     "weight": 1
+    },
+    {
+     "name": "cheap-win capital losses",
+     "value": 0,
+     "band": "pass",
+     "weight": 3
+    },
+    {
+     "name": "warning time before a capital loss (s)",
+     "value": 52,
+     "band": "warn",
+     "weight": 3
+    },
+    {
+     "name": "first contact (s)",
+     "value": 393,
+     "band": "pass",
+     "weight": 1
+    },
+    {
+     "name": "first capital lost (s)",
+     "value": 953.5,
+     "band": "pass",
+     "weight": 2
+    },
+    {
+     "name": "eliminations per hour",
+     "value": 0.75,
+     "band": "pass",
+     "weight": 1
+    },
+    {
+     "name": "idle far from any front",
+     "value": 0.049982408959634204,
+     "band": "pass",
+     "weight": 1
+    },
+    {
+     "name": "stuck",
+     "value": 0.004303027123841242,
+     "band": "pass",
+     "weight": 1
+    },
+    {
+     "name": "supply-starved",
+     "value": 0.5229837361502514,
+     "band": "fail",
+     "weight": 1
+    }
+   ]
+  },
+  {
+   "label": "ai_only/large",
+   "n": 2,
+   "score": 85,
+   "verdict": "PASS",
+   "aiSurvival": 0.5,
+   "challengerCaptures": 1,
+   "capitalFalls": 2,
+   "minWarnS": 36,
+   "medianWarnS": 111.5,
+   "neverSeen": 0,
+   "cheapFlags": 0,
+   "dominatedShare": 0,
+   "leadChanges": 2,
+   "giniAt30": 0.22066390041493777,
+   "firstContactS": 375,
+   "firstCapitalLostS": 2292.5,
+   "eliminationsPerHour": 1.5,
+   "undecided": 2,
+   "idleShare": 0.04847663717238221,
+   "stuckShare": 0.004367947429678113,
+   "starvedShare": 0.49853778309978464,
+   "scored": [
+    {
+     "name": "dominated share of time (> 70 % army)",
+     "value": 0,
+     "band": "pass",
+     "weight": 2
+    },
+    {
+     "name": "territory Gini at 30 min",
+     "value": 0.22066390041493777,
+     "band": "pass",
+     "weight": 1
+    },
+    {
+     "name": "cheap-win capital losses",
+     "value": 0,
+     "band": "pass",
+     "weight": 3
+    },
+    {
+     "name": "warning time before a capital loss (s)",
+     "value": 111.5,
+     "band": "fail",
+     "weight": 3
+    },
+    {
+     "name": "first contact (s)",
+     "value": 375,
+     "band": "pass",
+     "weight": 1
+    },
+    {
+     "name": "first capital lost (s)",
+     "value": 2292.5,
+     "band": "pass",
+     "weight": 2
+    },
+    {
+     "name": "eliminations per hour",
+     "value": 1.5,
+     "band": "pass",
+     "weight": 1
+    },
+    {
+     "name": "idle far from any front",
+     "value": 0.04847663717238221,
+     "band": "pass",
+     "weight": 1
+    },
+    {
+     "name": "stuck",
+     "value": 0.004367947429678113,
+     "band": "pass",
+     "weight": 1
+    },
+    {
+     "name": "supply-starved",
+     "value": 0.49853778309978464,
+     "band": "fail",
+     "weight": 1
+    }
+   ]
+  }
+ ],
+ "matches": [
+  {
+   "scenario": "rush@5m/large",
+   "seed": 7,
+   "minutes": 40,
+   "mapSize": "large",
+   "infoMode": "open",
+   "score": 94,
+   "verdict": "PASS",
+   "oneSided": {
+    "dominatedShare": 0,
+    "leadChanges": 3,
+    "largestComeback": 0.09797279958942777,
+    "gini": [
+     {
+      "t": 900,
+      "g": 0.10606060606060606
+     },
+     {
+      "t": 1800,
+      "g": 0.07731958762886598
+     },
+     {
+      "t": 2700,
+      "g": null
+     }
+    ]
+   },
+   "cheap": [],
+   "warnings": [
+    {
+     "attacker": 0,
+     "defender": 1,
+     "arrivalS": 1283,
+     "seen": true,
+     "warnS": 439,
+     "reactionS": 0,
+     "defenderArrivalS": 0,
+     "tookCapital": false
+    },
+    {
+     "attacker": 2,
+     "defender": 3,
+     "arrivalS": 1305,
+     "seen": true,
+     "warnS": 462,
+     "reactionS": 0,
+     "defenderArrivalS": 0,
+     "tookCapital": false
+    },
+    {
+     "attacker": 3,
+     "defender": 2,
+     "arrivalS": 1332,
+     "seen": true,
+     "warnS": 122,
+     "reactionS": 0,
+     "defenderArrivalS": 0,
+     "tookCapital": false
+    },
+    {
+     "attacker": 1,
+     "defender": 2,
+     "arrivalS": 1396,
+     "seen": true,
+     "warnS": 182,
+     "reactionS": 0,
+     "defenderArrivalS": 0,
+     "tookCapital": false
+    },
+    {
+     "attacker": 0,
+     "defender": 3,
+     "arrivalS": 1680,
+     "seen": true,
+     "warnS": 236,
+     "reactionS": 0,
+     "defenderArrivalS": 0,
+     "tookCapital": false
+    }
+   ],
+   "pacing": {
+    "firstContactS": 407,
+    "firstTownLostS": 635,
+    "firstCapitalLostS": -1,
+    "eliminationsPerHour": 0,
+    "undecided": true
+   },
+   "health": {
+    "idleShare": 0.03588108351853641,
+    "stuckShare": 0.003993944664540857,
+    "starvedShare": 0.5087770154926402
+   },
+   "challengerCaptures": [],
+   "ownLostS": -1,
+   "wallS": 368.4
+  },
+  {
+   "scenario": "rush@5m/large",
+   "seed": 11,
+   "minutes": 40,
+   "mapSize": "large",
+   "infoMode": "open",
+   "score": 75,
+   "verdict": "PASS",
+   "oneSided": {
+    "dominatedShare": 0,
+    "leadChanges": 1,
+    "largestComeback": 0.0624112756033259,
+    "gini": [
+     {
+      "t": 900,
+      "g": 0.18333333333333332
+     },
+     {
+      "t": 1800,
+      "g": 0.26157407407407407
+     },
+     {
+      "t": 2700,
+      "g": null
+     }
+    ]
+   },
+   "cheap": [
+    {
+     "capital": 0,
+     "by": 3,
+     "t": 2121,
+     "shareOfArmy": 0.3445950348602333,
+     "defenderOver": 0.15495887302637798,
+     "flagged": false,
+     "reasons": []
+    }
+   ],
+   "warnings": [
+    {
+     "attacker": 2,
+     "defender": 1,
+     "arrivalS": 941,
+     "seen": false,
+     "warnS": null,
+     "reactionS": null,
+     "defenderArrivalS": null,
+     "tookCapital": false
+    },
+    {
+     "attacker": 3,
+     "defender": 0,
+     "arrivalS": 1144,
+     "seen": false,
+     "warnS": null,
+     "reactionS": null,
+     "defenderArrivalS": null,
+     "tookCapital": true
+    },
+    {
+     "attacker": 2,
+     "defender": 3,
+     "arrivalS": 1195,
+     "seen": true,
+     "warnS": 306,
+     "reactionS": 1237,
+     "defenderArrivalS": 0,
+     "tookCapital": false
+    },
+    {
+     "attacker": 1,
+     "defender": 0,
+     "arrivalS": 1695,
+     "seen": true,
+     "warnS": 94,
+     "reactionS": 0,
+     "defenderArrivalS": 0,
+     "tookCapital": false
+    }
+   ],
+   "pacing": {
+    "firstContactS": 403,
+    "firstTownLostS": 513,
+    "firstCapitalLostS": 2121,
+    "eliminationsPerHour": 1.5,
+    "undecided": true
+   },
+   "health": {
+    "idleShare": 0.06213128435350657,
+    "stuckShare": 0.0034821145932257044,
+    "starvedShare": 0.4961293850182739
+   },
+   "challengerCaptures": [],
+   "ownLostS": 2120,
+   "wallS": 389.7
+  },
+  {
+   "scenario": "turtle/large",
+   "seed": 7,
+   "minutes": 40,
+   "mapSize": "large",
+   "infoMode": "open",
+   "score": 94,
+   "verdict": "PASS",
+   "oneSided": {
+    "dominatedShare": 0,
+    "leadChanges": 2,
+    "largestComeback": 0.15878403862110582,
+    "gini": [
+     {
+      "t": 900,
+      "g": 0.19623655913978494
+     },
+     {
+      "t": 1800,
+      "g": 0.26988636363636365
+     },
+     {
+      "t": 2700,
+      "g": null
+     }
+    ]
+   },
+   "cheap": [],
+   "warnings": [
+    {
+     "attacker": 1,
+     "defender": 2,
+     "arrivalS": 1156,
+     "seen": true,
+     "warnS": 514,
+     "reactionS": 464,
+     "defenderArrivalS": 0,
+     "tookCapital": false
+    },
+    {
+     "attacker": 1,
+     "defender": 0,
+     "arrivalS": 1230,
+     "seen": true,
+     "warnS": 32,
+     "reactionS": 0,
+     "defenderArrivalS": 0,
+     "tookCapital": false
+    },
+    {
+     "attacker": 2,
+     "defender": 3,
+     "arrivalS": 1236,
+     "seen": true,
+     "warnS": 38,
+     "reactionS": 0,
+     "defenderArrivalS": 0,
+     "tookCapital": false
+    },
+    {
+     "attacker": 3,
+     "defender": 0,
+     "arrivalS": 1355,
+     "seen": true,
+     "warnS": 191,
+     "reactionS": 0,
+     "defenderArrivalS": 0,
+     "tookCapital": false
+    },
+    {
+     "attacker": 1,
+     "defender": 3,
+     "arrivalS": 2382,
+     "seen": true,
+     "warnS": 145,
+     "reactionS": 0,
+     "defenderArrivalS": 0,
+     "tookCapital": false
+    }
+   ],
+   "pacing": {
+    "firstContactS": 481,
+    "firstTownLostS": 602,
+    "firstCapitalLostS": -1,
+    "eliminationsPerHour": 0,
+    "undecided": true
+   },
+   "health": {
+    "idleShare": 0.04579886532914963,
+    "stuckShare": 0.0036448923964375137,
+    "starvedShare": 0.5372254445183988
+   },
+   "challengerCaptures": [],
+   "ownLostS": -1,
+   "wallS": 565.6
+  },
+  {
+   "scenario": "turtle/large",
+   "seed": 11,
+   "minutes": 40,
+   "mapSize": "large",
+   "infoMode": "open",
+   "score": 75,
+   "verdict": "PASS",
+   "oneSided": {
+    "dominatedShare": 0,
+    "leadChanges": 2,
+    "largestComeback": 0.05347187024835276,
+    "gini": [
+     {
+      "t": 900,
+      "g": 0.2462962962962963
+     },
+     {
+      "t": 1800,
+      "g": 0.30097087378640774
+     },
+     {
+      "t": 2700,
+      "g": null
+     }
+    ]
+   },
+   "cheap": [
+    {
+     "capital": 0,
+     "by": 3,
+     "t": 2210,
+     "shareOfArmy": 0.385938190930084,
+     "defenderOver": 0.011966900063653724,
+     "flagged": false,
+     "reasons": []
+    }
+   ],
+   "warnings": [
+    {
+     "attacker": 2,
+     "defender": 1,
+     "arrivalS": 927,
+     "seen": false,
+     "warnS": null,
+     "reactionS": null,
+     "defenderArrivalS": null,
+     "tookCapital": false
+    },
+    {
+     "attacker": 3,
+     "defender": 0,
+     "arrivalS": 1410,
+     "seen": false,
+     "warnS": null,
+     "reactionS": null,
+     "defenderArrivalS": null,
+     "tookCapital": true
+    },
+    {
+     "attacker": 1,
+     "defender": 0,
+     "arrivalS": 1452,
+     "seen": true,
+     "warnS": 381,
+     "reactionS": 85,
+     "defenderArrivalS": 0,
+     "tookCapital": false
+    }
+   ],
+   "pacing": {
+    "firstContactS": 467,
+    "firstTownLostS": 585,
+    "firstCapitalLostS": 2210,
+    "eliminationsPerHour": 1.5,
+    "undecided": true
+   },
+   "health": {
+    "idleShare": 0.040988127376701794,
+    "stuckShare": 0.00403495021626172,
+    "starvedShare": 0.5041655781009609
+   },
+   "challengerCaptures": [],
+   "ownLostS": 2209,
+   "wallS": 659.4
+  },
+  {
+   "scenario": "two_axis/large",
+   "seed": 7,
+   "minutes": 40,
+   "mapSize": "large",
+   "infoMode": "open",
+   "score": 94,
+   "verdict": "PASS",
+   "oneSided": {
+    "dominatedShare": 0,
+    "leadChanges": 2,
+    "largestComeback": 0.03997853501475718,
+    "gini": [
+     {
+      "t": 900,
+      "g": 0.11328125
+     },
+     {
+      "t": 1800,
+      "g": 0.18859649122807018
+     },
+     {
+      "t": 2700,
+      "g": null
+     }
+    ]
+   },
+   "cheap": [],
+   "warnings": [
+    {
+     "attacker": 1,
+     "defender": 2,
+     "arrivalS": 895,
+     "seen": true,
+     "warnS": 250,
+     "reactionS": 0,
+     "defenderArrivalS": 0,
+     "tookCapital": false
+    },
+    {
+     "attacker": 3,
+     "defender": 2,
+     "arrivalS": 1028,
+     "seen": true,
+     "warnS": 106,
+     "reactionS": 0,
+     "defenderArrivalS": 0,
+     "tookCapital": false
+    },
+    {
+     "attacker": 0,
+     "defender": 3,
+     "arrivalS": 1310,
+     "seen": true,
+     "warnS": 70,
+     "reactionS": 0,
+     "defenderArrivalS": 0,
+     "tookCapital": false
+    },
+    {
+     "attacker": 2,
+     "defender": 3,
+     "arrivalS": 1367,
+     "seen": true,
+     "warnS": 23,
+     "reactionS": 0,
+     "defenderArrivalS": 0,
+     "tookCapital": false
+    },
+    {
+     "attacker": 0,
+     "defender": 1,
+     "arrivalS": 1493,
+     "seen": true,
+     "warnS": 217,
+     "reactionS": null,
+     "defenderArrivalS": 0,
+     "tookCapital": false
+    },
+    {
+     "attacker": 1,
+     "defender": 0,
+     "arrivalS": 1760,
+     "seen": true,
+     "warnS": 10,
+     "reactionS": 96,
+     "defenderArrivalS": 0,
+     "tookCapital": false
+    }
+   ],
+   "pacing": {
+    "firstContactS": 407,
+    "firstTownLostS": 566,
+    "firstCapitalLostS": -1,
+    "eliminationsPerHour": 0,
+    "undecided": true
+   },
+   "health": {
+    "idleShare": 0.03343112286018247,
+    "stuckShare": 0.004190979722105806,
+    "starvedShare": 0.512653534930204
+   },
+   "challengerCaptures": [],
+   "ownLostS": -1,
+   "wallS": 639.5
+  },
+  {
+   "scenario": "two_axis/large",
+   "seed": 11,
+   "minutes": 40,
+   "mapSize": "large",
+   "infoMode": "open",
+   "score": 75,
+   "verdict": "PASS",
+   "oneSided": {
+    "dominatedShare": 0,
+    "leadChanges": 1,
+    "largestComeback": 0.05370323237465004,
+    "gini": [
+     {
+      "t": 900,
+      "g": 0.18233082706766918
+     },
+     {
+      "t": 1800,
+      "g": 0.32009345794392524
+     },
+     {
+      "t": 2700,
+      "g": null
+     }
+    ]
+   },
+   "cheap": [
+    {
+     "capital": 0,
+     "by": 3,
+     "t": 2005,
+     "shareOfArmy": 0.2649296840763316,
+     "defenderOver": 0.11052631578947368,
+     "flagged": false,
+     "reasons": []
+    }
+   ],
+   "warnings": [
+    {
+     "attacker": 1,
+     "defender": 0,
+     "arrivalS": 952,
+     "seen": true,
+     "warnS": 233,
+     "reactionS": 0,
+     "defenderArrivalS": 0,
+     "tookCapital": false
+    },
+    {
+     "attacker": 2,
+     "defender": 1,
+     "arrivalS": 982,
+     "seen": false,
+     "warnS": null,
+     "reactionS": null,
+     "defenderArrivalS": null,
+     "tookCapital": false
+    },
+    {
+     "attacker": 2,
+     "defender": 3,
+     "arrivalS": 1172,
+     "seen": true,
+     "warnS": 209,
+     "reactionS": 1028,
+     "defenderArrivalS": 0,
+     "tookCapital": false
+    },
+    {
+     "attacker": 3,
+     "defender": 0,
+     "arrivalS": 1263,
+     "seen": false,
+     "warnS": null,
+     "reactionS": null,
+     "defenderArrivalS": null,
+     "tookCapital": true
+    }
+   ],
+   "pacing": {
+    "firstContactS": 341,
+    "firstTownLostS": 561,
+    "firstCapitalLostS": 2005,
+    "eliminationsPerHour": 1.5,
+    "undecided": true
+   },
+   "health": {
+    "idleShare": 0.04202946581904733,
+    "stuckShare": 0.0028622216866017896,
+    "starvedShare": 0.48413726612635954
+   },
+   "challengerCaptures": [],
+   "ownLostS": 2004,
+   "wallS": 387.3
+  },
+  {
+   "scenario": "raid/large",
+   "seed": 7,
+   "minutes": 40,
+   "mapSize": "large",
+   "infoMode": "open",
+   "score": 94,
+   "verdict": "PASS",
+   "oneSided": {
+    "dominatedShare": 0,
+    "leadChanges": 3,
+    "largestComeback": 0.07747984865931896,
+    "gini": [
+     {
+      "t": 900,
+      "g": 0.12903225806451613
+     },
+     {
+      "t": 1800,
+      "g": 0.157514450867052
+     },
+     {
+      "t": 2700,
+      "g": null
+     }
+    ]
+   },
+   "cheap": [],
+   "warnings": [
+    {
+     "attacker": 1,
+     "defender": 2,
+     "arrivalS": 923,
+     "seen": true,
+     "warnS": 149,
+     "reactionS": 7,
+     "defenderArrivalS": 0,
+     "tookCapital": false
+    },
+    {
+     "attacker": 3,
+     "defender": 2,
+     "arrivalS": 1300,
+     "seen": true,
+     "warnS": 189,
+     "reactionS": 0,
+     "defenderArrivalS": 0,
+     "tookCapital": false
+    },
+    {
+     "attacker": 0,
+     "defender": 1,
+     "arrivalS": 1377,
+     "seen": true,
+     "warnS": 328,
+     "reactionS": 0,
+     "defenderArrivalS": 0,
+     "tookCapital": false
+    },
+    {
+     "attacker": 2,
+     "defender": 3,
+     "arrivalS": 1478,
+     "seen": true,
+     "warnS": 286,
+     "reactionS": 0,
+     "defenderArrivalS": 0,
+     "tookCapital": false
+    },
+    {
+     "attacker": 0,
+     "defender": 3,
+     "arrivalS": 2182,
+     "seen": true,
+     "warnS": 130,
+     "reactionS": 0,
+     "defenderArrivalS": 0,
+     "tookCapital": false
+    }
+   ],
+   "pacing": {
+    "firstContactS": 407,
+    "firstTownLostS": 588,
+    "firstCapitalLostS": -1,
+    "eliminationsPerHour": 0,
+    "undecided": true
+   },
+   "health": {
+    "idleShare": 0.04840633490159698,
+    "stuckShare": 0.003412630044397323,
+    "starvedShare": 0.47634351600291563
+   },
+   "challengerCaptures": [],
+   "ownLostS": -1,
+   "wallS": 375.6
+  },
+  {
+   "scenario": "raid/large",
+   "seed": 11,
+   "minutes": 40,
+   "mapSize": "large",
+   "infoMode": "open",
+   "score": 94,
+   "verdict": "PASS",
+   "oneSided": {
+    "dominatedShare": 0,
+    "leadChanges": 1,
+    "largestComeback": 0.05385400714650332,
+    "gini": [
+     {
+      "t": 900,
+      "g": 0.22692307692307692
+     },
+     {
+      "t": 1800,
+      "g": 0.3935643564356436
+     },
+     {
+      "t": 2700,
+      "g": null
+     }
+    ]
+   },
+   "cheap": [
+    {
+     "capital": 0,
+     "by": 1,
+     "t": 1698,
+     "shareOfArmy": 0.3466574213810825,
+     "defenderOver": 0.13119190492999178,
+     "flagged": false,
+     "reasons": []
+    }
+   ],
+   "warnings": [
+    {
+     "attacker": 1,
+     "defender": 0,
+     "arrivalS": 839,
+     "seen": true,
+     "warnS": 295,
+     "reactionS": 227,
+     "defenderArrivalS": 0,
+     "tookCapital": true
+    },
+    {
+     "attacker": 2,
+     "defender": 1,
+     "arrivalS": 926,
+     "seen": false,
+     "warnS": null,
+     "reactionS": null,
+     "defenderArrivalS": null,
+     "tookCapital": false
+    },
+    {
+     "attacker": 0,
+     "defender": 3,
+     "arrivalS": 1253,
+     "seen": true,
+     "warnS": 310,
+     "reactionS": 0,
+     "defenderArrivalS": 0,
+     "tookCapital": false
+    },
+    {
+     "attacker": 2,
+     "defender": 3,
+     "arrivalS": 1323,
+     "seen": true,
+     "warnS": 447,
+     "reactionS": 0,
+     "defenderArrivalS": 0,
+     "tookCapital": false
+    },
+    {
+     "attacker": 3,
+     "defender": 0,
+     "arrivalS": 1580,
+     "seen": true,
+     "warnS": 248,
+     "reactionS": 0,
+     "defenderArrivalS": 0,
+     "tookCapital": false
+    },
+    {
+     "attacker": 1,
+     "defender": 3,
+     "arrivalS": 2274,
+     "seen": true,
+     "warnS": 25,
+     "reactionS": 0,
+     "defenderArrivalS": 0,
+     "tookCapital": false
+    }
+   ],
+   "pacing": {
+    "firstContactS": 398,
+    "firstTownLostS": 591,
+    "firstCapitalLostS": 1698,
+    "eliminationsPerHour": 1.5,
+    "undecided": true
+   },
+   "health": {
+    "idleShare": 0.049883153977092407,
+    "stuckShare": 0.0025388765471278957,
+    "starvedShare": 0.5330486714174433
+   },
+   "challengerCaptures": [],
+   "ownLostS": 1697,
+   "wallS": 399.8
+  },
+  {
+   "scenario": "late_blitz/large",
+   "seed": 7,
+   "minutes": 40,
+   "mapSize": "large",
+   "infoMode": "open",
+   "score": 94,
+   "verdict": "PASS",
+   "oneSided": {
+    "dominatedShare": 0,
+    "leadChanges": 5,
+    "largestComeback": 0.047819909421898586,
+    "gini": [
+     {
+      "t": 900,
+      "g": 0.20714285714285716
+     },
+     {
+      "t": 1800,
+      "g": 0.18093922651933703
+     },
+     {
+      "t": 2700,
+      "g": null
+     }
+    ]
+   },
+   "cheap": [],
+   "warnings": [
+    {
+     "attacker": 1,
+     "defender": 2,
+     "arrivalS": 747,
+     "seen": true,
+     "warnS": 131,
+     "reactionS": 0,
+     "defenderArrivalS": 0,
+     "tookCapital": false
+    },
+    {
+     "attacker": 0,
+     "defender": 1,
+     "arrivalS": 1587,
+     "seen": true,
+     "warnS": 150,
+     "reactionS": 0,
+     "defenderArrivalS": 0,
+     "tookCapital": false
+    },
+    {
+     "attacker": 3,
+     "defender": 2,
+     "arrivalS": 1756,
+     "seen": true,
+     "warnS": 145,
+     "reactionS": 0,
+     "defenderArrivalS": 0,
+     "tookCapital": false
+    },
+    {
+     "attacker": 0,
+     "defender": 3,
+     "arrivalS": 1992,
+     "seen": true,
+     "warnS": 68,
+     "reactionS": 0,
+     "defenderArrivalS": 0,
+     "tookCapital": false
+    },
+    {
+     "attacker": 2,
+     "defender": 3,
+     "arrivalS": 2340,
+     "seen": false,
+     "warnS": null,
+     "reactionS": null,
+     "defenderArrivalS": null,
+     "tookCapital": false
+    }
+   ],
+   "pacing": {
+    "firstContactS": 407,
+    "firstTownLostS": 588,
+    "firstCapitalLostS": -1,
+    "eliminationsPerHour": 0,
+    "undecided": true
+   },
+   "health": {
+    "idleShare": 0.03158723390297504,
+    "stuckShare": 0.0052481385508577425,
+    "starvedShare": 0.4897825302587988
+   },
+   "challengerCaptures": [],
+   "ownLostS": -1,
+   "wallS": 383.3
+  },
+  {
+   "scenario": "late_blitz/large",
+   "seed": 11,
+   "minutes": 40,
+   "mapSize": "large",
+   "infoMode": "open",
+   "score": 94,
+   "verdict": "PASS",
+   "oneSided": {
+    "dominatedShare": 0,
+    "leadChanges": 2,
+    "largestComeback": 0.05370323237465004,
+    "gini": [
+     {
+      "t": 900,
+      "g": 0.25
+     },
+     {
+      "t": 1800,
+      "g": 0.3645833333333333
+     },
+     {
+      "t": 2700,
+      "g": null
+     }
+    ]
+   },
+   "cheap": [
+    {
+     "capital": 0,
+     "by": 3,
+     "t": 1773,
+     "shareOfArmy": 0.36499657724027773,
+     "defenderOver": 0.2242564972760561,
+     "flagged": false,
+     "reasons": []
+    }
+   ],
+   "warnings": [
+    {
+     "attacker": 3,
+     "defender": 0,
+     "arrivalS": 738,
+     "seen": true,
+     "warnS": 138,
+     "reactionS": 11,
+     "defenderArrivalS": 0,
+     "tookCapital": true
+    },
+    {
+     "attacker": 1,
+     "defender": 0,
+     "arrivalS": 816,
+     "seen": true,
+     "warnS": 116,
+     "reactionS": 0,
+     "defenderArrivalS": 0,
+     "tookCapital": false
+    },
+    {
+     "attacker": 2,
+     "defender": 1,
+     "arrivalS": 938,
+     "seen": false,
+     "warnS": null,
+     "reactionS": null,
+     "defenderArrivalS": null,
+     "tookCapital": false
+    }
+   ],
+   "pacing": {
+    "firstContactS": 467,
+    "firstTownLostS": 598,
+    "firstCapitalLostS": 1773,
+    "eliminationsPerHour": 1.5,
+    "undecided": true
+   },
+   "health": {
+    "idleShare": 0.0510624616373893,
+    "stuckShare": 0.005611901908631222,
+    "starvedShare": 0.4849910852599889
+   },
+   "challengerCaptures": [],
+   "ownLostS": 1772,
+   "wallS": 435.4
+  },
+  {
+   "scenario": "human_like/large",
+   "seed": 7,
+   "minutes": 40,
+   "mapSize": "large",
+   "infoMode": "open",
+   "score": 94,
+   "verdict": "PASS",
+   "oneSided": {
+    "dominatedShare": 0,
+    "leadChanges": 2,
+    "largestComeback": 0.0684836103630792,
+    "gini": [
+     {
+      "t": 900,
+      "g": 0.1792452830188679
+     },
+     {
+      "t": 1800,
+      "g": 0.1675531914893617
+     },
+     {
+      "t": 2700,
+      "g": null
+     }
+    ]
+   },
+   "cheap": [],
+   "warnings": [
+    {
+     "attacker": 0,
+     "defender": 1,
+     "arrivalS": 1406,
+     "seen": true,
+     "warnS": 37,
+     "reactionS": 0,
+     "defenderArrivalS": 0,
+     "tookCapital": false
+    },
+    {
+     "attacker": 1,
+     "defender": 2,
+     "arrivalS": 1609,
+     "seen": true,
+     "warnS": 309,
+     "reactionS": 316,
+     "defenderArrivalS": 0,
+     "tookCapital": false
+    },
+    {
+     "attacker": 2,
+     "defender": 1,
+     "arrivalS": 1794,
+     "seen": true,
+     "warnS": 39,
+     "reactionS": 0,
+     "defenderArrivalS": 0,
+     "tookCapital": false
+    },
+    {
+     "attacker": 2,
+     "defender": 3,
+     "arrivalS": 1989,
+     "seen": true,
+     "warnS": 33,
+     "reactionS": 0,
+     "defenderArrivalS": 0,
+     "tookCapital": false
+    }
+   ],
+   "pacing": {
+    "firstContactS": 493,
+    "firstTownLostS": 570,
+    "firstCapitalLostS": -1,
+    "eliminationsPerHour": 0,
+    "undecided": true
+   },
+   "health": {
+    "idleShare": 0.021456476620681234,
+    "stuckShare": 0.004425589061164693,
+    "starvedShare": 0.4866927115126358
+   },
+   "challengerCaptures": [],
+   "ownLostS": -1,
+   "wallS": 402.1
+  },
+  {
+   "scenario": "human_like/large",
+   "seed": 11,
+   "minutes": 40,
+   "mapSize": "large",
+   "infoMode": "open",
+   "score": 94,
+   "verdict": "PASS",
+   "oneSided": {
+    "dominatedShare": 0,
+    "leadChanges": 2,
+    "largestComeback": 0.05263157894736842,
+    "gini": [
+     {
+      "t": 900,
+      "g": 0.19047619047619047
+     },
+     {
+      "t": 1800,
+      "g": 0.25
+     },
+     {
+      "t": 2700,
+      "g": null
+     }
+    ]
+   },
+   "cheap": [],
+   "warnings": [
+    {
+     "attacker": 1,
+     "defender": 0,
+     "arrivalS": 856,
+     "seen": true,
+     "warnS": 98,
+     "reactionS": 18,
+     "defenderArrivalS": 0,
+     "tookCapital": false
+    },
+    {
+     "attacker": 3,
+     "defender": 0,
+     "arrivalS": 1009,
+     "seen": false,
+     "warnS": null,
+     "reactionS": null,
+     "defenderArrivalS": null,
+     "tookCapital": false
+    },
+    {
+     "attacker": 2,
+     "defender": 3,
+     "arrivalS": 2350,
+     "seen": true,
+     "warnS": 10,
+     "reactionS": null,
+     "defenderArrivalS": 0,
+     "tookCapital": false
+    }
+   ],
+   "pacing": {
+    "firstContactS": 407,
+    "firstTownLostS": 487,
+    "firstCapitalLostS": -1,
+    "eliminationsPerHour": 0,
+    "undecided": true
+   },
+   "health": {
+    "idleShare": 0.06339007136016805,
+    "stuckShare": 0.004726452689135337,
+    "starvedShare": 0.4944549133483674
+   },
+   "challengerCaptures": [],
+   "ownLostS": -1,
+   "wallS": 999.4
+  },
+  {
+   "scenario": "rush_micro@5m/large",
+   "seed": 7,
+   "minutes": 40,
+   "mapSize": "large",
+   "infoMode": "open",
+   "score": 94,
+   "verdict": "PASS",
+   "oneSided": {
+    "dominatedShare": 0,
+    "leadChanges": 2,
+    "largestComeback": 0.03997853501475718,
+    "gini": [
+     {
+      "t": 900,
+      "g": 0.10772357723577236
+     },
+     {
+      "t": 1800,
+      "g": 0.19692737430167598
+     },
+     {
+      "t": 2700,
+      "g": null
+     }
+    ]
+   },
+   "cheap": [],
+   "warnings": [
+    {
+     "attacker": 0,
+     "defender": 1,
+     "arrivalS": 840,
+     "seen": true,
+     "warnS": 300,
+     "reactionS": 0,
+     "defenderArrivalS": 0,
+     "tookCapital": false
+    },
+    {
+     "attacker": 3,
+     "defender": 0,
+     "arrivalS": 1488,
+     "seen": true,
+     "warnS": 400,
+     "reactionS": 338,
+     "defenderArrivalS": 0,
+     "tookCapital": false
+    },
+    {
+     "attacker": 2,
+     "defender": 3,
+     "arrivalS": 1785,
+     "seen": true,
+     "warnS": 182,
+     "reactionS": 703,
+     "defenderArrivalS": 0,
+     "tookCapital": false
+    },
+    {
+     "attacker": 1,
+     "defender": 2,
+     "arrivalS": 2013,
+     "seen": true,
+     "warnS": 614,
+     "reactionS": 27,
+     "defenderArrivalS": 0,
+     "tookCapital": false
+    },
+    {
+     "attacker": 2,
+     "defender": 1,
+     "arrivalS": 2160,
+     "seen": true,
+     "warnS": 295,
+     "reactionS": 0,
+     "defenderArrivalS": 0,
+     "tookCapital": false
+    }
+   ],
+   "pacing": {
+    "firstContactS": 407,
+    "firstTownLostS": 565,
+    "firstCapitalLostS": -1,
+    "eliminationsPerHour": 0,
+    "undecided": true
+   },
+   "health": {
+    "idleShare": 0.046656770798191756,
+    "stuckShare": 0.004082045745901086,
+    "starvedShare": 0.47786923959247013
+   },
+   "challengerCaptures": [],
+   "ownLostS": -1,
+   "wallS": 669.6
+  },
+  {
+   "scenario": "rush_micro@5m/large",
+   "seed": 11,
+   "minutes": 40,
+   "mapSize": "large",
+   "infoMode": "open",
+   "score": 75,
+   "verdict": "PASS",
+   "oneSided": {
+    "dominatedShare": 0,
+    "leadChanges": 2,
+    "largestComeback": 0.06444698904841599,
+    "gini": [
+     {
+      "t": 900,
+      "g": 0.18233082706766918
+     },
+     {
+      "t": 1800,
+      "g": 0.4095744680851064
+     },
+     {
+      "t": 2700,
+      "g": null
+     }
+    ]
+   },
+   "cheap": [
+    {
+     "capital": 0,
+     "by": 3,
+     "t": 1793,
+     "shareOfArmy": 0.26567783841698195,
+     "defenderOver": 0.8278512917454316,
+     "flagged": false,
+     "reasons": []
+    },
+    {
+     "capital": 1,
+     "by": 2,
+     "t": 2353,
+     "shareOfArmy": 0.5329470634711615,
+     "defenderOver": 0.4225143308954339,
+     "flagged": false,
+     "reasons": []
+    }
+   ],
+   "warnings": [
+    {
+     "attacker": 3,
+     "defender": 0,
+     "arrivalS": 794,
+     "seen": true,
+     "warnS": 247,
+     "reactionS": 0,
+     "defenderArrivalS": 0,
+     "tookCapital": true
+    },
+    {
+     "attacker": 2,
+     "defender": 1,
+     "arrivalS": 933,
+     "seen": false,
+     "warnS": null,
+     "reactionS": null,
+     "defenderArrivalS": null,
+     "tookCapital": true
+    },
+    {
+     "attacker": 0,
+     "defender": 1,
+     "arrivalS": 1066,
+     "seen": true,
+     "warnS": 88,
+     "reactionS": 0,
+     "defenderArrivalS": 0,
+     "tookCapital": false
+    }
+   ],
+   "pacing": {
+    "firstContactS": 407,
+    "firstTownLostS": 513,
+    "firstCapitalLostS": 1793,
+    "eliminationsPerHour": 3,
+    "undecided": true
+   },
+   "health": {
+    "idleShare": 0.03664751804389454,
+    "stuckShare": 0.0027102666077478276,
+    "starvedShare": 0.48180880836647516
+   },
+   "challengerCaptures": [],
+   "ownLostS": 1792,
+   "wallS": 960.1
+  },
+  {
+   "scenario": "armour_raid:15-flank/large",
+   "seed": 7,
+   "minutes": 40,
+   "mapSize": "large",
+   "infoMode": "open",
+   "score": 94,
+   "verdict": "PASS",
+   "oneSided": {
+    "dominatedShare": 0,
+    "leadChanges": 1,
+    "largestComeback": 0.12213514375541076,
+    "gini": [
+     {
+      "t": 900,
+      "g": 0.19210526315789472
+     },
+     {
+      "t": 1800,
+      "g": 0.2585227272727273
+     },
+     {
+      "t": 2700,
+      "g": null
+     }
+    ]
+   },
+   "cheap": [],
+   "warnings": [
+    {
+     "attacker": 3,
+     "defender": 0,
+     "arrivalS": 1078,
+     "seen": false,
+     "warnS": null,
+     "reactionS": null,
+     "defenderArrivalS": null,
+     "tookCapital": false
+    },
+    {
+     "attacker": 1,
+     "defender": 0,
+     "arrivalS": 1103,
+     "seen": true,
+     "warnS": 118,
+     "reactionS": 0,
+     "defenderArrivalS": 0,
+     "tookCapital": false
+    },
+    {
+     "attacker": 2,
+     "defender": 3,
+     "arrivalS": 1309,
+     "seen": true,
+     "warnS": 198,
+     "reactionS": 65,
+     "defenderArrivalS": 0,
+     "tookCapital": false
+    },
+    {
+     "attacker": 1,
+     "defender": 2,
+     "arrivalS": 1487,
+     "seen": true,
+     "warnS": 472,
+     "reactionS": 431,
+     "defenderArrivalS": 0,
+     "tookCapital": false
+    },
+    {
+     "attacker": 0,
+     "defender": 1,
+     "arrivalS": 2079,
+     "seen": true,
+     "warnS": 214,
+     "reactionS": 0,
+     "defenderArrivalS": 0,
+     "tookCapital": false
+    }
+   ],
+   "pacing": {
+    "firstContactS": 430,
+    "firstTownLostS": 575,
+    "firstCapitalLostS": -1,
+    "eliminationsPerHour": 0,
+    "undecided": true
+   },
+   "health": {
+    "idleShare": 0.030970815961882073,
+    "stuckShare": 0.004608006018620106,
+    "starvedShare": 0.550735086674399
+   },
+   "challengerCaptures": [],
+   "ownLostS": -1,
+   "wallS": 899.9
+  },
+  {
+   "scenario": "armour_raid:15-flank/large",
+   "seed": 11,
+   "minutes": 40,
+   "mapSize": "large",
+   "infoMode": "open",
+   "score": 94,
+   "verdict": "PASS",
+   "oneSided": {
+    "dominatedShare": 0,
+    "leadChanges": 2,
+    "largestComeback": 0.05670518677774792,
+    "gini": [
+     {
+      "t": 900,
+      "g": 0.24640287769784172
+     },
+     {
+      "t": 1800,
+      "g": 0.3107476635514019
+     },
+     {
+      "t": 2700,
+      "g": null
+     }
+    ]
+   },
+   "cheap": [],
+   "warnings": [
+    {
+     "attacker": 3,
+     "defender": 0,
+     "arrivalS": 710,
+     "seen": true,
+     "warnS": 16,
+     "reactionS": 0,
+     "defenderArrivalS": 0,
+     "tookCapital": false
+    },
+    {
+     "attacker": 1,
+     "defender": 0,
+     "arrivalS": 845,
+     "seen": false,
+     "warnS": null,
+     "reactionS": null,
+     "defenderArrivalS": null,
+     "tookCapital": false
+    },
+    {
+     "attacker": 2,
+     "defender": 1,
+     "arrivalS": 982,
+     "seen": false,
+     "warnS": null,
+     "reactionS": null,
+     "defenderArrivalS": null,
+     "tookCapital": false
+    },
+    {
+     "attacker": 2,
+     "defender": 3,
+     "arrivalS": 1702,
+     "seen": true,
+     "warnS": 833,
+     "reactionS": 577,
+     "defenderArrivalS": 0,
+     "tookCapital": false
+    },
+    {
+     "attacker": 0,
+     "defender": 1,
+     "arrivalS": 1876,
+     "seen": true,
+     "warnS": 116,
+     "reactionS": 0,
+     "defenderArrivalS": 0,
+     "tookCapital": false
+    },
+    {
+     "attacker": 2,
+     "defender": 0,
+     "arrivalS": 2365,
+     "seen": false,
+     "warnS": null,
+     "reactionS": null,
+     "defenderArrivalS": null,
+     "tookCapital": false
+    }
+   ],
+   "pacing": {
+    "firstContactS": 467,
+    "firstTownLostS": 705,
+    "firstCapitalLostS": -1,
+    "eliminationsPerHour": 0,
+    "undecided": true
+   },
+   "health": {
+    "idleShare": 0.03147935779816514,
+    "stuckShare": 0.003125,
+    "starvedShare": 0.5093463302752294
+   },
+   "challengerCaptures": [],
+   "ownLostS": -1,
+   "wallS": 1009.4
+  },
+  {
+   "scenario": "shadow_strike/large",
+   "seed": 7,
+   "minutes": 40,
+   "mapSize": "large",
+   "infoMode": "open",
+   "score": 94,
+   "verdict": "PASS",
+   "oneSided": {
+    "dominatedShare": 0,
+    "leadChanges": 3,
+    "largestComeback": 0.03997853501475718,
+    "gini": [
+     {
+      "t": 900,
+      "g": 0.0708955223880597
+     },
+     {
+      "t": 1800,
+      "g": 0.3479381443298969
+     },
+     {
+      "t": 2700,
+      "g": null
+     }
+    ]
+   },
+   "cheap": [
+    {
+     "capital": 3,
+     "by": 0,
+     "t": 1684,
+     "shareOfArmy": 0.3541396140240899,
+     "defenderOver": 1.2140599317233531,
+     "flagged": false,
+     "reasons": []
+    }
+   ],
+   "warnings": [
+    {
+     "attacker": 1,
+     "defender": 2,
+     "arrivalS": 676,
+     "seen": true,
+     "warnS": 112,
+     "reactionS": 0,
+     "defenderArrivalS": 0,
+     "tookCapital": false
+    },
+    {
+     "attacker": 3,
+     "defender": 2,
+     "arrivalS": 970,
+     "seen": true,
+     "warnS": 165,
+     "reactionS": 0,
+     "defenderArrivalS": 0,
+     "tookCapital": false
+    },
+    {
+     "attacker": 0,
+     "defender": 3,
+     "arrivalS": 1180,
+     "seen": true,
+     "warnS": 572,
+     "reactionS": 293,
+     "defenderArrivalS": 0,
+     "tookCapital": true
+    },
+    {
+     "attacker": 0,
+     "defender": 1,
+     "arrivalS": 1476,
+     "seen": false,
+     "warnS": null,
+     "reactionS": null,
+     "defenderArrivalS": null,
+     "tookCapital": false
+    }
+   ],
+   "pacing": {
+    "firstContactS": 407,
+    "firstTownLostS": 628,
+    "firstCapitalLostS": 1684,
+    "eliminationsPerHour": 1.5,
+    "undecided": true
+   },
+   "health": {
+    "idleShare": 0.03685534591194969,
+    "stuckShare": 0.005031446540880503,
+    "starvedShare": 0.5519811320754717
+   },
+   "challengerCaptures": [
+    {
+     "capital": 3,
+     "by": 0,
+     "t": 1683
+    }
+   ],
+   "ownLostS": -1,
+   "wallS": 974.9
+  },
+  {
+   "scenario": "shadow_strike/large",
+   "seed": 11,
+   "minutes": 40,
+   "mapSize": "large",
+   "infoMode": "open",
+   "score": 94,
+   "verdict": "PASS",
+   "oneSided": {
+    "dominatedShare": 0,
+    "leadChanges": 2,
+    "largestComeback": 0.05385400714650332,
+    "gini": [
+     {
+      "t": 900,
+      "g": 0.06543624161073826
+     },
+     {
+      "t": 1800,
+      "g": 0.10957446808510639
+     },
+     {
+      "t": 2700,
+      "g": null
+     }
+    ]
+   },
+   "cheap": [],
+   "warnings": [
+    {
+     "attacker": 1,
+     "defender": 0,
+     "arrivalS": 802,
+     "seen": true,
+     "warnS": 386,
+     "reactionS": 0,
+     "defenderArrivalS": 0,
+     "tookCapital": false
+    },
+    {
+     "attacker": 1,
+     "defender": 2,
+     "arrivalS": 1401,
+     "seen": true,
+     "warnS": 32,
+     "reactionS": null,
+     "defenderArrivalS": 0,
+     "tookCapital": false
+    },
+    {
+     "attacker": 2,
+     "defender": 3,
+     "arrivalS": 1909,
+     "seen": true,
+     "warnS": 106,
+     "reactionS": 0,
+     "defenderArrivalS": 0,
+     "tookCapital": false
+    },
+    {
+     "attacker": 0,
+     "defender": 3,
+     "arrivalS": 2023,
+     "seen": true,
+     "warnS": 30,
+     "reactionS": 0,
+     "defenderArrivalS": 0,
+     "tookCapital": false
+    }
+   ],
+   "pacing": {
+    "firstContactS": 332,
+    "firstTownLostS": 493,
+    "firstCapitalLostS": -1,
+    "eliminationsPerHour": 0,
+    "undecided": true
+   },
+   "health": {
+    "idleShare": 0.05550388527196904,
+    "stuckShare": 0.0059404158291080375,
+    "starvedShare": 0.5004050283519846
+   },
+   "challengerCaptures": [],
+   "ownLostS": -1,
+   "wallS": 955.8
+  },
+  {
+   "scenario": "shadow_strike/fog/large",
+   "seed": 7,
+   "minutes": 40,
+   "mapSize": "large",
+   "infoMode": "fog",
+   "score": 94,
+   "verdict": "PASS",
+   "oneSided": {
+    "dominatedShare": 0,
+    "leadChanges": 2,
+    "largestComeback": 0.05455390561929691,
+    "gini": [
+     {
+      "t": 900,
+      "g": 0.0967741935483871
+     },
+     {
+      "t": 1800,
+      "g": 0.19369369369369369
+     },
+     {
+      "t": 2700,
+      "g": null
+     }
+    ]
+   },
+   "cheap": [],
+   "warnings": [
+    {
+     "attacker": 1,
+     "defender": 2,
+     "arrivalS": 855,
+     "seen": false,
+     "warnS": null,
+     "reactionS": null,
+     "defenderArrivalS": null,
+     "tookCapital": false
+    },
+    {
+     "attacker": 2,
+     "defender": 3,
+     "arrivalS": 1068,
+     "seen": true,
+     "warnS": 370,
+     "reactionS": 128,
+     "defenderArrivalS": 0,
+     "tookCapital": false
+    },
+    {
+     "attacker": 0,
+     "defender": 3,
+     "arrivalS": 1140,
+     "seen": true,
+     "warnS": 131,
+     "reactionS": 0,
+     "defenderArrivalS": 0,
+     "tookCapital": false
+    },
+    {
+     "attacker": 1,
+     "defender": 0,
+     "arrivalS": 1452,
+     "seen": true,
+     "warnS": 197,
+     "reactionS": 956,
+     "defenderArrivalS": 0,
+     "tookCapital": false
+    }
+   ],
+   "pacing": {
+    "firstContactS": 331,
+    "firstTownLostS": 581,
+    "firstCapitalLostS": -1,
+    "eliminationsPerHour": 0,
+    "undecided": true
+   },
+   "health": {
+    "idleShare": 0.05388389690234098,
+    "stuckShare": 0.008660439820288484,
+    "starvedShare": 0.6061716717900213
+   },
+   "challengerCaptures": [],
+   "ownLostS": -1,
+   "wallS": 650.7
+  },
+  {
+   "scenario": "shadow_strike/fog/large",
+   "seed": 11,
+   "minutes": 40,
+   "mapSize": "large",
+   "infoMode": "fog",
+   "score": 94,
+   "verdict": "PASS",
+   "oneSided": {
+    "dominatedShare": 0,
+    "leadChanges": 1,
+    "largestComeback": 0.05385400714650332,
+    "gini": [
+     {
+      "t": 900,
+      "g": 0.0975177304964539
+     },
+     {
+      "t": 1800,
+      "g": 0.3488700564971751
+     },
+     {
+      "t": 2700,
+      "g": null
+     }
+    ]
+   },
+   "cheap": [
+    {
+     "capital": 1,
+     "by": 2,
+     "t": 1669,
+     "shareOfArmy": 0.2853669782453787,
+     "defenderOver": 0.9688601645123385,
+     "flagged": false,
+     "reasons": []
+    },
+    {
+     "capital": 0,
+     "by": 3,
+     "t": 2259,
+     "shareOfArmy": 0.36659949461024216,
+     "defenderOver": 1.3097460954541489,
+     "flagged": false,
+     "reasons": []
+    }
+   ],
+   "warnings": [
+    {
+     "attacker": 3,
+     "defender": 0,
+     "arrivalS": 850,
+     "seen": true,
+     "warnS": 117,
+     "reactionS": 563,
+     "defenderArrivalS": 0,
+     "tookCapital": true
+    },
+    {
+     "attacker": 2,
+     "defender": 1,
+     "arrivalS": 1099,
+     "seen": true,
+     "warnS": 521,
+     "reactionS": 743,
+     "defenderArrivalS": 0,
+     "tookCapital": true
+    },
+    {
+     "attacker": 0,
+     "defender": 1,
+     "arrivalS": 1383,
+     "seen": true,
+     "warnS": 148,
+     "reactionS": 86,
+     "defenderArrivalS": 0,
+     "tookCapital": false
+    },
+    {
+     "attacker": 1,
+     "defender": 0,
+     "arrivalS": 1526,
+     "seen": true,
+     "warnS": 88,
+     "reactionS": 223,
+     "defenderArrivalS": 0,
+     "tookCapital": false
+    },
+    {
+     "attacker": 2,
+     "defender": 3,
+     "arrivalS": 2217,
+     "seen": true,
+     "warnS": 80,
+     "reactionS": 14,
+     "defenderArrivalS": 0,
+     "tookCapital": false
+    }
+   ],
+   "pacing": {
+    "firstContactS": 301,
+    "firstTownLostS": 463,
+    "firstCapitalLostS": 1669,
+    "eliminationsPerHour": 3,
+    "undecided": true
+   },
+   "health": {
+    "idleShare": 0.04310483481841284,
+    "stuckShare": 0.004953839225399685,
+    "starvedShare": 0.4988580435551838
+   },
+   "challengerCaptures": [],
+   "ownLostS": 2258,
+   "wallS": 615.9
+  },
+  {
+   "scenario": "backdoor/large",
+   "seed": 7,
+   "minutes": 40,
+   "mapSize": "large",
+   "infoMode": "open",
+   "score": 94,
+   "verdict": "PASS",
+   "oneSided": {
+    "dominatedShare": 0,
+    "leadChanges": 1,
+    "largestComeback": 0.09064167267483778,
+    "gini": [
+     {
+      "t": 900,
+      "g": 0.07142857142857142
+     },
+     {
+      "t": 1800,
+      "g": 0.18243243243243243
+     },
+     {
+      "t": 2700,
+      "g": null
+     }
+    ]
+   },
+   "cheap": [],
+   "warnings": [
+    {
+     "attacker": 3,
+     "defender": 2,
+     "arrivalS": 785,
+     "seen": true,
+     "warnS": 123,
+     "reactionS": 64,
+     "defenderArrivalS": 0,
+     "tookCapital": false
+    },
+    {
+     "attacker": 0,
+     "defender": 1,
+     "arrivalS": 869,
+     "seen": true,
+     "warnS": 256,
+     "reactionS": 193,
+     "defenderArrivalS": 0,
+     "tookCapital": false
+    },
+    {
+     "attacker": 1,
+     "defender": 2,
+     "arrivalS": 988,
+     "seen": true,
+     "warnS": 119,
+     "reactionS": 0,
+     "defenderArrivalS": 0,
+     "tookCapital": false
+    },
+    {
+     "attacker": 0,
+     "defender": 3,
+     "arrivalS": 1363,
+     "seen": true,
+     "warnS": 448,
+     "reactionS": 0,
+     "defenderArrivalS": 0,
+     "tookCapital": false
+    }
+   ],
+   "pacing": {
+    "firstContactS": 419,
+    "firstTownLostS": 585,
+    "firstCapitalLostS": -1,
+    "eliminationsPerHour": 0,
+    "undecided": true
+   },
+   "health": {
+    "idleShare": 0.027298759147311485,
+    "stuckShare": 0.005886096086541521,
+    "starvedShare": 0.5014317531021317
+   },
+   "challengerCaptures": [],
+   "ownLostS": -1,
+   "wallS": 700.8
+  },
+  {
+   "scenario": "backdoor/large",
+   "seed": 11,
+   "minutes": 40,
+   "mapSize": "large",
+   "infoMode": "open",
+   "score": 94,
+   "verdict": "PASS",
+   "oneSided": {
+    "dominatedShare": 0,
+    "leadChanges": 1,
+    "largestComeback": 0.05370323237465004,
+    "gini": [
+     {
+      "t": 900,
+      "g": 0.18846153846153846
+     },
+     {
+      "t": 1800,
+      "g": 0.3002645502645503
+     },
+     {
+      "t": 2700,
+      "g": null
+     }
+    ]
+   },
+   "cheap": [],
+   "warnings": [
+    {
+     "attacker": 2,
+     "defender": 1,
+     "arrivalS": 1077,
+     "seen": false,
+     "warnS": null,
+     "reactionS": null,
+     "defenderArrivalS": null,
+     "tookCapital": false
+    },
+    {
+     "attacker": 3,
+     "defender": 0,
+     "arrivalS": 1285,
+     "seen": true,
+     "warnS": 288,
+     "reactionS": 44,
+     "defenderArrivalS": 0,
+     "tookCapital": false
+    },
+    {
+     "attacker": 2,
+     "defender": 3,
+     "arrivalS": 1454,
+     "seen": true,
+     "warnS": 291,
+     "reactionS": 333,
+     "defenderArrivalS": 0,
+     "tookCapital": false
+    },
+    {
+     "attacker": 1,
+     "defender": 0,
+     "arrivalS": 1488,
+     "seen": true,
+     "warnS": 44,
+     "reactionS": 0,
+     "defenderArrivalS": 0,
+     "tookCapital": false
+    },
+    {
+     "attacker": 2,
+     "defender": 0,
+     "arrivalS": 2266,
+     "seen": true,
+     "warnS": 96,
+     "reactionS": 0,
+     "defenderArrivalS": 0,
+     "tookCapital": false
+    }
+   ],
+   "pacing": {
+    "firstContactS": 333,
+    "firstTownLostS": 544,
+    "firstCapitalLostS": -1,
+    "eliminationsPerHour": 0,
+    "undecided": true
+   },
+   "health": {
+    "idleShare": 0.05445373938653382,
+    "stuckShare": 0.00726885358899646,
+    "starvedShare": 0.49616191997994796
+   },
+   "challengerCaptures": [],
+   "ownLostS": -1,
+   "wallS": 766.3
+  },
+  {
+   "scenario": "feint/large",
+   "seed": 7,
+   "minutes": 40,
+   "mapSize": "large",
+   "infoMode": "open",
+   "score": 94,
+   "verdict": "PASS",
+   "oneSided": {
+    "dominatedShare": 0,
+    "leadChanges": 4,
+    "largestComeback": 0.06299063204079212,
+    "gini": [
+     {
+      "t": 900,
+      "g": 0.12890625
+     },
+     {
+      "t": 1800,
+      "g": 0.138268156424581
+     },
+     {
+      "t": 2700,
+      "g": null
+     }
+    ]
+   },
+   "cheap": [],
+   "warnings": [
+    {
+     "attacker": 1,
+     "defender": 2,
+     "arrivalS": 694,
+     "seen": true,
+     "warnS": 136,
+     "reactionS": 0,
+     "defenderArrivalS": 0,
+     "tookCapital": false
+    },
+    {
+     "attacker": 0,
+     "defender": 3,
+     "arrivalS": 1421,
+     "seen": true,
+     "warnS": 221,
+     "reactionS": 0,
+     "defenderArrivalS": 0,
+     "tookCapital": false
+    },
+    {
+     "attacker": 1,
+     "defender": 0,
+     "arrivalS": 2256,
+     "seen": true,
+     "warnS": 1441,
+     "reactionS": 741,
+     "defenderArrivalS": 0,
+     "tookCapital": false
+    }
+   ],
+   "pacing": {
+    "firstContactS": 407,
+    "firstTownLostS": 568,
+    "firstCapitalLostS": -1,
+    "eliminationsPerHour": 0,
+    "undecided": true
+   },
+   "health": {
+    "idleShare": 0.03296534805274456,
+    "stuckShare": 0.005765102729224164,
+    "starvedShare": 0.4955841766329347
+   },
+   "challengerCaptures": [],
+   "ownLostS": -1,
+   "wallS": 403
+  },
+  {
+   "scenario": "feint/large",
+   "seed": 11,
+   "minutes": 40,
+   "mapSize": "large",
+   "infoMode": "open",
+   "score": 94,
+   "verdict": "PASS",
+   "oneSided": {
+    "dominatedShare": 0,
+    "leadChanges": 1,
+    "largestComeback": 0.05385400714650332,
+    "gini": [
+     {
+      "t": 900,
+      "g": 0.19642857142857142
+     },
+     {
+      "t": 1800,
+      "g": 0.3108695652173913
+     },
+     {
+      "t": 2700,
+      "g": null
+     }
+    ]
+   },
+   "cheap": [
+    {
+     "capital": 0,
+     "by": 1,
+     "t": 1931,
+     "shareOfArmy": 0.30866666666666664,
+     "defenderOver": 0.3566594672426206,
+     "flagged": false,
+     "reasons": []
+    }
+   ],
+   "warnings": [
+    {
+     "attacker": 3,
+     "defender": 0,
+     "arrivalS": 707,
+     "seen": true,
+     "warnS": 39,
+     "reactionS": 23,
+     "defenderArrivalS": 0,
+     "tookCapital": false
+    },
+    {
+     "attacker": 1,
+     "defender": 0,
+     "arrivalS": 946,
+     "seen": true,
+     "warnS": 190,
+     "reactionS": 0,
+     "defenderArrivalS": 0,
+     "tookCapital": true
+    },
+    {
+     "attacker": 2,
+     "defender": 1,
+     "arrivalS": 947,
+     "seen": false,
+     "warnS": null,
+     "reactionS": null,
+     "defenderArrivalS": null,
+     "tookCapital": false
+    },
+    {
+     "attacker": 2,
+     "defender": 3,
+     "arrivalS": 1180,
+     "seen": true,
+     "warnS": 321,
+     "reactionS": 0,
+     "defenderArrivalS": 0,
+     "tookCapital": false
+    },
+    {
+     "attacker": 2,
+     "defender": 0,
+     "arrivalS": 1774,
+     "seen": true,
+     "warnS": 44,
+     "reactionS": 0,
+     "defenderArrivalS": 0,
+     "tookCapital": false
+    }
+   ],
+   "pacing": {
+    "firstContactS": 332,
+    "firstTownLostS": 603,
+    "firstCapitalLostS": 1931,
+    "eliminationsPerHour": 1.5,
+    "undecided": true
+   },
+   "health": {
+    "idleShare": 0.04486790818536163,
+    "stuckShare": 0.002944997834560416,
+    "starvedShare": 0.537000144362639
+   },
+   "challengerCaptures": [],
+   "ownLostS": 1930,
+   "wallS": 774.2
+  },
+  {
+   "scenario": "econ_war/large",
+   "seed": 7,
+   "minutes": 40,
+   "mapSize": "large",
+   "infoMode": "open",
+   "score": 94,
+   "verdict": "PASS",
+   "oneSided": {
+    "dominatedShare": 0,
+    "leadChanges": 1,
+    "largestComeback": 0.04015090272163837,
+    "gini": [
+     {
+      "t": 900,
+      "g": 0.165
+     },
+     {
+      "t": 1800,
+      "g": 0.2384393063583815
+     },
+     {
+      "t": 2700,
+      "g": null
+     }
+    ]
+   },
+   "cheap": [],
+   "warnings": [
+    {
+     "attacker": 1,
+     "defender": 0,
+     "arrivalS": 925,
+     "seen": true,
+     "warnS": 45,
+     "reactionS": 0,
+     "defenderArrivalS": 0,
+     "tookCapital": false
+    },
+    {
+     "attacker": 2,
+     "defender": 3,
+     "arrivalS": 1377,
+     "seen": true,
+     "warnS": 7,
+     "reactionS": 0,
+     "defenderArrivalS": 0,
+     "tookCapital": false
+    },
+    {
+     "attacker": 3,
+     "defender": 0,
+     "arrivalS": 1405,
+     "seen": true,
+     "warnS": 493,
+     "reactionS": 0,
+     "defenderArrivalS": 0,
+     "tookCapital": false
+    },
+    {
+     "attacker": 2,
+     "defender": 0,
+     "arrivalS": 2200,
+     "seen": false,
+     "warnS": null,
+     "reactionS": null,
+     "defenderArrivalS": null,
+     "tookCapital": false
+    }
+   ],
+   "pacing": {
+    "firstContactS": 563,
+    "firstTownLostS": 644,
+    "firstCapitalLostS": -1,
+    "eliminationsPerHour": 0,
+    "undecided": true
+   },
+   "health": {
+    "idleShare": 0.03536339686967302,
+    "stuckShare": 0.0036262203626220364,
+    "starvedShare": 0.5761351309468464
+   },
+   "challengerCaptures": [],
+   "ownLostS": -1,
+   "wallS": 645.9
+  },
+  {
+   "scenario": "econ_war/large",
+   "seed": 11,
+   "minutes": 40,
+   "mapSize": "large",
+   "infoMode": "open",
+   "score": 94,
+   "verdict": "PASS",
+   "oneSided": {
+    "dominatedShare": 0,
+    "leadChanges": 2,
+    "largestComeback": 0.05392282136468183,
+    "gini": [
+     {
+      "t": 900,
+      "g": 0.2388888888888889
+     },
+     {
+      "t": 1800,
+      "g": 0.3374439461883408
+     },
+     {
+      "t": 2700,
+      "g": null
+     }
+    ]
+   },
+   "cheap": [
+    {
+     "capital": 0,
+     "by": 3,
+     "t": 2059,
+     "shareOfArmy": 0.3804338627323761,
+     "defenderOver": 0,
+     "flagged": false,
+     "reasons": []
+    }
+   ],
+   "warnings": [
+    {
+     "attacker": 3,
+     "defender": 0,
+     "arrivalS": 726,
+     "seen": true,
+     "warnS": 186,
+     "reactionS": 0,
+     "defenderArrivalS": 0,
+     "tookCapital": true
+    },
+    {
+     "attacker": 1,
+     "defender": 0,
+     "arrivalS": 908,
+     "seen": true,
+     "warnS": 286,
+     "reactionS": 0,
+     "defenderArrivalS": 0,
+     "tookCapital": false
+    },
+    {
+     "attacker": 2,
+     "defender": 1,
+     "arrivalS": 966,
+     "seen": true,
+     "warnS": 21,
+     "reactionS": 0,
+     "defenderArrivalS": 0,
+     "tookCapital": false
+    },
+    {
+     "attacker": 2,
+     "defender": 3,
+     "arrivalS": 1370,
+     "seen": true,
+     "warnS": 165,
+     "reactionS": 96,
+     "defenderArrivalS": 0,
+     "tookCapital": false
+    },
+    {
+     "attacker": 2,
+     "defender": 0,
+     "arrivalS": 1800,
+     "seen": false,
+     "warnS": null,
+     "reactionS": null,
+     "defenderArrivalS": null,
+     "tookCapital": false
+    }
+   ],
+   "pacing": {
+    "firstContactS": 467,
+    "firstTownLostS": 580,
+    "firstCapitalLostS": 2059,
+    "eliminationsPerHour": 1.5,
+    "undecided": true
+   },
+   "health": {
+    "idleShare": 0.032742476885931335,
+    "stuckShare": 0.004004475590365703,
+    "starvedShare": 0.5290324480301514
+   },
+   "challengerCaptures": [],
+   "ownLostS": 2058,
+   "wallS": 758.6
+  },
+  {
+   "scenario": "siege/large",
+   "seed": 7,
+   "minutes": 40,
+   "mapSize": "large",
+   "infoMode": "open",
+   "score": 94,
+   "verdict": "PASS",
+   "oneSided": {
+    "dominatedShare": 0,
+    "leadChanges": 3,
+    "largestComeback": 0.08033476997093314,
+    "gini": [
+     {
+      "t": 900,
+      "g": 0.185
+     },
+     {
+      "t": 1800,
+      "g": 0.22252747252747251
+     },
+     {
+      "t": 2700,
+      "g": null
+     }
+    ]
+   },
+   "cheap": [],
+   "warnings": [
+    {
+     "attacker": 1,
+     "defender": 2,
+     "arrivalS": 908,
+     "seen": true,
+     "warnS": 430,
+     "reactionS": 0,
+     "defenderArrivalS": 0,
+     "tookCapital": false
+    },
+    {
+     "attacker": 3,
+     "defender": 0,
+     "arrivalS": 1490,
+     "seen": true,
+     "warnS": 347,
+     "reactionS": 0,
+     "defenderArrivalS": 0,
+     "tookCapital": false
+    },
+    {
+     "attacker": 1,
+     "defender": 0,
+     "arrivalS": 1975,
+     "seen": true,
+     "warnS": 86,
+     "reactionS": 0,
+     "defenderArrivalS": 0,
+     "tookCapital": false
+    }
+   ],
+   "pacing": {
+    "firstContactS": 350,
+    "firstTownLostS": 566,
+    "firstCapitalLostS": -1,
+    "eliminationsPerHour": 0,
+    "undecided": true
+   },
+   "health": {
+    "idleShare": 0.03600368616733929,
+    "stuckShare": 0.005147923353141187,
+    "starvedShare": 0.534621373415107
+   },
+   "challengerCaptures": [],
+   "ownLostS": -1,
+   "wallS": 367.1
+  },
+  {
+   "scenario": "siege/large",
+   "seed": 11,
+   "minutes": 40,
+   "mapSize": "large",
+   "infoMode": "open",
+   "score": 84,
+   "verdict": "PASS",
+   "oneSided": {
+    "dominatedShare": 0,
+    "leadChanges": 2,
+    "largestComeback": 0.05351255389297489,
+    "gini": [
+     {
+      "t": 900,
+      "g": 0.25757575757575757
+     },
+     {
+      "t": 1800,
+      "g": 0.3513824884792627
+     },
+     {
+      "t": 2700,
+      "g": null
+     }
+    ]
+   },
+   "cheap": [
+    {
+     "capital": 0,
+     "by": 3,
+     "t": 1908,
+     "shareOfArmy": 0.4027613770551367,
+     "defenderOver": 0.024282062847692076,
+     "flagged": false,
+     "reasons": []
+    }
+   ],
+   "warnings": [
+    {
+     "attacker": 1,
+     "defender": 0,
+     "arrivalS": 882,
+     "seen": true,
+     "warnS": 362,
+     "reactionS": 0,
+     "defenderArrivalS": 0,
+     "tookCapital": false
+    },
+    {
+     "attacker": 3,
+     "defender": 0,
+     "arrivalS": 897,
+     "seen": true,
+     "warnS": 52,
+     "reactionS": 0,
+     "defenderArrivalS": 0,
+     "tookCapital": true
+    },
+    {
+     "attacker": 2,
+     "defender": 1,
+     "arrivalS": 924,
+     "seen": false,
+     "warnS": null,
+     "reactionS": null,
+     "defenderArrivalS": null,
+     "tookCapital": false
+    },
+    {
+     "attacker": 2,
+     "defender": 3,
+     "arrivalS": 1557,
+     "seen": false,
+     "warnS": null,
+     "reactionS": null,
+     "defenderArrivalS": null,
+     "tookCapital": false
+    }
+   ],
+   "pacing": {
+    "firstContactS": 436,
+    "firstTownLostS": 513,
+    "firstCapitalLostS": 1908,
+    "eliminationsPerHour": 1.5,
+    "undecided": true
+   },
+   "health": {
+    "idleShare": 0.06396113175192912,
+    "stuckShare": 0.0034581308945412976,
+    "starvedShare": 0.5113460988853958
+   },
+   "challengerCaptures": [],
+   "ownLostS": 1907,
+   "wallS": 394
+  },
+  {
+   "scenario": "ai_only/large",
+   "seed": 7,
+   "minutes": 40,
+   "mapSize": "large",
+   "infoMode": "open",
+   "score": 94,
+   "verdict": "PASS",
+   "oneSided": {
+    "dominatedShare": 0,
+    "leadChanges": 3,
+    "largestComeback": 0.12337536996525544,
+    "gini": [
+     {
+      "t": 900,
+      "g": 0.10616438356164383
+     },
+     {
+      "t": 1800,
+      "g": 0.21
+     },
+     {
+      "t": 2700,
+      "g": null
+     }
+    ]
+   },
+   "cheap": [
+    {
+     "capital": 3,
+     "by": 0,
+     "t": 2244,
+     "shareOfArmy": 0.4907084785133566,
+     "defenderOver": 0.9271449704142012,
+     "flagged": false,
+     "reasons": []
+    }
+   ],
+   "warnings": [
+    {
+     "attacker": 1,
+     "defender": 2,
+     "arrivalS": 675,
+     "seen": true,
+     "warnS": 148,
+     "reactionS": 0,
+     "defenderArrivalS": 0,
+     "tookCapital": false
+    },
+    {
+     "attacker": 3,
+     "defender": 2,
+     "arrivalS": 1063,
+     "seen": true,
+     "warnS": 122,
+     "reactionS": 0,
+     "defenderArrivalS": 0,
+     "tookCapital": false
+    },
+    {
+     "attacker": 0,
+     "defender": 3,
+     "arrivalS": 1090,
+     "seen": true,
+     "warnS": 187,
+     "reactionS": 98,
+     "defenderArrivalS": 0,
+     "tookCapital": true
+    }
+   ],
+   "pacing": {
+    "firstContactS": 418,
+    "firstTownLostS": 587,
+    "firstCapitalLostS": 2244,
+    "eliminationsPerHour": 1.5,
+    "undecided": true
+   },
+   "health": {
+    "idleShare": 0.027919089147286823,
+    "stuckShare": 0.003785125968992248,
+    "starvedShare": 0.5342478197674418
+   },
+   "challengerCaptures": [
+    {
+     "capital": 3,
+     "by": 0,
+     "t": 2243
+    }
+   ],
+   "ownLostS": -1,
+   "wallS": 520.8
+  },
+  {
+   "scenario": "ai_only/large",
+   "seed": 11,
+   "minutes": 40,
+   "mapSize": "large",
+   "infoMode": "open",
+   "score": 75,
+   "verdict": "PASS",
+   "oneSided": {
+    "dominatedShare": 0,
+    "leadChanges": 1,
+    "largestComeback": 0.05385400714650332,
+    "gini": [
+     {
+      "t": 900,
+      "g": 0.16095890410958905
+     },
+     {
+      "t": 1800,
+      "g": 0.23132780082987553
+     },
+     {
+      "t": 2700,
+      "g": null
+     }
+    ]
+   },
+   "cheap": [
+    {
+     "capital": 3,
+     "by": 2,
+     "t": 2341,
+     "shareOfArmy": 0.31740954005829247,
+     "defenderOver": 1.3694662187383353,
+     "flagged": false,
+     "reasons": []
+    }
+   ],
+   "warnings": [
+    {
+     "attacker": 1,
+     "defender": 0,
+     "arrivalS": 762,
+     "seen": true,
+     "warnS": 347,
+     "reactionS": 0,
+     "defenderArrivalS": 0,
+     "tookCapital": false
+    },
+    {
+     "attacker": 2,
+     "defender": 1,
+     "arrivalS": 1101,
+     "seen": false,
+     "warnS": null,
+     "reactionS": null,
+     "defenderArrivalS": null,
+     "tookCapital": false
+    },
+    {
+     "attacker": 2,
+     "defender": 3,
+     "arrivalS": 1337,
+     "seen": true,
+     "warnS": 36,
+     "reactionS": 0,
+     "defenderArrivalS": 0,
+     "tookCapital": true
+    }
+   ],
+   "pacing": {
+    "firstContactS": 332,
+    "firstTownLostS": 455,
+    "firstCapitalLostS": 2341,
+    "eliminationsPerHour": 1.5,
+    "undecided": true
+   },
+   "health": {
+    "idleShare": 0.0690341851974776,
+    "stuckShare": 0.004950768890363978,
+    "starvedShare": 0.46282774643212743
+   },
+   "challengerCaptures": [],
+   "ownLostS": -1,
+   "wallS": 322.2
+  }
+ ]
+}
