@@ -4,6 +4,9 @@ import { assignJob, canAfford, enemyNear, isStructure, jobOf, startStructure, st
 import { Ground } from './terrain';
 import { startLine, WORKS } from './works';
 import type { Faction, Fort, Unit, Zone } from './types';
+import { planWorksTiers, tierSitesWaiting } from './worksTiers';
+import { planZoneJobs, zoneSitesWaiting } from './econZones';
+import { perimeterSitesWaiting, planPerimeterRepair } from './capitalDefence';
 import { dist, headingTo, type V2 } from './vec';
 import type { World } from './world';
 
@@ -117,12 +120,16 @@ export function planStructures(world: World, f: Faction): void {
   if (!f.alive) return;
   planCapitalLine(world, f);
   planZones(world, f);
+  // 3.0: works upgrades / minefields / perimeter repairs, and economic-zone jobs.
+  planWorksTiers(world, f);
+  planZoneJobs(world, f);
+  planPerimeterRepair(world, f);
   requestEngineers(world, f);
 }
 
 /** Plan items (buildings and trenches) not yet finished: the capital line and every live zone. */
 function sitesWaiting(world: World, f: Faction): number {
-  let n = 0;
+  let n = tierSitesWaiting(world, f) + zoneSitesWaiting(world, f) + perimeterSitesWaiting(world, f);
   const plans = [capitalPlans.get(f), ...zonePlansOf(f).values()];
   for (const p of plans) {
     for (const it of p?.items ?? []) {
@@ -416,11 +423,13 @@ function releaseEscrow(world: World, f: Faction, it: PlanItem): void {
 }
 
 /** Keep `buildersPerSite` (trenches: `diggersPerTrench`) assigned to each site, nearest first. */
-function assignBuilders(world: World, sites: Fort[], pool: () => Unit[]): void {
+export function assignBuilders(world: World, sites: Fort[], pool: () => Unit[]): void {
   for (const site of sites) {
-    const want = isStructure(site.kind) ? PLANS.buildersPerSite : PLANS.diggersPerTrench;
+    // 3.0: upgrades, minefields and perimeter repairs are engineer work too (worksTiers.ts).
+    const engineersOnly = isStructure(site.kind) || !!site.upgrade || site.kind === 'minefield' || !!site.permanent;
+    const want = engineersOnly ? PLANS.buildersPerSite : PLANS.diggersPerTrench;
     // The pool's order is the preference (nearest first, or ranked by the pool).
-    const cands = pool().filter((u) => isStructure(site.kind) ? u.def.id === 'engineer' : canDig(u, site));
+    const cands = pool().filter((u) => engineersOnly ? u.def.id === 'engineer' : canDig(u, site));
     let have = 0;
     for (const u of cands) {
       if (jobOf(world, u) === site.id) {
@@ -443,7 +452,7 @@ function canDig(u: Unit, site: Fort): boolean {
 }
 
 /** Not on another errand: alive, not manual / routing / spearhead / op role, not bridging, not in a building. */
-function freeHand(f: Faction, u: Unit): boolean {
+export function freeHand(f: Faction, u: Unit): boolean {
   if (u.hp <= 0 || u.fixed || u.manual || u.routing || u.spearhead || u.fortId !== null || u.mounted) return false;
   if (u.behavior !== 'advance' && u.behavior !== 'rally') return false;
   if (u.opRole !== 'line' && !(u.opRole === 'garrison' && u.opObjective === `hq:${f.id}`)) return false;

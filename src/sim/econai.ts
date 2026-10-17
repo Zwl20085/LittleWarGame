@@ -5,6 +5,7 @@ import { populationCap, populationOf } from './production';
 import { placeEfficiency, placeOwner, placeContested } from './settlements';
 import type { Faction, Place } from './types';
 import { refund } from './economy';
+import { thinkZones } from './econZoneAi';
 import { dist } from './vec';
 import type { World } from './world';
 
@@ -126,6 +127,8 @@ export function thinkInvestment(world: World, f: Faction): void {
   const fund = f.econFund;
   const { appetite, safe } = investAppetite(world, f);
   appetites.set(f, appetite);
+  // 3.0: economic zones (econZoneAi.ts) — rebuild, raise or found one per think.
+  thinkZones(world, f, appetite, safe);
   // Threatened: the money set aside goes back to the army.
   if (appetite <= 0) releaseFund(world, f);
   const maxSites = appetite >= 1.1 ? ECON_AI.maxSites + 1 : appetite >= 0.5 ? ECON_AI.maxSites : appetite > 0 ? 1 : 0;

@@ -7,6 +7,7 @@ import type { MapDef } from './mapdef';
 import { MAPS } from './maps';
 import { generateMap } from './mapgen';
 import type { FrontInfo } from './frontai';
+import type { EconZone } from './econZones';
 import type { BatteryReveal } from './operations';
 import { createStats, type MatchStats } from './stats';
 import { createBattleLog, type BattleLog } from './events';
@@ -58,6 +59,8 @@ export class World {
   readonly places: Place[] = [];
   /** 2.2 economic buildings (econ.ts), ruins included. */
   readonly econ: EconBuilding[] = [];
+  /** 3.0 engineer-built economic zones (econZones.ts), ruins included. */
+  readonly econZones: EconZone[] = [];
   readonly fx: FxEvent[] = [];
   readonly log: LogEntry[] = [];
   readonly spatial = new SpatialHash(40);
