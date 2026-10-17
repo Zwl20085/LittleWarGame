@@ -399,9 +399,9 @@
     "escalation": 0.06,
     "cancel_refund_ratio": 0.8,
     "items": {
-      "inf_guns": {"p_k": 260, "m_k": 220, "seconds": 120},
-      "ap_grenades": {"p_k": 160, "m_k": 200, "seconds": 90},
-      "motorization": {"p_k": 300, "m_k": 360, "seconds": 150},
+      "inf_guns": {"p_k": 150, "m_k": 330, "seconds": 120},
+      "ap_grenades": {"p_k": 110, "m_k": 250, "seconds": 90},
+      "motorization": {"p_k": 220, "m_k": 440, "seconds": 150},
       "armour_1": {"p_k": 160, "m_k": 300, "seconds": 120},
       "armour_2": {"p_k": 240, "m_k": 450, "seconds": 150, "requires": ["armour_1"]},
       "armour_3": {"p_k": 320, "m_k": 600, "seconds": 180, "requires": ["armour_2"]},
@@ -409,9 +409,9 @@
       "gun_2": {"p_k": 240, "m_k": 450, "seconds": 150, "requires": ["gun_1"]},
       "gun_3": {"p_k": 320, "m_k": 600, "seconds": 180, "requires": ["gun_2"]},
       "arty_range": {"p_k": 160, "m_k": 260, "seconds": 120},
-      "truck_capacity": {"p_k": 140, "m_k": 180, "seconds": 90},
-      "eng_speed": {"p_k": 120, "m_k": 140, "seconds": 90},
-      "staff": {"p_k": 220, "m_k": 160, "seconds": 120}
+      "truck_capacity": {"p_k": 100, "m_k": 220, "seconds": 90},
+      "eng_speed": {"p_k": 80, "m_k": 180, "seconds": 90},
+      "staff": {"p_k": 120, "m_k": 260, "seconds": 120}
     },
     "effects": {
       "inf_gun": {"range_m": 260, "interval_s": 10, "damage": 110, "blast_m": 6, "suppression": 22, "muzzle_mps": 75, "sigma_m": 7, "ammo_cost": 0.006},
