@@ -11,6 +11,7 @@ import { applyCancelZone, applySetDirective } from './commands/directive';
 import { applyFocus, applyUnitOrder } from './commands/units';
 import { applyBuildRoad, applyExtendRail, applyRepairRail } from './commands/transport';
 import { applyCancelResearch, applyResearch } from './commands/upgrades';
+import { applySetAutoCommand, applySetAutoEngineering, applySetAutoResearch } from './commands/auto';
 import { fail } from './commands/shared';
 
 /**
@@ -33,6 +34,10 @@ export type Command =
   | { type: 'setAuto'; on: boolean }
   /** 2.2.1: automatic investment in economic buildings (off returns the money set aside). */
   | { type: 'setAutoInvest'; on: boolean }
+  /** 3.0.1: the HQ staff run research / engineering / the directive for the player (default on; off = take over). */
+  | { type: 'setAutoResearch'; on: boolean }
+  | { type: 'setAutoEngineering'; on: boolean }
+  | { type: 'setAutoCommand'; on: boolean }
   | { type: 'setLock'; index: number; locked: boolean }
   | { type: 'resetAlloc' }
   /**
@@ -123,6 +128,9 @@ function apply(match: Match, env: CommandEnvelope): CommandOutcome {
     case 'setAlloc': return applySetAlloc(f, c);
     case 'setAutoInvest': return applySetAutoInvest(match, f, c);
     case 'setAuto': return applySetAuto(f, c);
+    case 'setAutoResearch': return applySetAutoResearch(f, c);
+    case 'setAutoEngineering': return applySetAutoEngineering(f, c);
+    case 'setAutoCommand': return applySetAutoCommand(f, c);
     case 'setLock': return applySetLock(f, c);
     case 'resetAlloc': return applyResetAlloc(match, f);
     case 'setDirective': return applySetDirective(match, f, c);

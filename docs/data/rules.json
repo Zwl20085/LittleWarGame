@@ -297,6 +297,8 @@
     "compliance_comment": "3.0 directive compliance (V30_SPEC §6, compliance.ts): every HQ think each front computes compliance in [0,1] = base + proximity (near the capital) + temperament - risk (force ratio at its objective, own towns it would expose, ammunition). Below compliance_threshold it declines the directive and acts on its own; above it obeys after delay_s_per_km × km from the capital. A defend directive on the capital is never declined by fronts within home_recall_m. The same directive re-issued within insist_window_s (or the HUD Force toggle) is forced: obeyed at once by every front.",
     "home_recall_m": 1500,
     "insist_window_s": 30,
+    "auto_resume_comment": "3.0.1 auto HQ (Faction.autoCommand, directive.chooseDirective): the doctrine AI picks the player's directive while no manual directive is in force; a manual directive other than advance pauses it for auto_resume_s after it was given.",
+    "auto_resume_s": 600,
     "compliance": {
       "enabled": true,
       "base": 0.55,
