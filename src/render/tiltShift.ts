@@ -93,6 +93,14 @@ export class TiltShift {
     this.quadScene.add(this.quad);
   }
 
+  /** Compile both pass shaders up front (no link stall the first time a low angle is reached). */
+  prewarm(renderer: THREE.WebGLRenderer): void {
+    for (const m of [this.blur, this.comp]) {
+      this.quad.material = m;
+      renderer.compile(this.quadScene, this.quadCam);
+    }
+  }
+
   get active(): boolean {
     return this.strength >= TILT.minStrength;
   }

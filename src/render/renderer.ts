@@ -145,6 +145,7 @@ export class GameRenderer {
     sc.near = 10;
     sc.far = 1500;
     this.scene.add(this.sun, this.sun.target);
+    this.tilt.prewarm(this.renderer);
     this.day = new DayCycle({ sun: this.sun, hemi, sunDir: this.sunDir, setHaze: (c) => this.haze.setColor(c), backdrop });
 
     this.terrainView = new TerrainView(w.terrain);
