@@ -14,6 +14,9 @@ const S_IFMT = 0o170000;
 const S_IFLNK = 0o120000;
 const S_IFREG = 0o100000;
 
+/** Windows device names: opening `con.txt` or `aux` hits the device, with or without extension. */
+const RESERVED_NAME = /^(con|prn|aux|nul|com[1-9]|lpt[1-9]|conin\$|conout\$)$/i;
+
 const DEFAULT_LIMITS = Object.freeze({
   maxEntries: 5000,
   maxEntryBytes: 64 * 1024 * 1024,
@@ -54,6 +57,7 @@ function safeEntryPath(name, maxLen = DEFAULT_LIMITS.maxNameLength) {
     if (seg === '' || seg === '.' || seg === '..') return null;
     if (/[<>:"|?*]/.test(seg)) return null; // not representable on Windows (and ':' = ADS)
     if (/[. ]$/.test(seg)) return null; // Windows silently strips these: aliasing risk
+    if (RESERVED_NAME.test(seg.split('.')[0].replace(/ +$/, ''))) return null;
   }
   return parts.join('/') + (isDir ? '/' : '');
 }

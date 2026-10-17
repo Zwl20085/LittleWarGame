@@ -50,8 +50,11 @@ function writeState(dir, state) {
   writeFileAtomic(path.join(dir, STATE_FILE), JSON.stringify(state, null, 2));
 }
 
-/** Installed bundle versions: x.y.z directories with an index.html and a manifest. */
-function listInstalled(dir) {
+/**
+ * Installed bundle versions: x.y.z directories with an index.html and a manifest. With
+ * `shellVersion`, bundles whose stored manifest needs a newer shell (minShell) are skipped.
+ */
+function listInstalled(dir, shellVersion) {
   let names;
   try {
     names = fs.readdirSync(dir, { withFileTypes: true });
@@ -61,7 +64,16 @@ function listInstalled(dir) {
   return names
     .filter((d) => d.isDirectory() && !d.isSymbolicLink() && logic.isStrictVersion(d.name))
     .map((d) => d.name)
-    .filter((v) => fs.existsSync(path.join(dir, v, 'index.html')) && fs.existsSync(path.join(dir, v, MANIFEST_FILE)));
+    .filter((v) => fs.existsSync(path.join(dir, v, 'index.html')) && fs.existsSync(path.join(dir, v, MANIFEST_FILE)))
+    .filter((v) => shellVersion === undefined || manifestFits(path.join(dir, v, MANIFEST_FILE), shellVersion));
+}
+
+function manifestFits(file, shellVersion) {
+  try {
+    return logic.shellCompatible(fs.readFileSync(file, 'utf8'), shellVersion);
+  } catch {
+    return false;
+  }
 }
 
 function bundlePath(dir, version) {

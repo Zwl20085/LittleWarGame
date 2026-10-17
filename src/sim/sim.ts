@@ -35,6 +35,7 @@ import { aboard, initTransport, railSecond, railTick } from './rail';
 import { transportSecond } from './transportjobs';
 import { canSpot, observerOf } from './terrainrules';
 import type { V2 } from './vec';
+import { newUpgradeState, upgradeSecond } from './upgrades';
 
 export interface Match {
   readonly world: World;
@@ -62,7 +63,7 @@ function makeFaction(world: World, id: number, isPlayer: boolean): Faction {
     weights, caps: doctrineCaps(world, { isPlayer, doctrine }, world.data.rules.proposed_defaults.production_unit_caps), paused: {},
     spent: [], protectedOrder: null, protectRetryAt: 0, nextRaidAt: 240, command: createHighCommand(), depot: 0, econP: 0, econM: 0, econFund: { p: 0, m: 0, active: false }, econInvested: 0, lastWorksAt: -999, orders: [], manualQueue: [], fronts: [], directive: initialDirective(isPlayer), mainFront: 0, frontSeq: 0, zones: [], zoneSeq: 0,
     incomeP: 0, incomeM: 0, overflowWarnAt: -1e9, hqProgress: {}, lostUnits: 0, producedUnits: 0,
-    spentTotalP: 0, spentTotalM: 0, aiThinkAt: id * 0.7, trucksUnderFire: [],
+    spentTotalP: 0, spentTotalM: 0, aiThinkAt: id * 0.7, trucksUnderFire: [], upgrades: newUpgradeState(),
   };
 }
 
@@ -267,6 +268,7 @@ function economySecond(match: Match): void {
       }
     }
     fundSecond(world, f);
+    upgradeSecond(world, f);
     scheduleProduction(world, f);
     advanceProduction(world, f, 1);
     convoySecond(world, f);

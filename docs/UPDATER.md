@@ -84,12 +84,20 @@ the installer instead of the bundle.
 
 ## What the shell does
 
+0. **One instance.** The shell takes `app.requestSingleInstanceLock()` before `init`. A second
+   launch quits at once and the first window is restored and focused, so two shells never race on
+   `bundles/` or the Downloads folder.
 1. **On launch** (`init`) the shell picks the newest installed bundle that is newer than the
-   built-in game and not marked bad. It serves that bundle through `app://game/`. Otherwise it
-   serves the built-in `dist/`.
+   built-in game, not marked bad, and whose stored manifest `minShell` is not newer than this
+   shell. It serves that bundle through `app://game/`. Otherwise it serves the built-in `dist/`.
+   `app://` answers only for host `game` (anything else is 404), sends the CSP header on every
+   response, not just `.html`, and refuses paths with `:` or a segment ending in `.` or a space
+   with 400.
 2. **Ready guard.** The served bundle must call `window.littlewar.ready()` within 30 s. The title
    screen does this. If the page fails to load, the renderer dies, or `ready()` never arrives,
-   the shell marks the bundle bad and reloads the built-in game. A bundle that was served on
+   the shell marks the bundle bad and reloads the built-in game. Only the open trial can mark a
+   bundle bad: once `ready()` has confirmed it for this launch, a later renderer crash or failed
+   load only reloads the page and never demotes the bundle. A bundle that was served on
    two launches and never confirmed (for example, a crash or a kill) is also marked bad on the
    next launch.
 3. **Check.** The title screen calls `check()` once per run, when "check for updates on start" is
@@ -103,7 +111,8 @@ the installer instead of the bundle.
    - **Download** of the bundle. The download is capped at the signed size.
    - **Size** check, then the **sha256** check.
    - **Unzip** with zip-slip protection. Absolute paths, drive letters, `..`, symlinks or reparse
-     points, Windows-unsafe names, duplicates, encrypted entries, ZIP64, unknown compression,
+     points, Windows-unsafe names (including reserved device names such as `con`, `nul`,
+     `com1`, `lpt1`, with or without an extension), duplicates, encrypted entries, ZIP64, unknown compression,
      CRC or size mismatches, and archives over 5000 entries, 64 MB per entry or 256 MB total
      are all rejected.
    - **Install.** The bundle is written into `bundles/.staging-<ver>-<rand>/` and then moved into
@@ -111,10 +120,16 @@ the installer instead of the bundle.
    - **Prune.** Bad bundles are removed, along with all but the newest two good ones. The bundle
      currently being served is never removed.
 4. **Installer path.** The shell picks the portable exe when `PORTABLE_EXECUTABLE_DIR` is set,
-   and the NSIS setup otherwise. It downloads to `Downloads/<name>` via a `.part` file and
-   verifies the size and sha256 from the signed manifest. A file that fails the check is
-   deleted. The installer is never executed.
-5. **Restart now** relaunches the app (`PORTABLE_EXECUTABLE_FILE` for the portable build).
+   and the NSIS setup otherwise. The installer name must match
+   `LittleWar-<x.y.z>-(setup|portable).exe`. It downloads to `Downloads/<name>` via a `.part`
+   file and verifies the size and sha256 from the signed manifest. The `.part` file is removed on
+   any error, including a failed download. An existing file in Downloads is never overwritten or
+   deleted: if the name is taken by a different file, the installer is saved as
+   `<name> (1).exe`, `(2)`, and so on (a copy that already verifies is reused). The installer is
+   never executed.
+5. **Restart now** relaunches the app. For the portable build it uses `PORTABLE_EXECUTABLE_FILE`
+   only if the file is named `LittleWar-<x.y.z>-portable.exe` and exists; otherwise it relaunches
+   `process.execPath`.
 
 With auto-download off, the notice shows the plain "new version, download" card that links to
 the release page. The setting is saved in `userData/updater.json`.

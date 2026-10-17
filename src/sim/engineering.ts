@@ -6,6 +6,7 @@ import { Ground } from './terrain';
 import type { Fort, Front, Unit } from './types';
 import { dist, headingTo, type V2 } from './vec';
 import type { World } from './world';
+import { workMul } from './upgradestats';
 
 /**
  * Field engineering (user request): engineers bridge rivers where a group's direct route is
@@ -86,7 +87,7 @@ export function thinkBridgeBuilder(world: World, u: Unit, s: Front, site: Bridge
     stop(u);
     if (u.moraleState === 'normal') {
       // Called from the unit executor (~every 0.4 s); several engineers build faster.
-      fort.progress = Math.min(1, fort.progress + 0.4 / PONTOON.workSeconds);
+      fort.progress = Math.min(1, fort.progress + (0.4 * workMul(u)) / PONTOON.workSeconds);
       if (fort.progress >= 1) completeBridge(world, fort);
     }
   }

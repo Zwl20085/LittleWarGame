@@ -29,6 +29,8 @@ const KEEP_BUNDLES = 2;
 const STRICT_VERSION = /^(\d{1,6})\.(\d{1,6})\.(\d{1,6})$/;
 const SHA256_HEX = /^[0-9a-f]{64}$/;
 const SAFE_FILE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,119}$/;
+const INSTALLER_NAME = /^LittleWar-\d+\.\d+\.\d+-(setup|portable)\.exe$/;
+const PORTABLE_NAME = /^LittleWar-\d+\.\d+\.\d+-portable\.exe$/i;
 
 // ---------------------------------------------------------------- versions
 
@@ -114,7 +116,7 @@ function parseFeed(json, opts = {}) {
 }
 
 function validFileRef(o, maxBytes) {
-  return typeof o === 'object' && o !== null && typeof o.name === 'string' && SAFE_FILE.test(o.name)
+  return typeof o === 'object' && o !== null && typeof o.name === 'string' && SAFE_FILE.test(o.name) && INSTALLER_NAME.test(o.name)
     && typeof o.sha256 === 'string' && SHA256_HEX.test(o.sha256)
     && (o.size === undefined || (Number.isSafeInteger(o.size) && o.size > 0 && o.size <= maxBytes));
 }
@@ -218,6 +220,26 @@ function decide({ manifest, kind, servingVersion, installed = [], bad = [] }) {
   return 'download';
 }
 
+/** Whether a stored bundle manifest (JSON text) can run on this shell: minShell <= shellVersion. */
+function shellCompatible(manifestText, shellVersion) {
+  try {
+    const cmp = compareSemver(JSON.parse(manifestText).minShell, shellVersion);
+    return cmp !== null && cmp <= 0;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Exe to relaunch for the portable build: PORTABLE_EXECUTABLE_FILE only when it is named like
+ * our release asset and exists, otherwise null (the caller then relaunches process.execPath).
+ */
+function portableRelaunchPath(file, exists) {
+  if (typeof file !== 'string' || file.length === 0) return null;
+  const base = file.split(/[\\/]/).pop();
+  return PORTABLE_NAME.test(base) && exists(file) ? file : null;
+}
+
 /** Installer that matches how this shell was installed (portable exe or NSIS setup). */
 function pickInstaller(manifest, isPortable) {
   return (isPortable ? manifest.installers.portable : manifest.installers.setup) ?? null;
@@ -301,6 +323,6 @@ module.exports = {
   parseSemver, compareSemver, isNewer, isStrictVersion,
   isAllowedUrl, resolveFeed, parseFeed, validateManifest,
   isPlaceholderKey, loadPublicKey, verifySignature, signManifest, sha256,
-  checkManifest, checkPayload, decide, pickInstaller,
+  checkManifest, checkPayload, decide, pickInstaller, shellCompatible, portableRelaunchPath,
   normalizeState, pickServed, markBad, onLaunch, onReady, onFailure, toPrune,
 };

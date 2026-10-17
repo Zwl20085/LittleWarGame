@@ -42,7 +42,10 @@ if (process.env.THEATRE === '0') STRATEGY_AI.theatre = false;
 // …or only some of its parts: THEATRE_OFF=stances,structure,counter
 for (const k of (process.env.THEATRE_OFF ?? '').split(',')) if (k === 'stances' || k === 'structure' || k === 'counter') THEATRE_AB[k] = false;
 
-const data = buildGameData(readFileSync('docs/data/units.csv', 'utf8'), readFileSync('docs/data/weapons.csv', 'utf8'), readFileSync('docs/data/rules.json', 'utf8'));
+// UPGRADES=0 → 3.0 unit upgrades off (A/B).
+const rulesText = readFileSync('docs/data/rules.json', 'utf8');
+const data = buildGameData(readFileSync('docs/data/units.csv', 'utf8'), readFileSync('docs/data/weapons.csv', 'utf8'),
+  process.env.UPGRADES === '0' ? JSON.stringify({ ...JSON.parse(rulesText), upgrades: { ...JSON.parse(rulesText).upgrades, enabled: false } }) : rulesText);
 const minutes = Number(process.argv[2] ?? 60);
 const seeds = (process.argv[3] ?? '7,11,13').split(',').map(Number);
 

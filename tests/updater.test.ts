@@ -114,8 +114,33 @@ describe('manifest validation', () => {
     ['size float', manifestOf({ size: 1.5 })],
     ['installer path', manifestOf({ installers: { setup: { name: '..\\evil.exe', sha256: HEX } } })],
     ['installer hash', manifestOf({ installers: { portable: { name: 'a.exe', sha256: 'nope' } } })],
+    ['installer name pattern', manifestOf({ installers: { setup: { name: 'evil.exe', sha256: HEX } } })],
+    ['installer name wrong suffix', manifestOf({ installers: { setup: { name: 'LittleWar-3.1.0-setup.bat', sha256: HEX } } })],
+    ['installer name prefix', manifestOf({ installers: { portable: { name: 'x-LittleWar-3.1.0-portable.exe', sha256: HEX } } })],
   ])('rejects %s', (_label, m) => {
     expect(logic.validateManifest(m).ok).toBe(false);
+  });
+});
+
+describe('shell compatibility and relaunch path', () => {
+  it('shellCompatible compares the stored manifest minShell with the app version', () => {
+    expect(logic.shellCompatible('{"minShell":"3.0.0"}', '3.0.0')).toBe(true);
+    expect(logic.shellCompatible('{"minShell":"2.9.9"}', '3.0.0')).toBe(true);
+    expect(logic.shellCompatible('{"minShell":"3.0.1"}', '3.0.0')).toBe(false);
+    expect(logic.shellCompatible('{}', '3.0.0')).toBe(false);
+    expect(logic.shellCompatible('garbage', '3.0.0')).toBe(false);
+  });
+
+  it('honours PORTABLE_EXECUTABLE_FILE only for our own portable asset name that exists', () => {
+    const yes = () => true;
+    const no = () => false;
+    expect(logic.portableRelaunchPath('C:\\Games\\LittleWar-3.0.0-portable.exe', yes)).toBe('C:\\Games\\LittleWar-3.0.0-portable.exe');
+    expect(logic.portableRelaunchPath('/x/littlewar-3.0.0-PORTABLE.EXE', yes)).toBe('/x/littlewar-3.0.0-PORTABLE.EXE');
+    expect(logic.portableRelaunchPath('C:\\Windows\\System32\\cmd.exe', yes)).toBeNull();
+    expect(logic.portableRelaunchPath('C:\\LittleWar-3.0.0-setup.exe', yes)).toBeNull();
+    expect(logic.portableRelaunchPath('C:\\LittleWar-3.0.0-portable.exe', no)).toBeNull();
+    expect(logic.portableRelaunchPath(undefined, yes)).toBeNull();
+    expect(logic.portableRelaunchPath('', yes)).toBeNull();
   });
 });
 
@@ -210,6 +235,16 @@ describe('zip reader (zip-slip and friends)', () => {
     for (const p of ['/etc/passwd', '../x', 'a/../../x', 'C:/x', 'c:x', '\\\\server\\share', 'a//b', './a', 'a\u0000b', 'a/b:ads', 'con. ', '']) {
       expect(zip.safeEntryPath(p)).toBeNull();
     }
+  });
+
+  it('rejects Windows reserved device names in any segment, with or without extension', () => {
+    for (const p of ['con', 'CON.txt', 'a/nul.js', 'aux/x.js', 'Prn.tar.gz', 'com1', 'LPT9.log', 'x/COM9.a', 'conin$', 'CONOUT$.x', 'con .txt']) {
+      expect(zip.safeEntryPath(p), p).toBeNull();
+    }
+    for (const p of ['console.js', 'com10.js', 'a/connect', 'lpt0.js', 'assets/auxiliary.js']) {
+      expect(zip.safeEntryPath(p), p).not.toBeNull();
+    }
+    expect(() => zip.writeZip([{ name: 'assets/nul.js', data: 'x' }])).toThrow();
   });
 
   it.each([

@@ -46,6 +46,7 @@ function createUpdater({ app, net, shell, ipcMain, builtinRoot }) {
   let serving = null; // bundle version being served, or null for the built-in dist/
   let win = null;
   let readyTimer = null;
+  let confirmedThisLaunch = false; // the served bundle reached ready: its trial is over
   let checked = false;
   let pending = null; // { kind, manifest, feed } offered but not downloaded (auto-download off)
   let installerPath = null;
@@ -91,7 +92,7 @@ function createUpdater({ app, net, shell, ipcMain, builtinRoot }) {
   /** Pick what to serve this launch (before the window exists). */
   function init() {
     store.cleanupStaging(dir);
-    const installed = store.listInstalled(dir);
+    const installed = store.listInstalled(dir, shellVersion);
     const { state, serve } = logic.onLaunch(store.readState(dir), installed, builtinVersion);
     saveState(state);
     serving = serve;
@@ -113,18 +114,29 @@ function createUpdater({ app, net, shell, ipcMain, builtinRoot }) {
     }
   }
 
+  function reloadGame(clear) {
+    if (!win || win.isDestroyed()) return;
+    const reload = () => { if (!win.isDestroyed()) win.loadURL('app://game/index.html').catch(() => undefined); };
+    if (clear) win.webContents.session.clearCache().then(reload, reload);
+    else reload();
+  }
+
   function fallBack(reason) {
     if (!serving) return;
+    if (confirmedThisLaunch) {
+      // The bundle already reached the title screen this launch, so it is not the culprit of a
+      // later crash or failed navigation: just reload, never blame (and demote) it.
+      log('reload', { version: serving, reason });
+      reloadGame(false);
+      return;
+    }
     const bad = serving;
     clearTimeout(readyTimer);
     serving = null; // serve the built-in game from now on, whatever happens below
     saveState(logic.onFailure(store.readState(dir), bad));
     console.warn(`[updater] bundle ${bad} failed (${reason}); falling back to the built-in game`);
     log('fallback', { version: bad, reason });
-    if (win && !win.isDestroyed()) {
-      const reload = () => { if (!win.isDestroyed()) win.loadURL('app://game/index.html').catch(() => undefined); };
-      win.webContents.session.clearCache().then(reload, reload);
-    }
+    reloadGame(true);
   }
 
   function attach(w) {
@@ -140,6 +152,7 @@ function createUpdater({ app, net, shell, ipcMain, builtinRoot }) {
     log('ready', { source: serving ? 'bundle' : 'builtin', version: serving ?? builtinVersion });
     if (!serving) return;
     clearTimeout(readyTimer);
+    confirmedThisLaunch = true;
     saveState(logic.onReady(store.readState(dir), serving));
   }
 
@@ -184,7 +197,7 @@ function createUpdater({ app, net, shell, ipcMain, builtinRoot }) {
   }
 
   function act(verdict, rel) {
-    const decision = logic.decide({ manifest: verdict.manifest, kind: verdict.kind, servingVersion: serving ?? builtinVersion, installed: store.listInstalled(dir), bad: store.readState(dir).bad });
+    const decision = logic.decide({ manifest: verdict.manifest, kind: verdict.kind, servingVersion: serving ?? builtinVersion, installed: store.listInstalled(dir, shellVersion), bad: store.readState(dir).bad });
     log('decision', { decision, version: verdict.manifest.version });
     const version = verdict.manifest.version;
     if (decision === 'up-to-date' || decision === 'known-bad') return setStatus({ state: 'up-to-date' });
@@ -223,7 +236,7 @@ function createUpdater({ app, net, shell, ipcMain, builtinRoot }) {
     }
     store.installBundle(dir, manifest.version, Buffer.concat(parts), manifestBytes);
     const state = store.readState(dir);
-    store.removeBundles(dir, logic.toPrune(state, store.listInstalled(dir), serving));
+    store.removeBundles(dir, logic.toPrune(state, store.listInstalled(dir, shellVersion), serving));
     log('installed', { version: manifest.version });
     setStatus({ state: 'ready', version: manifest.version, progress: 1 });
   }
@@ -237,37 +250,54 @@ function createUpdater({ app, net, shell, ipcMain, builtinRoot }) {
       return;
     }
     const downloads = dev.downloads ?? app.getPath('downloads');
-    const final = path.join(downloads, ref.name);
-    if (fs.existsSync(final) && (await fileSha256(final)) === ref.sha256) {
-      return installerDone(final, ref, manifest.version);
-    }
+    // Never overwrite or delete a file the user already has: use "name (1).exe" etc. instead.
+    const target = await pickTarget(downloads, ref);
+    if (target.have) return installerDone(target.file, ref, manifest.version);
+    const final = target.file;
     setStatus({ state: 'installer-downloading', version: manifest.version, progress: 0, installerName: ref.name });
     fs.mkdirSync(downloads, { recursive: true });
     const part = `${final}.${crypto.randomBytes(4).toString('hex')}.part`;
-    const fd = fs.openSync(part, 'w');
-    const hash = crypto.createHash('sha256');
-    let res;
     try {
-      res = await httpGet(net, url, {
-        allowLocal: feed.allowLocal,
-        accept: 'application/octet-stream',
-        maxBytes: ref.size ?? logic.LIMITS.installerBytes,
-        onChunk: (c) => { hash.update(c); fs.writeSync(fd, c); },
-        onProgress: (n, total) => setStatus({ progress: (ref.size || total) ? Math.min(1, n / (ref.size || total)) : null }),
-      });
-    } finally {
-      fs.closeSync(fd);
+      const fd = fs.openSync(part, 'w');
+      const hash = crypto.createHash('sha256');
+      let res;
+      try {
+        res = await httpGet(net, url, {
+          allowLocal: feed.allowLocal,
+          accept: 'application/octet-stream',
+          maxBytes: ref.size ?? logic.LIMITS.installerBytes,
+          onChunk: (c) => { hash.update(c); fs.writeSync(fd, c); },
+          onProgress: (n, total) => setStatus({ progress: (ref.size || total) ? Math.min(1, n / (ref.size || total)) : null }),
+        });
+      } finally {
+        fs.closeSync(fd);
+      }
+      const ok = logic.checkPayload(ref, { size: res.size, sha256: hash.digest('hex') });
+      if (!ok.ok) {
+        fs.rmSync(part, { force: true });
+        log('rejected', { stage: ok.stage, error: ok.error, installer: ref.name });
+        setStatus({ state: 'error', error: `${ok.stage}: ${ok.error}`, progress: null });
+        return undefined;
+      }
+      if (fs.existsSync(final)) throw new Error(`${path.basename(final)} appeared during the download`);
+      fs.renameSync(part, final);
+    } catch (err) {
+      fs.rmSync(part, { force: true }); // any failure leaves no .part behind
+      throw err;
     }
-    const ok = logic.checkPayload(ref, { size: res.size, sha256: hash.digest('hex') });
-    if (!ok.ok) {
-      fs.rmSync(part, { force: true });
-      log('rejected', { stage: ok.stage, error: ok.error, installer: ref.name });
-      setStatus({ state: 'error', error: `${ok.stage}: ${ok.error}`, progress: null });
-      return;
-    }
-    fs.rmSync(final, { force: true });
-    fs.renameSync(part, final);
     return installerDone(final, ref, manifest.version);
+  }
+
+  /** First free "name", "name (1)", ... in downloads, or an existing copy that already verifies. */
+  async function pickTarget(downloads, ref) {
+    const ext = path.extname(ref.name);
+    const stem = ref.name.slice(0, ref.name.length - ext.length);
+    for (let i = 0; i < 100; i++) {
+      const file = path.join(downloads, i === 0 ? ref.name : `${stem} (${i})${ext}`);
+      if (!fs.existsSync(file)) return { file, have: false };
+      if ((await fileSha256(file)) === ref.sha256) return { file, have: true };
+    }
+    throw new Error('too many copies of the installer in the downloads folder');
   }
 
   function installerDone(file, ref, version) {
@@ -303,8 +333,8 @@ function createUpdater({ app, net, shell, ipcMain, builtinRoot }) {
     ipcMain.on('updater:check', (e) => { if (fromGame(e)) void check(); });
     ipcMain.on('updater:restart', (e) => {
       if (!fromGame(e) || status.state !== 'ready') return;
-      const exe = process.env.PORTABLE_EXECUTABLE_FILE;
-      app.relaunch(exe ? { execPath: exe } : undefined);
+      const exe = logic.portableRelaunchPath(process.env.PORTABLE_EXECUTABLE_FILE, fs.existsSync) ?? process.execPath;
+      app.relaunch({ execPath: exe });
       app.exit(0);
     });
     ipcMain.on('updater:open-downloads', (e) => {
