@@ -41,6 +41,18 @@ export const ZONE_AI = {
   checkTop: 24,
 } as const;
 
+/** Zone jobs a faction runs at once: 1, 2 for a strong investor (style ≥ 1.5). */
+const openJobs = (style: number): number => (style >= 1.5 ? 2 : 1);
+
+/**
+ * Engineer cap multiplier for the engineer requests (fortplans.requestEngineers): an investor
+ * keeps more engineers (× 1 + 0.4 per style point above 1) while zones are on.
+ */
+export function zoneEngineerMul(world: World, f: Faction): number {
+  if (!zoneRules(world) || !f.autoInvest) return 1;
+  return 1 + 0.4 * Math.max(0, investStyleOf(f) - 1);
+}
+
 /** Static candidate sites per world: along every road, off to both sides, away from towns and capitals. */
 const candidates = new WeakMap<World, V2[]>();
 
@@ -102,7 +114,7 @@ export function thinkZones(world: World, f: Faction, appetite: number, safety: n
   const w = investStyleOf(f);
   if (!r || w <= 0 || appetite <= 0) return;
   const mine = zonesOf(world, f.id);
-  if (mine.some((z) => !z.ruined && z.progress < 1)) return;
+  if (mine.filter((z) => !z.ruined && z.progress < 1).length >= openJobs(w)) return;
   const keep = 1 / Math.max(0.5, appetite * w);
   const can = (c: { p: number; m: number }): boolean => f.p >= c.p + ZONE_AI.reserveP * keep && f.m >= c.m + ZONE_AI.reserveM * keep;
   const safeM = ZONE_AI.safeM * 0.6;
@@ -115,10 +127,10 @@ export function thinkZones(world: World, f: Faction, appetite: number, safety: n
     return;
   }
   const allowed = Math.min(r.max_per_faction, Math.round(w * (1 + 2 * appetite)));
-  const levels = mine.reduce((s, z) => s + z.level, 0);
+  const levels = mine.reduce((s, z) => s + Math.max(z.level, z.ruined ? 0 : z.target), 0);
   const wantNew = mine.length < allowed && mine.length * 2 <= levels;
   if (!wantNew) {
-    const up = mine.filter((z) => !z.ruined && z.level < r.levels.length && safeZone(z)).sort((a, b) => a.level - b.level || Number(b.linked) - Number(a.linked) || a.id - b.id)[0];
+    const up = mine.filter((z) => !z.ruined && z.progress >= 1 && z.level < r.levels.length && safeZone(z)).sort((a, b) => a.level - b.level || Number(b.linked) - Number(a.linked) || a.id - b.id)[0];
     if (!up) return;
     const c = zoneJobCost(world, up);
     if (c && can(c)) upgradeZone(world, f, up);

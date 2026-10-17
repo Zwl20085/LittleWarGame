@@ -6,6 +6,7 @@ import { startLine, WORKS } from './works';
 import type { Faction, Fort, Unit, Zone } from './types';
 import { planWorksTiers, tierSitesWaiting } from './worksTiers';
 import { planZoneJobs, zoneSitesWaiting } from './econZones';
+import { zoneEngineerMul } from './econZoneAi';
 import { perimeterSitesWaiting, planPerimeterRepair } from './capitalDefence';
 import { dist, headingTo, type V2 } from './vec';
 import type { World } from './world';
@@ -150,7 +151,9 @@ function requestEngineers(world: World, f: Faction): void {
   if (f.paused.engineer) return;
   // Caps scale with the army (army_scale 10 fields ~20 engineers; the seed values are per scale 1).
   const k = world.data.rules.proposed_defaults.army_scale ?? 1;
-  const want = Math.min(Math.round(PLANS.maxEngineers * k), sitesWaiting(world, f));
+  // 3.0: an investing faction (econZoneAi.zoneEngineerMul) keeps more engineers for its zones.
+  const zk = zoneEngineerMul(world, f);
+  const want = Math.min(Math.round(PLANS.maxEngineers * k * zk), sitesWaiting(world, f));
   if (want <= 0) return;
   // Engineers on other errands (sieges, occupations, bridges) do not count, up to a hard cap on all engineers.
   const queued = f.orders.filter((o) => o.unitId === 'engineer').length + f.manualQueue.filter((q) => q.unitId === 'engineer').length;
@@ -161,7 +164,7 @@ function requestEngineers(world: World, f: Faction): void {
     all++;
     if (freeHand(f, u)) free++;
   }
-  const n = Math.min(want - free, Math.round(PLANS.maxEngineersAll * k) - all);
+  const n = Math.min(want - free, Math.round(PLANS.maxEngineersAll * k * zk) - all);
   if (n <= 0) return;
   f.manualQueue = [...f.manualQueue, ...Array.from({ length: n }, () => ({ unitId: 'engineer', frontId: -1 }))];
   if (world.time - (requestNotedAt.get(f) ?? -1e9) >= PLANS.requestNoteS) {

@@ -84,6 +84,19 @@ export function initCapitalDefence(world: World): void {
   posts.set(world, list);
 }
 
+/**
+ * Is the faction still holding enough ground to keep its ring up (`min_held_settlements`)? A beaten
+ * side reduced to its capital gets no new crews or repairs — the ring is against cheap wins, not
+ * against the end of a lost war.
+ */
+export function ringSupported(world: World, owner: number): boolean {
+  const min = defenceRules(world)?.min_held_settlements ?? 0;
+  if (min <= 0) return true;
+  let n = 0;
+  for (const o of world.objectives) if (o.owner === owner && o.kind !== 'point' && ++n >= min) return true;
+  return false;
+}
+
 /** Once per second: replace dead crews, re-seat crews in repaired strongpoints. */
 export function capitalDefenceSecond(world: World): void {
   const r = perimeterOn(world);
@@ -100,7 +113,7 @@ export function capitalDefenceSecond(world: World): void {
       continue;
     }
     if (p.deadSince < 0) p.deadSince = world.time;
-    if (world.time - p.deadSince < r.crew_respawn_seconds) continue;
+    if (world.time - p.deadSince < r.crew_respawn_seconds || !ringSupported(world, p.owner)) continue;
     if (p.fortId >= 0 && (!fort || fort.hp < fort.maxHp * r.crew_min_hp_ratio)) continue;
     if (enemyNear(world, p.owner, p.pos, r.quiet_m)) continue;
     spawnCrew(world, f, p);
@@ -109,7 +122,7 @@ export function capitalDefenceSecond(world: World): void {
 
 /** Per HQ think (fortplans.planStructures): engineers repair damaged strongpoints when the enemy is not on them. */
 export function planPerimeterRepair(world: World, f: Faction): void {
-  if (!perimeterOn(world) || !f.alive) return;
+  if (!perimeterOn(world) || !f.alive || !ringSupported(world, f.id)) return;
   for (const site of perimeterOf(world, f.id)) {
     if (site.hp >= site.maxHp || enemyNear(world, f.id, site.pos, STRUCT.noBuildEnemyM)) continue;
     assignBuilders(world, [site], () => {
@@ -121,7 +134,7 @@ export function planPerimeterRepair(world: World, f: Faction): void {
 }
 
 /** Damaged strongpoints waiting for engineers (fortplans.requestEngineers). */
-export const perimeterSitesWaiting = (world: World, f: Faction): number => (perimeterOn(world) ? perimeterOf(world, f.id).filter((w) => w.hp < w.maxHp * 0.8).length : 0);
+export const perimeterSitesWaiting = (world: World, f: Faction): number => (perimeterOn(world) && ringSupported(world, f.id) ? perimeterOf(world, f.id).filter((w) => w.hp < w.maxHp * 0.8).length : 0);
 
 /** Observation ring radius (m) in force for this match (0 = off: open mode or flag off). */
 export function observationRadius(world: World): number {

@@ -134,6 +134,8 @@ export interface CapitalDefenceRules {
   /** A dead crew is replaced after this when its strongpoint stands at ≥ `crew_min_hp_ratio` and no enemy is within `quiet_m`. */
   readonly crew_respawn_seconds: number;
   readonly crew_min_hp_ratio: number;
+  /** Below this many held settlements the ring is no longer manned anew or repaired (absent = always). */
+  readonly min_held_settlements?: number;
   readonly quiet_m: number;
   /** Engineers restore this much HP per second each. */
   readonly repair_hp_per_second: number;

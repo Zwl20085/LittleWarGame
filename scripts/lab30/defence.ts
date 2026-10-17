@@ -206,12 +206,12 @@ function runAssault(t: AssaultTask): AssaultResult {
 // ---------------------------------------------------------------- raids vs minefields
 
 interface MinesTask { kind: 'mines'; rows: number; seed: number }
-interface MinesResult { rows: number; ok: boolean; arrived: number; arriveS: number; tankHpLost: number; tanksLost: number; gunsLost: number; detonations: number }
+interface MinesResult { rows: number; ok: boolean; arrived: number; arriveS: number; tankHpLost: number; tanksLost: number; gunsLost: number; detonations: number; fields?: number }
 
 function runMines(t: MinesTask): MinesResult {
   const data = labData(NO_PERIMETER);
   const empty: MinesResult = { rows: t.rows, ok: false, arrived: 0, arriveS: 0, tankHpLost: 0, tanksLost: 0, gunsLost: 0, detonations: 0 };
-  const found = siteMatch(data, t.seed, 700);
+  const found = siteMatch(data, t.seed, 500);
   if (!found) return empty;
   const { m, site } = found;
   const w = m.world;
@@ -226,13 +226,13 @@ function runMines(t: MinesTask): MinesResult {
   f1.p = 1e5; f1.m = 1e5;
   const lenM = data.rules.construction.defensive.tiers!.minefield.length_m;
   for (let r = 0; r < t.rows; r++) for (const l of [-lenM, 0, lenM]) {
-    if (startMinefield(w, f1, at(200 + r * 40, l), facing)) w.forts[w.forts.length - 1].progress = 1;
+    if (startMinefield(w, f1, at(150 + r * 40, l), facing)) w.forts[w.forts.length - 1].progress = 1;
   }
   const guns = [-40, 40].map((l) => { const u = w.spawnUnit(1, 'at_gun', at(60, l), f1.fronts[0].id); u.manual = { type: 'hold', pos: { ...u.pos } }; return u; });
   const raid: Unit[] = [];
-  for (let i = 0; i < 4; i++) raid.push(w.spawnUnit(0, 'medium_tank', at(650, (i - 1.5) * 25), w.factions[0].fronts[0].id));
-  for (let i = 0; i < 2; i++) raid.push(w.spawnUnit(0, 'motor_inf', at(680, (i - 0.5) * 30), w.factions[0].fronts[0].id));
-  const goal = at(-150, 0);
+  for (let i = 0; i < 4; i++) raid.push(w.spawnUnit(0, 'medium_tank', at(480, (i - 1.5) * 25), w.factions[0].fronts[0].id));
+  for (let i = 0; i < 2; i++) raid.push(w.spawnUnit(0, 'motor_inf', at(500, (i - 0.5) * 30), w.factions[0].fronts[0].id));
+  const goal = at(-40, 0);
   for (const u of raid) u.manual = { type: 'attackMove', dest: { ...goal }, clearSince: null };
   w.spatial.rebuild(w.aliveUnits);
   const tankHp0 = raid.filter((u) => TANKS.has(u.def.id)).reduce((s, u) => s + u.hp, 0);
@@ -247,7 +247,7 @@ function runMines(t: MinesTask): MinesResult {
   const tanks = raid.filter((u) => TANKS.has(u.def.id));
   const charge = data.rules.construction.defensive.tiers!.minefield.charge_hp;
   return {
-    rows: t.rows, ok: true, arrived: tanks.filter((u) => u.hp > 0 && dist(u.pos, goal) < 120).length, arriveS,
+    rows: t.rows, ok: true, fields: w.forts.filter((f) => f.kind === 'minefield').length, arrived: tanks.filter((u) => u.hp > 0).length, arriveS,
     tankHpLost: 1 - tanks.reduce((s, u) => s + Math.max(0, u.hp), 0) / tankHp0, tanksLost: tanks.filter((u) => u.hp <= 0).length,
     gunsLost: guns.filter((u) => u.hp <= 0).length, detonations: Math.round((mines0 - w.forts.filter((f) => f.kind === 'minefield').reduce((s, f) => s + Math.max(0, f.hp), 0)) / charge),
   };
@@ -348,7 +348,7 @@ async function main(): Promise<void> {
   }
   const mines = res.filter((r) => 'rows' in r && r.ok) as unknown as MinesResult[];
   if (mines.length) {
-    lines.push('## Armour raid (4 medium tanks + 2 motor inf) vs 2 AT guns behind minefield rows', '', '| minefield rows | trials | tanks through | mean arrival (s) | tank HP lost | tanks lost | AT guns lost | detonations |', '|---:|---:|---:|---:|---:|---:|---:|---:|');
+    lines.push('## Armour raid (4 medium tanks + 2 motor inf) vs 2 AT guns behind minefield rows', '', '| minefield rows | trials | tanks surviving | mean arrival (s) | tank HP lost | tanks lost | AT guns lost | detonations |', '|---:|---:|---:|---:|---:|---:|---:|---:|');
     for (const rows of [0, 1, 2]) {
       const r = mines.filter((x) => x.rows === rows);
       if (!r.length) continue;

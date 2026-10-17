@@ -45,10 +45,18 @@ export const ZONES = {
   workRadiusM: 16,
   /** …standing this far from it (between the sheds). */
   standM: 10,
-  /** Engineers are called from this far. */
-  poolR: 3000,
+  /** Engineers are called from this far (farther ones would walk for many minutes; the HQ queues new ones instead). */
+  poolR: 1000,
   /** Road links are re-checked this often (s). */
   linkEveryS: 10,
+  /**
+   * Labour: engineers build at full rate; riflemen of quiet line / capital-garrison squads within
+   * `rifleR` help at `rifleRate` (as they dig trenches, fortplans.canDig) — the HQ's engineers are
+   * mostly far off at the fronts, and a walk of a kilometre or more took them 6–10 min (lab).
+   */
+  rifleR: 700,
+  rifleRate: 0.5,
+  rifles: 2,
   /** Footprint (m) a blast must reach. */
   footprintM: 14,
 } as const;
@@ -157,7 +165,7 @@ export function upgradeZone(world: World, f: Faction, z: EconZone): ZoneFail | n
 export function zoneStep(world: World, u: Unit, id: number): boolean {
   const z = zoneById(world, id);
   const r = zoneRules(world);
-  if (!z || !r || u.def.id !== 'engineer' || z.ruined || z.progress >= 1 || z.owner !== u.owner) return false;
+  if (!z || !r || !zoneWorker(u) || z.ruined || z.progress >= 1 || z.owner !== u.owner) return false;
   if (enemyNear(world, u.owner, z.pos, STRUCT.noBuildEnemyM)) return false;
   const stand = { x: z.pos.x - Math.cos(z.facing) * ZONES.standM, z: z.pos.z - Math.sin(z.facing) * ZONES.standM };
   if (dist(u.pos, z.pos) > ZONES.workRadiusM) {
@@ -165,15 +173,15 @@ export function zoneStep(world: World, u: Unit, id: number): boolean {
     moveTo(world, u, stand);
   } else {
     stop(u);
-    if (u.moraleState === 'normal') workZone(world, r, z);
+    if (u.moraleState === 'normal') workZone(world, r, z, u.def.id === 'engineer' ? 1 : ZONES.rifleRate);
   }
   u.status = 'status.buildingZone';
   return true;
 }
 
-function workZone(world: World, r: EconZoneRules, z: EconZone): void {
+function workZone(world: World, r: EconZoneRules, z: EconZone, rate: number): void {
   const d = levelDef(r, z.target);
-  const step = 0.4 / d.work_seconds;
+  const step = (0.4 * rate) / d.work_seconds;
   z.progress = Math.min(1, z.progress + step);
   if (z.level === 0) z.hp = Math.min(z.maxHp, z.hp + z.maxHp * 0.75 * step);
   if (z.progress < 1) return;
@@ -365,28 +373,49 @@ export function damageZonesAt(world: World, at: V3, radius: number, damage: numb
 /** Zone jobs of `f` waiting for engineers. */
 export const zoneSitesWaiting = (world: World, f: Faction): number => world.econZones.filter((z) => z.owner === f.id && !z.ruined && z.progress < 1).length;
 
-/** Keep `builders` free engineers on every open zone job of `f` (nearest first). */
+const zoneWorker = (u: Unit): boolean => u.def.id === 'engineer' || u.def.id === 'infantry';
+
+/** Keep `builders` free engineers (and `rifles` nearby riflemen) on every open zone job of `f`, nearest first. */
 export function planZoneJobs(world: World, f: Faction): void {
   const r = zoneRules(world);
   if (!r || !f.alive) return;
   for (const z of world.econZones) {
     if (z.owner !== f.id || z.ruined || z.progress >= 1 || enemyNear(world, f.id, z.pos, STRUCT.noBuildEnemyM)) continue;
-    const cands: Unit[] = [];
-    for (const u of world.units.values()) if (u.owner === f.id && u.def.id === 'engineer' && freeHand(f, u) && dist(u.pos, z.pos) < ZONES.poolR) cands.push(u);
-    cands.sort((a, b) => dist(a.pos, z.pos) - dist(b.pos, z.pos) || a.id - b.id);
-    let have = 0;
-    for (const u of cands) {
-      if (jobOf(world, u) === z.id) {
-        assignJob(world, u, z);
-        have++;
-      }
+    const eng: Unit[] = [];
+    const rif: Unit[] = [];
+    for (const u of world.units.values()) {
+      if (u.owner !== f.id || !freeHand(f, u)) continue;
+      const d = dist(u.pos, z.pos);
+      if (u.def.id === 'engineer' && d < ZONES.poolR) eng.push(u);
+      else if (u.def.id === 'infantry' && d < ZONES.rifleR && quietLine(f, u)) rif.push(u);
     }
-    for (const u of cands) {
-      if (have >= r.builders) break;
-      if (jobOf(world, u) !== null) continue;
+    staff(world, z, eng, r.builders);
+    staff(world, z, rif, ZONES.rifles);
+  }
+}
+
+/** A rifle squad of a front that is not attacking, or of the capital garrison. */
+function quietLine(f: Faction, u: Unit): boolean {
+  if (u.opRole === 'garrison') return true;
+  const s = f.fronts.find((x) => x.id === u.frontId);
+  return !!s && s.posture !== 'assault' && s.opPhase === '';
+}
+
+/** Renew the units already on `z` and fill up to `want` from `cands` (nearest first). */
+function staff(world: World, z: EconZone, cands: Unit[], want: number): void {
+  cands.sort((a, b) => dist(a.pos, z.pos) - dist(b.pos, z.pos) || a.id - b.id);
+  let have = 0;
+  for (const u of cands) {
+    if (jobOf(world, u) === z.id) {
       assignJob(world, u, z);
       have++;
     }
+  }
+  for (const u of cands) {
+    if (have >= want) break;
+    if (jobOf(world, u) !== null) continue;
+    assignJob(world, u, z);
+    have++;
   }
 }
 
