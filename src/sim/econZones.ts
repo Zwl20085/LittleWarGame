@@ -202,6 +202,10 @@ export function zoneOutput(world: World, z: EconZone): { p: number; m: number } 
   return { p: d.p_per_min_k * k, m: d.m_per_min_k * k };
 }
 
+/** Positions of f's zones (not ruins) with no road link to an own town: AI road sites (command.thinkHighCommand). */
+export const unlinkedZoneSites = (world: World, f: number): V2[] =>
+  world.econZones.filter((z) => z.owner === f && !z.ruined && !z.linked).map((z) => z.pos);
+
 /** Zone income of faction f (per minute). */
 export function zoneIncome(world: World, f: number): { p: number; m: number } {
   let p = 0;
@@ -221,13 +225,11 @@ export function zoneIncome(world: World, f: number): { p: number; m: number } {
 // ---------------------------------------------------------------- road link
 
 /**
- * SEAM (WP-D roads): when `world.roadnet` (src/sim/roadnet.ts) lands and offers
- * `linkedToOwnTown(owner, p)`, it decides. Until then: the zone is within `road_link_m` of a
- * map road (MapDef.roads polylines, which run between settlements) that passes an own town /
- * city / capital.
+ * With transport on, the road graph (`world.transport.roads`, which grows with engineer roads)
+ * decides: a road within `road_link_m` of the zone that is graph-connected to a node at an own
+ * settlement. Without it: the zone is within `road_link_m` of a map road (MapDef.roads
+ * polylines) that reaches an own place, following a few junctions.
  */
-interface RoadLinkProvider { linkedToOwnTown(owner: number, p: V2): boolean }
-
 const roadsNear = new WeakMap<EconZone, number[]>();
 
 export function roadLinked(world: World, z: EconZone): boolean {
@@ -255,8 +257,9 @@ function nearRoads(world: World, p: V2): number[] {
 
 /** Would a zone of `owner` at `p` be road-linked to an own town now? */
 export function linkedAt(world: World, owner: number, p: V2, near: readonly number[] = nearRoads(world, p)): boolean {
-  const rn = (world as unknown as { roadnet?: Partial<RoadLinkProvider> }).roadnet;
-  if (rn && typeof rn.linkedToOwnTown === 'function') return rn.linkedToOwnTown(owner, p);
+  const net = world.transport?.roads;
+  const rules = zoneRules(world);
+  if (net && rules) return net.linkedToTown(p, rules.road_link_m, ownTownReaches(world, owner));
   const roads = world.terrain.def.roads;
   // Walk the road graph (polylines meeting at junctions / villages) up to ROAD_HOPS roads out.
   const graph = roadGraph(world);
@@ -269,6 +272,16 @@ export function linkedAt(world: World, owner: number, p: V2, near: readonly numb
     frontier = next;
   }
   return false;
+}
+
+/** Own-held places with the distance from their centre at which a road node counts as theirs. */
+function ownTownReaches(world: World, owner: number): { pos: V2; reach: number }[] {
+  const out: { pos: V2; reach: number }[] = [];
+  for (const p of world.places) {
+    if (placeOwner(world, p) !== owner) continue;
+    out.push({ pos: p.pos, reach: (p.objIdx >= 0 ? world.objectives[p.objIdx].radius : 140) + 80 });
+  }
+  return out;
 }
 
 /** Roads followed beyond the zone's own (fallback road graph). */

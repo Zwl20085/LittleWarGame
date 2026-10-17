@@ -5,6 +5,8 @@ import {
   damageZonesAt, econZonesSecond, startZone, upgradeZone, zoneJobCost, zoneOutput, zoneRules, zoneSiteFail, zoneStep, type EconZone,
 } from '../src/sim/econZones';
 import { INVEST_STYLE, investStyleOf, pickZoneSite, setInvestStyle } from '../src/sim/econZoneAi';
+import { completeJob, roadSegmentOk, startRoadJob } from '../src/sim/transportjobs';
+import { unlinkedZoneSites, roadLinked } from '../src/sim/econZones';
 import { assignJob } from '../src/sim/structures';
 import type { V2 } from '../src/sim/vec';
 import type { World } from '../src/sim/world';
@@ -139,4 +141,37 @@ describe('economic zones', () => {
     }
     expect(w.econZones.length).toBeGreaterThan(0);
   }, 300_000);
+
+  it('road link follows the road graph: unlinked pays half, an engineer road to the net restores full output', () => {
+    const { world: w } = setup();
+    rich(w);
+    const net = w.transport!.roads;
+    const r = zoneRules(w)!;
+    const hq = w.hqPos(0);
+    // A site off every road, with a clear straight stretch to the nearest node of the capital's net.
+    let site: V2 | null = null;
+    let from: V2 | null = null;
+    for (let rad = 300; rad < 1400 && !site; rad += 40) for (let a = 0; a < 6.3 && !site; a += 0.1) {
+      const q = { x: hq.x + Math.cos(a) * rad, z: hq.z + Math.sin(a) * rad };
+      if (zoneSiteFail(w, w.factions[0], q) !== null || net.distanceToRoad(q) < r.road_link_m + 40) continue;
+      const n = net.nearestNode(q, 500);
+      if (n && net.linkedToTown(n.pos, 1, [{ pos: hq, reach: 500 }]) && roadSegmentOk(w, n.pos, q).ok) { site = q; from = n.pos; }
+    }
+    expect(site).not.toBeNull();
+    const z = startZone(w, w.factions[0], site!) as EconZone;
+    build(w, z);
+    econZonesSecond(w, () => 0);
+    z.linked = roadLinked(w, z);
+    expect(z.linked).toBe(false);
+    expect(unlinkedZoneSites(w, 0)).toContainEqual(z.pos);
+    const half = zoneOutput(w, z).m;
+    const job = startRoadJob(w, 0, from!, z.pos);
+    expect(job.ok).toBe(true);
+    if (!job.ok) return;
+    completeJob(w, job.job);
+    z.linked = roadLinked(w, z);
+    expect(z.linked).toBe(true);
+    expect(unlinkedZoneSites(w, 0)).not.toContainEqual(z.pos);
+    expect(zoneOutput(w, z).m).toBeCloseTo(half / r.unlinked_output, 6);
+  });
 });

@@ -8,7 +8,7 @@ import { CommandBus, type CommandOutcome, type Command } from '../src/sim/comman
 import { createMatch, type Match } from '../src/sim/sim';
 import { Ground } from '../src/sim/terrain';
 import { groundMul, moveClassOf, transportRules } from '../src/sim/transport';
-import { completeJob, needRoadLinks, roadSegmentOk, startRailRepair, startRoadJob, transportSecond } from '../src/sim/transportjobs';
+import { completeJob, needRoadLinks, roadSegmentOk, startRailRepair, startRoadJob, thinkTransport, transportSecond } from '../src/sim/transportjobs';
 import type { Unit } from '../src/sim/types';
 import { dist, type V2 } from '../src/sim/vec';
 import type { World } from '../src/sim/world';
@@ -191,6 +191,33 @@ describe('3.0 transport: railways and engineer jobs', () => {
     expect(st.jobs.length).toBe(0);
     // Generated roads reach every settlement from the capital: nothing to link at the start.
     expect(needRoadLinks(w, 0)).toEqual([]);
+  });
+
+  it('extraSites (unlinked zones) become a road job from the capital net', () => {
+    const w = match.world;
+    const st = w.transport!;
+    const hq = w.hqPos(1);
+    let site: V2 | null = null;
+    for (let rad = 300; rad <= 900 && !site; rad += 50) for (let k = 0; k < 64 && !site; k++) {
+      const ang = (k / 64) * Math.PI * 2;
+      const q = { x: hq.x + Math.cos(ang) * rad, z: hq.z + Math.sin(ang) * rad };
+      if (st.roads.nodes.every((n) => dist(n.pos, q) > 170) && st.roads.nearestNode(q, 550)) site = q;
+    }
+    expect(site).not.toBeNull();
+    expect(needRoadLinks(w, 1)).toEqual([]);
+    const want = needRoadLinks(w, 1, [site!]);
+    expect(want).toHaveLength(1);
+    expect(want[0].objIdx).toBe(-1);
+    expect(dist(want[0].to, site!)).toBe(0);
+    // thinkTransport lays it: an engineer and a stock are needed, the AI is not the player.
+    const f = w.factions[1];
+    expect(f.isPlayer).toBe(false);
+    f.m = 1e5;
+    w.spawnUnit(1, 'engineer', hq, 0);
+    const jobs = st.jobs.length;
+    thinkTransport(w, f, [site!]);
+    expect(st.jobs.length).toBe(jobs + 1);
+    expect(st.jobs[st.jobs.length - 1].owner).toBe(1);
   });
 
   // Seed 7 has city–city lines longer than rail.min_trip_m (seed 11's are all short capital spurs).

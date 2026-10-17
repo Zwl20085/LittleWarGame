@@ -167,6 +167,45 @@ export class RoadNet {
     return best;
   }
 
+  /**
+   * Is a point on the road net: a node within `maxM` of p that is graph-connected (built roads
+   * included) to a node within `reach` of one of `towns`? (Zone road link, WP-X.)
+   */
+  linkedToTown(p: V2, maxM: number, towns: readonly { readonly pos: V2; readonly reach: number }[]): boolean {
+    const start = this.nearestOnNet(p, maxM);
+    if (start < 0 || towns.length === 0) return false;
+    const seen = new Uint8Array(this.nodes.length);
+    const stack = [start];
+    seen[start] = 1;
+    while (stack.length) {
+      const cur = stack.pop()!;
+      const pos = this.nodes[cur].pos;
+      for (const t of towns) if (dist(pos, t.pos) <= t.reach) return true;
+      for (const eid of this.nodes[cur].edges) {
+        const e = this.edges[eid];
+        const o = e.a === cur ? e.b : e.a;
+        if (!seen[o]) { seen[o] = 1; stack.push(o); }
+      }
+    }
+    return false;
+  }
+
+  /** Nearest node whose edge passes within maxM of p (a road or its end), or -1. */
+  private nearestOnNet(p: V2, maxM: number): number {
+    let best = -1;
+    let bd = maxM;
+    for (const e of this.edges) {
+      for (let k = 0; k < e.pts.length - 1; k++) {
+        const d = segDist(p, e.pts[k], e.pts[k + 1]);
+        if (d > bd) continue;
+        // Enter the graph at the nearer end of this edge (the edge is connected through both).
+        bd = d;
+        best = dist(p, this.nodes[e.a].pos) <= dist(p, this.nodes[e.b].pos) ? e.a : e.b;
+      }
+    }
+    return best;
+  }
+
   /** Distance from p to the nearest road centreline (m). */
   distanceToRoad(p: V2): number {
     let best = Infinity;

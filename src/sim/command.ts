@@ -1,4 +1,5 @@
 import { thinkTransport } from './transportjobs';
+import { unlinkedZoneSites } from './econZones';
 import { selectTarget } from './combat';
 import { enemyDistance } from './frontai';
 import { dig, openWork, startLine } from './works';
@@ -221,8 +222,8 @@ export function thinkHighCommand(world: World, f: Faction): void {
   const hc = f.command;
   if (eagerOn()) assessMood(world, f);
   thinkHomeDefence(world, f);
-  // 3.0: road links / rail repair by the engineers (extra sites: WP-F economic zones, when econZones lands).
-  thinkTransport(world, f);
+  // 3.0: road links / rail repair by the engineers; unlinked economic zones are extra road sites.
+  thinkTransport(world, f, unlinkedZoneSites(world, f.id));
   const dirs: Directive[] = [];
   const bias: Record<string, number> = {};
   const hq = world.hqPos(f.id);
