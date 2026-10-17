@@ -34,13 +34,15 @@ its own note in this folder (`WP-*.md`) on its worktree branch `worktree-agent-<
 
 - WP-REV (worktree-agent-a454729feb76eab03) — merge d753534. Not covered: renderer bridge meshes for engineer-road bridges (built once at start).
 
+- WP-R refactor (worktree-agent-a00358b1eea006fec) — merged (commands.ts 309→136, updater.cjs 362→135).
+- WP-M perf (worktree-agent-a71b5e2ec10e0548f) — merged. Sim ×1.17 vs 2.2.1 per unit-tick (large ×1.08, medium ×1.24); renderer close 5.4 ms (2.2.1 also misses 4 ms under load); large map 8× missed (6.2–7.3×). Proposals 1–2 → WP-M2.
+
 ## Wave 2/3 running
 | WP | branch | status |
 |---|---|---|
-| M perf round | worktree-agent-a71b5e2ec10e0548f | running |
+| M2 hunter re-pathing + flow-field memory budget | (launched after M merge) | running |
 | N README en+zh + GIFs | worktree-agent-a8afeff94d884d5c5 | running |
 | T tuning: pace, maneuver, upgrade costs, supply after roads | (launched after Y merge) | running |
-| R refactor splits (commands.ts handlers, updater.cjs, railgen helpers) | (launched after REV merge) | running (Sonnet) |
 
 ## Wave 1 agents still running (merge each when reported; typecheck + tests after every merge)
 | WP | branch | status |
