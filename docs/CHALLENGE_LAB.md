@@ -255,5 +255,52 @@ Army value = P + M cost x hp share of combat units (no fixed strongpoints, truck
 | eliminations per hour | <= 3 | <= 5 | 1 |
 | idle far / stuck / starved | <= 15 % / 3 % / 25 % | <= 30 % / 8 % / 45 % | 1 each |
 
-<!--BASELINE-->
+### Baseline on 2.2.1 (seeds 7, 11, 13, 40 min, medium map)
+
+Files: `docs/lab/base-2.2.1-experience.json` (medium, 54 matches, 55 min wall at 9 jobs) and
+`docs/lab/base-2.2.1-experience-large.json` (large map, seeds 7 and 11, `--variant 15-flank`, 30 matches,
+53 min wall at 7 jobs). The *capital falls* column counts every capital that fell, the challenger's own included
+(the AI taking the challenger's capital is the common case). *Warning* is the warning time of capital losses
+(min / median seconds from first sighting of the arriving force to its arrival at the 600 m ring).
+
+| scenario | score | AI survival (challenger took no capital) | capitals taken by the challenger | capital falls | warning s min / median | never seen | cheap-win flags |
+|---|---|---|---|---|---|---|---|
+| rush@5m | 93 | 100 % | 0 | 3 | 224 / 226 | 0 | 0 |
+| turtle | 89 | 100 % | 0 | 2 | 0 / 112 | 1 | 0 |
+| two_axis | 89 | 100 % | 0 | 4 | 0 / 161 | 1 | 0 |
+| raid | 93 | 100 % | 0 | 4 | 123 / 237 | 0 | 0 |
+| late_blitz | 84 | 100 % | 0 | 4 | 0 / 74 | 1 | 0 |
+| human_like | 88 | 100 % | 0 | 1 | 7 / 7 | 0 | 0 |
+| rush_micro@5m | 87 | 100 % | 0 | 5 | 213 / 289 | 0 | 1 |
+| armour_raid:15-direct | 88 | 100 % | 0 | 3 | 33 / 110 | 0 | 0 |
+| armour_raid:15-flank | 88 | 100 % | 0 | 3 | 33 / 110 | 0 | 0 |
+| armour_raid:25-direct | 94 | 100 % | 0 | 2 | 110 / 209 | 0 | 0 |
+| armour_raid:25-flank | 94 | 100 % | 0 | 2 | 110 / 209 | 0 | 0 |
+| **shadow_strike (open)** | 87 | **33 %** | **2** | 5 | 17 / 112 | 0 | 0 |
+| shadow_strike/fog | 94 | 100 % | 0 | 5 | 106 / 202 | 0 | 0 |
+| **backdoor** | 75 | 100 % | 0 | 2 | 0 / 0 | 2 | 1 |
+| feint | 95 | 100 % | 0 | 2 | 288 / 441 | 0 | 0 |
+| econ_war | 95 | 100 % | 0 | 2 | 121 / 174 | 0 | 0 |
+| siege | 81 | 100 % | 0 | 3 | 0 / 42 | 1 | 0 |
+| ai_only (no challenger) | 88 | 67 % (faction 0 is an AI) | 1 | 4 | 0 / 121 | 1 | 0 |
+
+Large map (2 seeds): the same picture. Only `shadow_strike` (open) takes a capital (1 of 2, warning 572 s),
+`rush`, `turtle`, `two_axis` and `rush_micro` each lose the challenger's own capital once to an AI with the
+attacking force never seen (0 s), nothing is cheap-win flagged. First contact comes at 5-9 min on the large
+map against 3:45-4:00 on the medium one.
+
+Reading it:
+- Which exploits take a capital today: `shadow_strike` in open mode (2 of 3 medium seeds, 1 of 2 large), with 17-318 s of
+  warning in the captures; `backdoor` takes none but its detachment is the only one the defender never saw
+  (2 capital losses to AI armies with 0 s, see the `never seen` column, and 1 flagged cheap win). No variant of
+  `armour_raid` takes a capital: the 20 tanks + 10 motor inf column is rarely complete (population), and it arrives
+  after 33-110 s of warning at best.
+- Cheap-win flags: `rush_micro@5m` seed 11 (the capital fell to 18 % of the attacker's army) and one `backdoor` fall.
+- Pacing is healthy (first capital falls at 17-39 min, 1-2.5 eliminations an hour, every match undecided at 40 min,
+  never dominated for long). The supply-starved share (about 50 % of combat unit samples with `supplyRatio` < 0.5)
+  is the one persistent band miss in every scenario and the clearest engagement-health finding.
+- `armour_raid` direct and flank give nearly the same numbers: the flank waypoint only moves the staging
+  point, and the AI's alarm does not depend on the road. Treat the flank variant as unproven.
+- The score never reaches FAIL on 2.2.1 because the weighted bands mostly pass; the signal is in the per-column
+  flags (`never seen`, `cheap-win flags`, captures by the challenger).
 
