@@ -62,8 +62,10 @@ export interface DoctrineProfileRules {
   readonly raid_targets: DoctrineRaidTargets;
   /** Raids also under defend / fortify directives (attrition interdicts while it holds). */
   readonly raid_on_defence: boolean;
-  /** Troops per front multiplier (> 1 = fewer, denser fronts; also the picket-gap divisor for WP-E). */
+  /** Troops per front multiplier (> 1 = fewer, denser fronts). */
   readonly front_density: number;
+  /** Picket spacing multiplier (pickets.ts; < 1 = tighter pickets, > 1 = looser; absent = 1). */
+  readonly picket_gap?: number;
   /** Compliance temperament bias (−0.5 … 0.5; + = bolder front commanders). */
   readonly temperament: number;
   /** Reinforcement share multiplier of the main effort (cityai.balanceReserves). */
@@ -103,6 +105,7 @@ export function validateDoctrineRules(d: DoctrineRules | undefined, units: Reado
     if (pos.some((x) => !(x > 0))) throw new Error(`${at}: invest / occupy / attack_ratio / raid_rate / front_density / main_share must be > 0`);
     if (!(p.defend_exit >= p.defend_below) || p.defend_below < 0) throw new Error(`${at}: defend_exit must be >= defend_below >= 0`);
     if (!(p.retreat_hp > 0 && p.retreat_hp < 1) || !(p.armour_main_share > 0 && p.armour_main_share <= 1)) throw new Error(`${at}: retreat_hp / armour_main_share out of range`);
+    if (p.picket_gap !== undefined && !(p.picket_gap >= 0.3 && p.picket_gap <= 3)) throw new Error(`${at}.picket_gap must be within 0.3 … 3`);
     if (Math.abs(p.temperament) > 0.5) throw new Error(`${at}.temperament must be within ±0.5`);
     if (!MODES.has(p.offensive?.mode)) throw new Error(`${at}.offensive.mode must be none | late | strike | battle`);
     if (!(p.offensive.break_share >= 0 && p.offensive.break_share < 1)) throw new Error(`${at}.offensive.break_share must be in [0, 1)`);

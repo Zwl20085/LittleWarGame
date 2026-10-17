@@ -4,7 +4,7 @@ import { enemyDistance } from './frontai';
 import { EAGER, eagerOn, stormOn } from './strategyai';
 import { navPost } from './crewai';
 import { boundOrder } from './frontref';
-import { raidIntervalMul } from './doctrines';
+import { raidIntervalMul, raidsHeld } from './doctrines';
 import type { World } from './world';
 import { segmentsByProximity } from './pickets';
 
@@ -178,6 +178,8 @@ export function planOperations(world: World, f: Faction): void {
   if (!contact || finisher || world.time < f.nextRaidAt) return;
   // 3.0: the doctrine's convoy-raid cadence (doctrines.ts; Infinity = never).
   f.nextRaidAt = world.time + OPS.raidEverySeconds * raidIntervalMul(world, f, 'convoy');
+  // 3.0 (WP-Y): a doctrine AI keeps its home-defence reserve (no raid with the home alarm on or the raid share used up).
+  if (raidsHeld(world, f)) return;
   const cells = world.frontInfo[f.id].cells;
   const gap = weakestPoint(world, f.id, cells);
   if (!gap) return;
