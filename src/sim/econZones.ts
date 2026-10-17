@@ -4,6 +4,7 @@ import { trySpend } from './economy';
 import { enemyDistance } from './frontai';
 import { freeHand } from './fortplans';
 import { moveTo, stop } from './movement';
+import { ringSupported } from './capitalDefence';
 import { armyScale, placeOwner } from './settlements';
 import { assignJob, enemyNear, jobOf, STRUCT } from './structures';
 import { Ground } from './terrain';
@@ -205,11 +206,14 @@ export function zoneOutput(world: World, z: EconZone): { p: number; m: number } 
 export function zoneIncome(world: World, f: number): { p: number; m: number } {
   let p = 0;
   let m = 0;
+  if (!world.econZones.some((z) => z.owner === f)) return { p, m };
+  // A beaten side's zones pay little (capitalDefence.ringSupported: keeps wars endable).
+  const k = ringSupported(world, f) ? 1 : zoneRules(world)?.beaten_output ?? 1;
   for (const z of world.econZones) {
     if (z.owner !== f) continue;
     const o = zoneOutput(world, z);
-    p += o.p;
-    m += o.m;
+    p += o.p * k;
+    m += o.m * k;
   }
   return { p, m };
 }

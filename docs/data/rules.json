@@ -190,7 +190,7 @@
     }
   },
   "econ_zones": {
-    "comment": "3.0 engineer-built economic zones (经济区, V30_SPEC §7; econZones.ts). Built anywhere on own / neutral ground away from towns by an engineer job; level 1 → 2 → 3 by further jobs + cost. Output (_k: per army_scale 1, × army_scale × army_scale_income_factor, × HP share) is halved without a road link to an own town. Raidable like economic buildings (shellfire, demolition), captured with the ground (HP capped at captured_hp_ratio), ruins rebuilt at rebuild_cost_ratio. enabled=false for the lab.",
+    "comment": "3.0 engineer-built economic zones (经济区, V30_SPEC §7; econZones.ts). Built anywhere on own / neutral ground away from towns by an engineer job; level 1 → 2 → 3 by further jobs + cost. Output (_k: per army_scale 1, × army_scale × army_scale_income_factor, × HP share) is halved without a road link to an own town; a beaten side (capital_defence.min_held_share) gets beaten_output of it (lab: zones far behind the front kept losers alive). Raidable like economic buildings (shellfire, demolition), captured with the ground (HP capped at captured_hp_ratio), ruins rebuilt at rebuild_cost_ratio. enabled=false for the lab.",
     "enabled": true,
     "levels": [
       {"cost_p": 15, "cost_m": 120, "work_seconds": 60, "max_hp": 1800, "p_per_min_k": 4, "m_per_min_k": 8},
@@ -206,14 +206,15 @@
     "captured_hp_ratio": 0.6,
     "rebuild_cost_ratio": 0.6,
     "max_per_faction": 6,
+    "beaten_output": 0.25,
     "builders": 2
   },
   "capital_defence": {
-    "comment": "3.0 absolute defence perimeter (绝对国防圈, V23_SPEC §1.3 / V30_SPEC §8; capitalDefence.ts): a free, permanent ring of `strongpoints` bunker-hard strongpoints at radius_m around every capital, each with a fixed MG crew (crew_unit), plus a fixed artillery position (artillery_unit) behind the capital. Small arms cannot break the concrete (it must be stormed by armour or heavy guns); engineers repair it; a dead crew is replaced while its strongpoint stands and the enemy is not close. observation: in fog mode the capital sees every hostile within radius_m (shown on the minimap). A faction holding fewer than min_held_settlements settlements (a beaten side, not a backdoor victim) no longer replaces crews or repairs the ring, so wars stay endable. enabled flags are for the lab.",
+    "comment": "3.0 absolute defence perimeter (绝对国防圈, V23_SPEC §1.3 / V30_SPEC §8; capitalDefence.ts): a free, permanent ring of `strongpoints` bunker-hard strongpoints at radius_m around every capital, each with a fixed MG crew (crew_unit), plus a fixed artillery position (artillery_unit) behind the capital. Small arms cannot break the concrete (it must be stormed by armour or heavy guns); engineers repair it; a dead crew is replaced while its strongpoint stands and the enemy is not close. observation: in fog mode the capital sees every hostile within radius_m (shown on the minimap). A faction holding less than min_held_share of the mean settlements of the living factions (a beaten side, not a backdoor victim) no longer replaces crews or repairs the ring, so wars stay endable. enabled flags are for the lab.",
     "enabled": true,
     "radius_m": 210,
     "strongpoints": 5,
-    "min_held_settlements": 3,
+    "min_held_share": 0.5,
     "crew_unit": "mg",
     "artillery_unit": "mortar",
     "artillery_back_m": 45,

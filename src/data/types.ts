@@ -134,8 +134,11 @@ export interface CapitalDefenceRules {
   /** A dead crew is replaced after this when its strongpoint stands at ≥ `crew_min_hp_ratio` and no enemy is within `quiet_m`. */
   readonly crew_respawn_seconds: number;
   readonly crew_min_hp_ratio: number;
-  /** Below this many held settlements the ring is no longer manned anew or repaired (absent = always). */
-  readonly min_held_settlements?: number;
+  /**
+   * A faction holding less than this share of the living factions' mean settlements is beaten: its
+   * ring is no longer manned anew or repaired, and its zones pay `econ_zones.beaten_output` (absent = never).
+   */
+  readonly min_held_share?: number;
   readonly quiet_m: number;
   /** Engineers restore this much HP per second each. */
   readonly repair_hp_per_second: number;
@@ -168,6 +171,8 @@ export interface EconZoneRules {
   readonly captured_hp_ratio: number;
   readonly rebuild_cost_ratio: number;
   readonly max_per_faction: number;
+  /** Output share for a beaten side (capital_defence.min_held_share; absent = 1). */
+  readonly beaten_output?: number;
   /** Engineers working one zone job. */
   readonly builders: number;
 }

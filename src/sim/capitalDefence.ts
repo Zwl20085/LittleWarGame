@@ -85,16 +85,19 @@ export function initCapitalDefence(world: World): void {
 }
 
 /**
- * Is the faction still holding enough ground to keep its ring up (`min_held_settlements`)? A beaten
+ * Is the faction still holding enough ground to keep its ring up (`min_held_share` of the living
+ * factions' mean settlements)? A beaten
  * side reduced to its capital gets no new crews or repairs — the ring is against cheap wins, not
  * against the end of a lost war.
  */
 export function ringSupported(world: World, owner: number): boolean {
-  const min = defenceRules(world)?.min_held_settlements ?? 0;
-  if (min <= 0) return true;
-  let n = 0;
-  for (const o of world.objectives) if (o.owner === owner && o.kind !== 'point' && ++n >= min) return true;
-  return false;
+  const share = defenceRules(world)?.min_held_share ?? 0;
+  if (share <= 0) return true;
+  const held = new Map<number, number>();
+  for (const o of world.objectives) if (o.owner >= 0 && o.kind !== 'point') held.set(o.owner, (held.get(o.owner) ?? 0) + 1);
+  const alive = world.factions.filter((f) => f.alive);
+  const mean = alive.reduce((s, f) => s + (held.get(f.id) ?? 0), 0) / Math.max(1, alive.length);
+  return (held.get(owner) ?? 0) >= share * mean;
 }
 
 /** Once per second: replace dead crews, re-seat crews in repaired strongpoints. */
