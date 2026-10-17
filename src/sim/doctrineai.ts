@@ -35,6 +35,9 @@ export const DOCTRINE_AI = {
   wonShare: 0.3,
   /** Share of our army counted as the main body when weighing a battle. */
   mainBody: 0.6,
+  /** Any doctrine: offensive on the HQ's finish target once our army is finishRatio × its known army (after finishAfterS). */
+  finishRatio: 1.6,
+  finishAfterS: 720,
 } as const;
 
 interface State {
@@ -107,7 +110,7 @@ export function doctrineChoice(world: World, f: Faction, p: DoctrineProfile): Do
     return { kind: 'advance', axis: null };
   }
   if (st.idleSince < 0) st.idleSince = world.time;
-  const launch = world.time >= st.restUntil ? (o.mode === 'battle' ? battleTarget(world, f, p, a) : capitalTarget(world, f, p, st, a)) : null;
+  const launch = world.time >= st.restUntil ? (brokenTarget(world, f, a) ?? (o.mode === 'battle' ? battleTarget(world, f, p, a) : capitalTarget(world, f, p, st, a))) : null;
   if (launch) {
     st.phase = 'offensive';
     st.since = world.time;
@@ -128,7 +131,7 @@ function continueOffensive(world: World, f: Faction, p: DoctrineProfile, st: Sta
   const dead = st.target >= 0 && !world.factions[st.target]?.alive;
   const spent = a.mine < st.startArmy * o.break_share;
   const late = world.time - st.since > o.max_s;
-  const won = o.mode === 'battle' && !!st.axis && enemyAt(world, f, st.axis, DOCTRINE_AI.lineR) < st.startEnemy * DOCTRINE_AI.wonShare;
+  const won = st.target < 0 && !!st.axis && enemyAt(world, f, st.axis, DOCTRINE_AI.lineR) < st.startEnemy * DOCTRINE_AI.wonShare;
   if (!dead && !spent && !late && !won) return { kind: 'offensive', axis: st.axis };
   st.phase = 'idle';
   st.restUntil = world.time + (dead || won ? Math.min(o.cooldown_s, 60) : o.cooldown_s);
@@ -155,6 +158,18 @@ function capitalTarget(world: World, f: Faction, p: DoctrineProfile, st: State, 
   const ready = full && r >= p.attack_ratio && (o.mode !== 'late' || a.mine >= a.top);
   const forced = o.force_after_s > 0 && st.idleSince >= 0 && world.time - st.idleSince >= o.force_after_s && r >= o.force_ratio;
   return ready || forced ? { target: best, axis: world.hqPos(best), enemy: a.theirs.get(best) ?? 0 } : null;
+}
+
+/**
+ * Every doctrine finishes a broken enemy (wars must end; lab: doctrine AIs ended fewer wars than
+ * the 2.2 AI without it): the HQ's finish target (command.chooseFinishTarget) whose known army is
+ * below 1 / finishRatio of ours gets the doctrine offensive on its capital.
+ */
+function brokenTarget(world: World, f: Faction, a: Armies): { target: number; axis: V2; enemy: number } | null {
+  const fin = f.command.finishTarget;
+  if (fin < 0 || !world.factions[fin]?.alive || world.time < DOCTRINE_AI.finishAfterS) return null;
+  const theirs = a.theirs.get(fin) ?? 0;
+  return a.mine >= theirs * DOCTRINE_AI.finishRatio ? { target: fin, axis: world.hqPos(fin), enemy: theirs } : null;
 }
 
 /** Known hostile combat value within r of p. */
