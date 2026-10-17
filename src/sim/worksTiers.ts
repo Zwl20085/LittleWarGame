@@ -5,7 +5,7 @@ import { HOME } from './homeguard';
 import { startMinefield, tierRules } from './minefields';
 import { moveTo, stop } from './movement';
 import { availableM } from './production';
-import { enemyNear, isStructure, refreshGarrison, structureDef, STRUCT } from './structures';
+import { canAfford, enemyNear, isStructure, refreshGarrison, startStructure, structureDef, structureSiteOk, STRUCT } from './structures';
 import type { Faction, Fort, Unit } from './types';
 import { dist, type V2 } from './vec';
 import { segDist } from './works';
@@ -33,6 +33,8 @@ export const TIERS = {
   capitalMinesPadM: 40,
   /** Engineers work within this of the work (minefields: of its centre). */
   workRadiusM: 12,
+  /** One AT emplacement per this radius (capital approach, each fortified zone). */
+  atSpacingM: 200,
   /** Retry a failed plan after this (s). */
   retryS: 20,
   /** No tier job before this (the opening M goes to the army). */
@@ -134,7 +136,8 @@ function pool(world: World, f: Faction, site: Fort): Unit[] {
 
 /** Open tier jobs (upgrades, minefields being laid) of `f` (perimeter repairs: capitalDefence.ts). */
 export function openTierJobs(world: World, f: Faction): Fort[] {
-  return world.forts.filter((w) => w.owner === f.id && !w.permanent && (w.upgrade || (w.kind === 'minefield' && w.progress < 1 && w.hp > 0)));
+  return world.forts.filter((w) => w.owner === f.id && !w.permanent && w.hp > 0
+    && (w.upgrade || ((w.kind === 'minefield' || w.kind === 'at_emplacement') && w.progress < 1)));
 }
 
 /**
@@ -166,6 +169,17 @@ function tryMines(world: World, f: Faction, p: V2, facing: number): boolean {
   return startMinefield(world, f, p, facing) !== null;
 }
 
+/** An AT emplacement at p unless one stands within `atSpacingM`. */
+function tryEmplacement(world: World, f: Faction, p: V2, facing: number): boolean {
+  for (const w of world.forts) if (w.kind === 'at_emplacement' && w.owner === f.id && w.hp > 0 && dist(w.pos, p) < TIERS.atSpacingM) return false;
+  if (!canAfford(world, f, 'at_emplacement', TIERS.spareMul - 1) || enemyNear(world, f.id, p, STRUCT.noBuildEnemyM)) return false;
+  for (const [dx, dz] of [[0, 0], [12, 0], [-12, 0], [0, 12], [0, -12]] as const) {
+    const q = { x: p.x + dx, z: p.z + dz };
+    if (structureSiteOk(world, q)) return startStructure(world, f, 'at_emplacement', q, facing, TIERS.spareMul - 1) !== null;
+  }
+  return false;
+}
+
 function startNext(world: World, f: Faction): boolean {
   const hq = world.hqPos(f.id);
   const zones = f.zones.filter((z) => !z.cancelled);
@@ -178,6 +192,12 @@ function startNext(world: World, f: Faction): boolean {
   }
   // Capital: bunkers and fortified trenches (fortresses are for the fortified zones).
   for (const w of capital) if (w.kind !== 'bunker' && tryUpgrade(world, f, w)) return true;
+  // One dug-in AT position on the capital's approach (the AT guns of the home guard man it).
+  {
+    const ht0 = f.command.homeThreat;
+    const b0 = ht0.active ? ht0.bearing : Math.atan2(world.cityOf(f.id).exit.z - hq.z, world.cityOf(f.id).exit.x - hq.x);
+    if (tryEmplacement(world, f, { x: hq.x + Math.cos(b0) * (HOME.trenchR - 14), z: hq.z + Math.sin(b0) * (HOME.trenchR - 14) }, b0)) return true;
+  }
   const ht = f.command.homeThreat;
   const bearing = ht.active ? ht.bearing : Math.atan2(world.cityOf(f.id).exit.z - hq.z, world.cityOf(f.id).exit.x - hq.x);
   const r = HOME.trenchR + TIERS.capitalMinesPadM;
@@ -193,6 +213,7 @@ function startNext(world: World, f: Faction): boolean {
       nz = -nz;
     }
     if (tryMines(world, f, { x: c.x + nx * TIERS.zoneMinesM, z: c.z + nz * TIERS.zoneMinesM }, Math.atan2(nz, nx))) return true;
+    if (tryEmplacement(world, f, { x: c.x - nx * 14, z: c.z - nz * 14 }, Math.atan2(nz, nx))) return true;
   }
   return false;
 }
