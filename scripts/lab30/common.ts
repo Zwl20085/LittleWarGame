@@ -21,69 +21,6 @@ import { applyOverrides, parseOverride, type DataText } from '../lab/overrides';
 
 export type Args = Record<string, string[]>;
 
-<<<<<<< HEAD
-/** One headless match of a lab suite. `src` / `data` may point at a frozen tree (A/B "before"). */
-export interface MatchSpec {
-  readonly seed: number;
-  readonly minutes: number;
-  readonly mapSize: 'medium' | 'large';
-  readonly factions: number;
-  readonly src: string;
-  readonly data: string;
-  /** Information mode of the match (default open). */
-  readonly infoMode?: 'open' | 'fog';
-}
-
-export interface LabMatch {
-  readonly world: World;
-  /** One 20 Hz tick (clears the fx queue as every lab does). */
-  step(): void;
-}
-
-/** `--key value` options, `--flag` switches. */
-export interface LabArgs {
-  str(k: string, d: string): string;
-  num(k: string, d: number): number;
-  nums(k: string, d: string): number[];
-  has(k: string): boolean;
-}
-
-export function parseArgs(argv: readonly string[]): LabArgs {
-  const at = (k: string): number => argv.indexOf(`--${k}`);
-  const str = (k: string, d: string): string => (at(k) >= 0 && at(k) + 1 < argv.length ? argv[at(k) + 1] : d);
-  return {
-    str,
-    num: (k, d) => Number(str(k, String(d))),
-    nums: (k, d) => str(k, d).split(',').filter(Boolean).map(Number),
-    has: (k) => at(k) >= 0,
-  };
-}
-
-/** Build a match from `spec.src` (sim) and `spec.data` (csv + rules) — spectated 4-FFA style, open info. */
-export async function createLabMatch(spec: MatchSpec): Promise<LabMatch> {
-  const imp = (rel: string): Promise<Record<string, unknown>> => import(pathToFileURL(resolve(spec.src, rel)).href) as Promise<Record<string, unknown>>;
-  const loader = await imp('data/loader.ts');
-  const sim = await imp('sim/sim.ts');
-  const build = loader.buildGameData as (u: string, w: string, r: string) => GameData;
-  const create = sim.createMatch as (d: GameData, c: Record<string, unknown>) => { world: World };
-  const stepFn = sim.step as (m: { world: World }) => void;
-  const rd = (f: string): string => readFileSync(resolve(spec.data, f), 'utf8');
-  const data = build(rd('units.csv'), rd('weapons.csv'), rd('rules.json'));
-  const m = create(data, {
-    mapId: 'generated', mapSize: spec.mapSize, factions: spec.factions, infoMode: spec.infoMode ?? 'open', seed: spec.seed,
-    difficulty: 'normal', playerSlot: 0, spectate: true,
-  });
-  return { world: m.world, step: () => { stepFn(m); m.world.fx.length = 0; } };
-}
-
-/** Run until `minutes` or a result; `onSecond` after every whole game second. */
-export function runMatch(m: LabMatch, minutes: number, onSecond: (w: World) => void): void {
-  const w = m.world;
-  const ticks = minutes * 60 * w.tickHz;
-  for (let i = 0; i < ticks && !w.result; i++) {
-    m.step();
-    if (w.tick % w.tickHz === 0) onSecond(w);
-=======
 /** `--key value` pairs (repeatable); a flag without a value reads "true". */
 export function parseArgs(argv: readonly string[]): Args {
   const out: Args = {};
@@ -94,7 +31,6 @@ export function parseArgs(argv: readonly string[]): Args {
     const next = argv[i + 1];
     const val = next !== undefined && !next.startsWith('--') ? (i++, next) : 'true';
     (out[key] ??= []).push(val);
->>>>>>> feat/v3.0
   }
   return out;
 }
@@ -124,12 +60,14 @@ export interface LabMatchSpec {
   readonly factions?: number;
   readonly size?: 'medium' | 'large';
   readonly mapId?: MatchConfig['mapId'];
+  /** Information mode (default open). */
+  readonly infoMode?: MatchConfig['infoMode'];
 }
 
-/** Headless spectator match (open information, normal difficulty). */
+/** Headless spectator match (open information unless `infoMode`, normal difficulty). */
 export function labMatch(data: GameData, spec: LabMatchSpec): Match {
   return createMatch(data, {
-    mapId: spec.mapId ?? 'generated', mapSize: spec.size ?? 'medium', factions: spec.factions ?? 4, infoMode: 'open',
+    mapId: spec.mapId ?? 'generated', mapSize: spec.size ?? 'medium', factions: spec.factions ?? 4, infoMode: spec.infoMode ?? 'open',
     seed: spec.seed, difficulty: 'normal', playerSlot: 0, spectate: true,
   });
 }

@@ -15,13 +15,14 @@
  *
  * Output: media/stats/lab30/infiltration-<tag>-<ts>.{md,json}.
  */
-import { resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { infiltrationReports } from '../../src/sim/infiltration';
+import { holdsLine, INFILTRATION_AB } from '../../src/sim/zoc';
+import { step } from '../../src/sim/sim';
 import type { Unit } from '../../src/sim/types';
 import { dist, headingTo, type V2 } from '../../src/sim/vec';
 import type { World } from '../../src/sim/world';
 import { seenBy, shadowRoute } from '../challenge/route';
-import { createLabMatch, mdTable, parseArgs, runJobs, serveWorker, stamp, writeReport } from './common';
+import { argList, argNum, argStr, isWorker, labMatch, loadData, mdTable, parseArgs, runParallel, workerLoop, writeReport } from './common';
 
 interface Spec { seed: number; on: boolean; launchMin: number; afterMin: number; size: 'medium' | 'large'; fog: boolean }
 
@@ -60,12 +61,8 @@ interface Result {
   readonly reportedAtS: number;
 }
 
-const SRC = 'src';
-const DATA = 'docs/data';
 const PAST_M = 200;
 const RING_M = 700;
-
-const holdsLineFn = async (): Promise<(u: Unit) => boolean> => ((await import(pathToFileURL(resolve(SRC, 'sim/zoc.ts')).href)) as { holdsLine: (u: Unit) => boolean }).holdsLine;
 
 /** Front cells of `d` facing the attacker's capital (±70°), each with the distance to d's nearest line unit. */
 function gaps(world: World, d: number, a: number, holds: (u: Unit) => boolean): { p: V2; gap: number }[] {
@@ -116,13 +113,12 @@ interface Track { u: Unit; seenAt: number; repAt: number; pastAt: number; hitAt:
 
 const detectedAt = (t: Track): number => Math.min(...[t.seenAt, t.repAt, t.hitAt].filter((x) => x >= 0), Infinity);
 
-async function runOne(spec: Spec): Promise<Result> {
-  const { INFILTRATION_AB } = (await import(pathToFileURL(resolve(SRC, 'sim/zoc.ts')).href)) as { INFILTRATION_AB: { on: boolean } };
-  const { infiltrationReports } = (await import(pathToFileURL(resolve(SRC, 'sim/infiltration.ts')).href)) as { infiltrationReports: (f: unknown) => readonly { firstAt: number; noted: boolean; ids: readonly number[] }[] };
+function runOne(spec: Spec): Result {
   INFILTRATION_AB.on = spec.on;
-  const holds = await holdsLineFn();
-  const m = await createLabMatch({ seed: spec.seed, minutes: spec.launchMin + spec.afterMin, mapSize: spec.size, factions: 4, src: SRC, data: DATA, infoMode: spec.fog ? 'fog' : 'open' });
-  const w = m.world;
+  const holds = holdsLine;
+  const match = labMatch(loadData(), { seed: spec.seed, size: spec.size, infoMode: spec.fog ? 'fog' : 'open' });
+  const w = match.world;
+  const m = { step: (): void => { step(match); w.fx.length = 0; } };
   const launchTick = spec.launchMin * 60 * w.tickHz;
   // CPU time of this process (other jobs on the machine skew wall time; this is what the sim costs).
   let c0 = process.cpuUsage();
@@ -215,22 +211,19 @@ function report(rows: Result[], tag: string): void {
   const delta = (k: 'msPerTick' | 'msPerTickPre'): string => (cost(false, k) > 0 ? `${(((cost(true, k) - cost(false, k)) / cost(false, k)) * 100).toFixed(1)} %` : '—');
   const md = [`# Infiltration lab (${tag}, ${new Date().toISOString()})`, '', mdTable(head, body), '', perSeed, '',
     `Sim cost on vs off: before launch ${delta('msPerTickPre')}, after launch ${delta('msPerTick')} (mean CPU ms/tick of each match process).`].join('\n');
-  const out = writeReport(`infiltration-${tag}-${stamp()}`, md, rows);
+  const out = writeReport(`infiltration-${tag}`, rows, md);
   console.log(md);
-  console.log(`report written to ${out.md}`);
+  console.log(`report written to ${out}.md`);
 }
 
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
-  if (args.has('worker')) {
-    serveWorker(runOne);
-    return;
-  }
-  const seeds = args.nums('seeds', '7,11,13');
-  const variants = args.str('variants', 'on,off').split(',').map((v) => v === 'on');
-  const specs: Spec[] = seeds.flatMap((seed) => variants.map((on) => ({ seed, on, launchMin: args.num('launch', 12), afterMin: args.num('after', 8), size: args.str('size', 'medium') as 'medium' | 'large', fog: args.has('fog') })));
-  const rows = await runJobs<Spec, Result>(process.argv[1], specs, args.num('jobs', 6), (s) => `seed ${s.seed} ${s.on ? 'on' : 'off'}`);
-  report(rows, `${args.str('tag', 'run')}${args.has('fog') ? '-fog' : ''}`);
+  const fog = argStr(args, 'fog', 'false') === 'true';
+  const variants = argStr(args, 'variants', 'on,off').split(',').map((v) => v === 'on');
+  const specs: Spec[] = argList(args, 'seeds', '7,11,13').flatMap((seed) => variants.map((on) => ({ seed, on, launchMin: argNum(args, 'launch', 12), afterMin: argNum(args, 'after', 8), size: argStr(args, 'size', 'medium') as 'medium' | 'large', fog })));
+  const rows = await runParallel<Spec, Result>(import.meta.url, specs, argNum(args, 'jobs', 6));
+  report(rows, `${argStr(args, 'tag', 'run')}${fog ? '-fog' : ''}`);
 }
 
-void main();
+if (isWorker()) workerLoop(runOne);
+else void main();
