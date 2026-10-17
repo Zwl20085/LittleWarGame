@@ -178,7 +178,12 @@ export interface Directive {
   readonly issuedAt: number;
   /** Issued by the player (binding front orders) or chosen by the AI supreme HQ. */
   readonly manual: boolean;
+  /** 3.0 (compliance.ts): the player insisted (re-issued within insist_window_s, or the Force toggle): every front obeys at once, as in 2.1. */
+  readonly forced?: boolean;
 }
+
+/** 3.0 a front's answer to the directive (compliance.ts): '' none asked (advance), obeying, waiting out its delay, declined, forced. */
+export type FrontObey = '' | 'obey' | 'pending' | 'declined' | 'forced';
 
 /** A line the front holds / assaults along (from a line order, or chosen by the commander). */
 export interface FrontLine {
@@ -245,6 +250,14 @@ export interface Front {
   /** 2.2: the commander's response to the directive (i18n key + params), shown on the front card. */
   response: string;
   responseParams: Record<string, string | number>;
+  /** 3.0 (frontTiers.ts): command tier 0–3, stretched line, the batteries' shared barrage point. */
+  tier: number;
+  stretched: boolean;
+  barrage: V2 | null;
+  /** 3.0 (compliance.ts): directive compliance 0–1 (−1 = none asked), the front's answer, when it moves. */
+  compliance: number;
+  obey: FrontObey;
+  obeyAt: number;
 }
 
 /**

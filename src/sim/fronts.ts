@@ -17,6 +17,7 @@ import { activeSegment, inMass, LINE_ORDER, lineThrough, massSlot, orderAlong, t
 import { boundLine, boundOrder, frontById } from './frontref';
 import { armourSlots, isTank } from './armour';
 import { econWorth, planEconRaids } from './econwar';
+import { updateFrontTier } from './frontTiers';
 
 export { frontById };
 
@@ -41,6 +42,7 @@ export function newFront(world: World, f: Faction, target: Objective, wing: Fron
     manualTarget: false, gatheredSince: -1, advancing: false,
     front: { ...target.pos }, facing: headingTo(city.hq, target.pos), slots: {}, crossing: null, stagedSince: -1, lastSpearhead: -999, mode: 'advance', shelledAt: -999, segment: [], bridgeSite: null, bridgeCheckAt: 0,
     op: 'frontal', opLocked: false, opRoute: [], opPhase: '', response: '', responseParams: {},
+    tier: 0, stretched: false, barrage: null, compliance: -1, obey: '', obeyAt: 0,
   };
 }
 
@@ -100,7 +102,10 @@ const ORDER_LINE_M = 240;
  * (runOperation re-plans on a new objective) and its posture (cityai), exactly like the 1.x
  * retarget did.
  */
-export function issueFrontOrder(world: World, f: Faction, s: Front, order: Front['order']): void {
+export function issueFrontOrder(world: World, f: Faction, s: Front, order: Front['order'], units?: readonly Unit[]): void {
+  // 3.0: the front's units are looked up once, and only when needed (callers pass them when they have them).
+  let mine = units;
+  const all = (): Unit[] => [...(mine ??= frontUnits(world, f.id, s.id))];
   // Round 7: the same manual order given again (a player re-confirming it) keeps the posture and the operation under way.
   const prev = s.order;
   const repeat = ROUND7_AB.assault && order.manual && prev.manual && prev.kind === order.kind && dist(prev.a, order.a) < 30
@@ -142,7 +147,7 @@ export function issueFrontOrder(world: World, f: Faction, s: Front, order: Front
     s.reasonParams = { point: s.targetObjective ?? '' };
     if (!repeat) {
       setPosture(world, s, attack ? 'cautious' : order.kind === 'fortify' ? 'fortify' : 'hold');
-      if (s.opPhase !== '') resetOperation(s, frontUnits(world, f.id, s.id), world);
+      if (s.opPhase !== '') resetOperation(s, all(), world);
     }
   } else {
     // 1.x retarget rally points (lab-tuned): halfway to a capital, a third of the way to a place.
@@ -150,7 +155,7 @@ export function issueFrontOrder(world: World, f: Faction, s: Front, order: Front
     setGoalReason(s);
     if (!attack) {
       setPosture(world, s, order.kind === 'fortify' ? 'fortify' : 'hold');
-      if (s.opPhase !== '') resetOperation(s, frontUnits(world, f.id, s.id), world);
+      if (s.opPhase !== '') resetOperation(s, all(), world);
     } else if (s.posture === 'hold' || s.posture === 'fortify') setPosture(world, s, 'cautious');
   }
   if (order.kind === 'fortify' && s.line) addZone(world, f, s);
@@ -159,14 +164,14 @@ export function issueFrontOrder(world: World, f: Faction, s: Front, order: Front
     // (behavior.fallingBack keeps them marching until they reach it). 2.1: on the player's order
     // town garrisons come back too (only the capital's guards stay) — 2.2: not under Contract, which keeps its towns garrisoned.
     const keepGarrisons = f.directive.kind === 'contract';
-    for (const u of frontUnits(world, f.id, s.id)) {
+    for (const u of all()) {
       if (u.manual || u.def.id === 'supply_truck' || isCommander(u.def)) continue;
       u.spearhead = null;
       if (u.opRole !== 'garrison' || (order.manual && !capitalGuard(u) && !keepGarrisons)) { u.opRole = 'line'; u.opTarget = null; u.opObjective = null; }
       u.behavior = 'advance';
     }
   }
-  if (boundOrder(s)) recallDetachments(s, frontUnits(world, f.id, s.id), keptGarrison(world, f));
+  if (boundOrder(s)) recallDetachments(s, all(), keptGarrison(world, f));
 }
 
 /** A home guard of the capital (standing garrison, HQ point): exempt from binding orders (user rule 8). */
@@ -395,12 +400,12 @@ export function frontUnits(world: World, f: number, frontId: number): Unit[] {
   return out;
 }
 
-function strengthOf(units: Unit[]): number {
+function strengthOf(units: readonly Unit[]): number {
   return units.reduce((s, u) => s + (isCommander(u.def) ? 0 : (u.def.costP + u.def.costM) * (u.hp / u.def.maxHp)), 0);
 }
 
 /** Next objective for a front once its own is secured: closest not-owned point, else weakest enemy city. */
-export function nextTarget(world: World, f: Faction, s: Front): { pos: V2; obj: Objective | null; city: number | null } {
+export function nextTarget(world: World, f: Faction, s: Front, units?: readonly Unit[]): { pos: V2; obj: Objective | null; city: number | null } {
   const from = s.targetPos;
   // Round 2 decisive offensive: every group goes for the chosen enemy capital (command.ts chooseFinishTarget).
   const fin = eagerOn() ? f.command.finishTarget : -1;
@@ -409,7 +414,7 @@ export function nextTarget(world: World, f: Faction, s: Front): { pos: V2; obj: 
   if (own && own.owner !== f.id) return { pos: own.pos, obj: own, city: null };
   // Score open objectives: near our current front, weakly held, not already another group's target,
   // and penalise ones behind a river (crossings are costly).
-  const mine = strengthOf(frontUnits(world, f.id, s.id)) + 1;
+  const mine = strengthOf(units ?? frontUnits(world, f.id, s.id)) + 1;
   const taken = new Set(f.fronts.filter((x) => x.id !== s.id).map((x) => x.targetObjective ?? (x.targetCity !== null ? `hq:${x.targetCity}` : null)));
   let best: Objective | null = null;
   let bestScore = -Infinity;
@@ -461,24 +466,34 @@ export function frontGroups(world: World, f: Faction): Map<number, Unit[]> {
   return out;
 }
 
-/** Front planner (2 s): target choice, gather/advance gate, city-defence override. */
-export function thinkFronts(world: World, f: Faction): void {
+/**
+ * Front planner (2 s): target choice, gather/advance gate, city-defence override. 3.0: staggered —
+ * `chunk` k plans fronts [k·n, (k+1)·n) (n = fronts.fronts_per_think_tick) on its own tick, the
+ * faction-wide passes run with chunk 0; no chunk = every front now (tests, tools).
+ */
+export function thinkFronts(world: World, f: Faction, chunk?: number): void {
+  const per = world.data.rules.fronts.fronts_per_think_tick;
+  if (chunk !== undefined && chunk > 0 && chunk * per >= f.fronts.length) return;
   const hq = world.hqPos(f.id);
   // Round 3: graded recall decided by the high command (homeguard.ts); else the old all-or-nothing rule.
   const graded = homeOn();
   const threat = graded ? 0 : knownEnemyStrength(world, f.id, hq, 280);
   const ht = f.command.homeThreat;
   // Each group owns a stretch of the front so the whole line is held, not one point.
-  const segs = frontSegments(world, f, world.frontInfo[f.id]?.cells ?? []);
-  f.fronts.forEach((s, i) => (s.segment = segs[i] ?? []));
-  planOperations(world, f);
-  // 2.2: economic raid parties against enemy buildings (econwar.ts).
-  planEconRaids(world, f);
   const groups = frontGroups(world, f);
-  planPincer(world, f, groups);
-  for (const s of f.fronts) {
+  if (!chunk) {
+    const segs = frontSegments(world, f, world.frontInfo[f.id]?.cells ?? []);
+    f.fronts.forEach((s, i) => (s.segment = segs[i] ?? []));
+    planOperations(world, f);
+    // 2.2: economic raid parties against enemy buildings (econwar.ts).
+    planEconRaids(world, f);
+    planPincer(world, f, groups);
+  }
+  const slice = chunk === undefined ? f.fronts : f.fronts.slice(chunk * per, (chunk + 1) * per);
+  for (const s of slice) {
     const units = groups.get(s.id) ?? [];
     upkeepCommander(world, f, s);
+    updateFrontTier(world, f, s, units);
     const recalled = graded ? isRecalled(f, s) : threat > 300 && !s.manualTarget;
     if (graded && !recalled && defendingHome(s)) {
       // Threat passed: the group gets its previous orders back.
@@ -503,7 +518,7 @@ export function thinkFronts(world: World, f: Faction): void {
     // (an assault already under way on a nearby place is finished first). 2.0: only a front on an
     // `auto` order picks its own objective; the AI supreme HQ re-issues attack orders (theatre.ts).
     if (!orderedTarget(s) && (deadCapital(world, s) || (!maneuvering(s) && (world.time - s.lastRetarget > 60 || finishNow(f, s))))) {
-      const t = nextTarget(world, f, s);
+      const t = nextTarget(world, f, s, units);
       if (dist(t.pos, s.targetPos) > 1 || defendingHome(s)) {
         s.targetPos = { ...t.pos };
         s.targetObjective = t.obj?.id ?? null;

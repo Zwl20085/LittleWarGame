@@ -10,6 +10,7 @@ import { directiveMain, RESPONSE } from './frontresponse';
 import type { World } from './world';
 import { thinkInvestment } from './econai';
 import { concentrateArmour } from './armour';
+import { frontReinforceWeight } from './frontTiers';
 
 const PERSONALITY_MUL: Record<Personality, Record<string, number>> = {
   balanced: {},
@@ -138,7 +139,7 @@ function balanceReserves(world: World, f: Faction, strength: ReadonlyMap<number,
     const thin = mean > 0 ? Math.max(0, 1 - (strength.get(s.id) ?? 0) / mean) : 0;
     // 2.1: a zone garrison is topped up only when pressed (it holds a fixed line, not an axis).
     if (garrisonsZone(s)) return 0.2 * (0.6 + need);
-    return (0.6 + need + THEATRE.shareThin * thin) * (s.id === f.mainFront ? mainMul : 1);
+    return (0.6 + need + THEATRE.shareThin * thin) * (s.id === f.mainFront ? mainMul : 1) * frontReinforceWeight(world, s);
   });
   const sum = raw.reduce((a, b) => a + b, 0) || 1;
   f.fronts.forEach((s, i) => (s.share = raw[i] / sum));

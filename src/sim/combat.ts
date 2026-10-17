@@ -11,6 +11,7 @@ import { sightLine } from './buildings';
 import { garrisonBlind, garrisonRaise, weaponOf } from './structures';
 import { forestConcealed, hasHighObserver, shotTerrainMul } from './terrainrules';
 import { hostileMask } from './spatial';
+import { barrageBonus, barrageFocus, frontAccuracyMul } from './frontTiers';
 import { angleDiff, DEG, dist, headingTo, turnToward, type V2 } from './vec';
 import type { World } from './world';
 
@@ -105,6 +106,8 @@ export function selectTarget(world: World, u: Unit, objective: V2 | null): void 
   let best: Unit | null = null;
   let bestScore = -1;
   let curScore = -1;
+  // 3.0: the batteries of a tiered front concentrate on its barrage point (frontTiers.ts).
+  const focus = isIndirect(w) ? barrageFocus(world, u) : null;
   for (const t of cands) {
     if (t.hp <= 0 || !world.isHostile(u.owner, t.owner)) continue;
     const suit = suitability(w, t);
@@ -122,7 +125,7 @@ export function selectTarget(world: World, u: Unit, objective: V2 | null): void 
       // inside a building or a single vehicle and keep their rounds for exposed concentrations.
       // (Not at an enemy capital: a storm needs every gun on the defenders, sheltered or not.)
       if (shellWorth(suit, housed, cluster) < ARTY.minWorth + (u.ammo < ARTY.lowAmmo ? ARTY.lowAmmoExtra : 0) && !nearCapital(world, t)) continue;
-      score += cluster * 0.2 - friendlyRisk(world, u, t.pos, w) * 2 + counterBatteryBonus(world, u.owner, t);
+      score += cluster * 0.2 - friendlyRisk(world, u, t.pos, w) * 2 + counterBatteryBonus(world, u.owner, t) + barrageBonus(world, focus, t);
       // 2.2: guns prefer exposed targets over squads sheltering inside intact buildings (shelter.ts).
       if (housed) score -= SHELTER.artyInsidePenalty;
     }
@@ -289,7 +292,7 @@ function fireHitscan(world: World, u: Unit, w: WeaponDef, t: Unit, m: V3): void 
   const p = hitProbability({
     baseAccuracy: w.accuracy, distance: d, maxRange: w.range, shooterMoving: u.moving,
     shooterSuppressed: u.moraleState !== 'normal', targetMoving: t.moving, cover,
-    terrainMul: shotTerrainMul(world, u, t, u.y + muzzleHeight(u)),
+    terrainMul: shotTerrainMul(world, u, t, u.y + muzzleHeight(u)) * frontAccuracyMul(world, u),
   });
   const hit = world.rngCombat.chance(p);
   const fp = firepowerScale(u.def, u.hp, u.fixed ? 1400 : u.def.maxHp);
@@ -313,7 +316,7 @@ function fireDirect(world: World, u: Unit, w: WeaponDef, t: Unit, m: V3): void {
   const p = hitProbability({
     baseAccuracy: w.accuracy, distance: d, maxRange: w.range, shooterMoving: u.moving,
     shooterSuppressed: u.moraleState !== 'normal', targetMoving: t.moving, cover: coverAgainst(world, t, u.pos),
-    terrainMul: shotTerrainMul(world, u, t, u.y + muzzleHeight(u)),
+    terrainMul: shotTerrainMul(world, u, t, u.y + muzzleHeight(u)) * frontAccuracyMul(world, u),
   });
   const hit = world.rngCombat.chance(p);
   const aimPt: V3 = { x: t.pos.x, y: t.y + centerHeight(t), z: t.pos.z };

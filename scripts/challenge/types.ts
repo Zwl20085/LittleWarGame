@@ -115,6 +115,8 @@ export interface CapitalEvent {
 }
 
 export interface ChallengeReport {
+  /** 3.0: the challenger's fronts' answers to its directives (absent in older runs). */
+  readonly responses?: readonly { result: string; t: number; delay: number; distM: number; reason: string }[];
   readonly strategy: string;
   readonly infoMode?: 'open' | 'fog';
   /** Round-7 AI fixes switched off for this match (R7_OFF), '' = all on. */
