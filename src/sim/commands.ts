@@ -4,6 +4,7 @@ import { placeById, placeOwner } from './settlements';
 import type { EconKind } from '../data/types';
 import type { Match } from './sim';
 import { DIRECTIVE_KINDS, DIRECTIVE_LINE_MIN_M, setDirective } from './directive';
+import { insisted } from './compliance';
 import { releaseFund } from './econai';
 import { applyDirectiveNow } from './theatre';
 import type { DirectiveKind, Unit } from './types';
@@ -35,7 +36,8 @@ export type Command =
    * 2.2 universal directive. `axis` = main effort (offensive) / threatened place (defend, fortify);
    * `line` (fortify only) becomes a permanent fortified zone held by the front nearest it.
    */
-  | { type: 'setDirective'; kind: DirectiveKind; axis?: V2; line?: { a: V2; b: V2 } }
+  /** 3.0 `force`: the HUD Force toggle (true / false); unset = forced when the same directive is re-issued within insist_window_s. */
+  | { type: 'setDirective'; kind: DirectiveKind; axis?: V2; line?: { a: V2; b: V2 }; force?: boolean }
   /** 2.1: stop a fortified-zone project (works already standing remain). */
   | { type: 'cancelZone'; zoneId: number }
   | { type: 'unitOrder'; unitIds: number[]; order: 'move' | 'moveHold' | 'attackMove' | 'retreat' | 'hold' | 'resume'; pos?: V2; queue?: boolean }
@@ -158,6 +160,7 @@ function apply(match: Match, env: CommandEnvelope): CommandOutcome {
       return OK;
     case 'setDirective': {
       if (!DIRECTIVE_KINDS.includes(c.kind)) return fail('BAD_VALUE');
+      if (c.force !== undefined && typeof c.force !== 'boolean') return fail('BAD_VALUE');
       if ((c.axis !== undefined && !finiteV2(c.axis)) || (c.line !== undefined && (!finiteV2(c.line?.a) || !finiteV2(c.line?.b)))) return fail('BAD_VALUE');
       if (c.line && c.kind !== 'fortify') return fail('LINE_ONLY_FORTIFY');
       const pts = [c.axis, c.line?.a, c.line?.b].filter((p): p is V2 => !!p);
@@ -169,7 +172,9 @@ function apply(match: Match, env: CommandEnvelope): CommandOutcome {
       const lb = c.line ? nav.nearestPassable(c.line.b, 30) : null;
       if ((c.axis && !axis) || (c.line && (!la || !lb))) return fail('UNREACHABLE');
       if (la && lb && dist(la, lb) < DIRECTIVE_LINE_MIN_M) return fail('LINE_SHORT');
-      setDirective(w, f, c.kind, axis ? { ...axis } : null, la && lb ? { a: { ...la }, b: { ...lb } } : null, true);
+      const line = la && lb ? { a: { ...la }, b: { ...lb } } : null;
+      const forced = insisted(w, f, { kind: c.kind, axis, line }, c.force);
+      setDirective(w, f, c.kind, axis ? { ...axis } : null, line, true, forced);
       applyDirectiveNow(w, f);
       return OK;
     }

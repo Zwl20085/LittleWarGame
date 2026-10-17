@@ -337,7 +337,9 @@ export function step(match: Match): void {
       f.aiThinkAt = world.time + cityEvery;
     }
     thinkHighCommand(world, f);
-    if (world.tick % Math.round(AI.frontThinkSeconds * hz) === f.id % (AI.frontThinkSeconds * hz)) thinkFronts(world, f);
+    // 3.0: front planning is staggered — chunk k of faction f on tick ≡ f + k·factions (mod 2 s).
+    const slot = (((world.tick - f.id) % Math.round(AI.frontThinkSeconds * hz)) + Math.round(AI.frontThinkSeconds * hz)) % Math.round(AI.frontThinkSeconds * hz);
+    if (slot % world.factions.length === 0) thinkFronts(world, f, slot / world.factions.length);
   }
   // Unit executor, staggered.
   for (let i = 0; i < units.length; i++) {

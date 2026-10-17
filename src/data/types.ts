@@ -1,3 +1,4 @@
+import type { ComplianceRules, FrontRules } from './frontRules';
 export type UnitKind = 'infantry' | 'crew' | 'vehicle';
 export type Facility = 'barracks' | 'vehicle' | 'support';
 export type FireMode = 'hitscan' | 'direct_projectile' | 'ballistic';
@@ -281,7 +282,11 @@ export interface Rules {
     /** Unit id of the front commander (appointed by the supreme HQ, never produced). */
     readonly commander_unit: string;
     readonly fronts_initial: number;
-    readonly fronts_max: number;
+    /** 3.0 directive compliance (compliance.ts). */
+    readonly compliance_threshold: number;
+    readonly home_recall_m: number;
+    readonly insist_window_s: number;
+    readonly compliance: ComplianceRules;
     /** A lost commander is replaced after this long; until then the front holds without cohesion. */
     readonly commander_respawn_seconds: number;
     readonly commander_lost_hold_seconds: number;
@@ -291,6 +296,8 @@ export interface Rules {
     readonly capital_standing_garrison: number;
     readonly capital_line_works: Record<string, number>;
   };
+  /** 3.0 fronts: tiers, theatre front counts, soft cap (frontTiers.ts). */
+  readonly fronts: FrontRules;
   /** Engineer construction; `defensive` = 2.0 pillboxes / bunkers (structures.ts, BALANCE_SPEC §10). */
   readonly construction: {
     readonly defensive: DefensiveRules;

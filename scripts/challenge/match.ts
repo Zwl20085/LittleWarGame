@@ -104,6 +104,8 @@ export function runChallengeMatch(opt: ChallengeOptions): ChallengeReport {
     held: sampler.held,
     result: w.result ? { winners: [...w.result.winners], reason: w.result.reason, t: Math.round(w.result.tick / w.tickHz) } : null,
     commandsIssued: issued, commandsFailed: failed,
+    // 3.0: the challenger's fronts' answers to its directives (compliance.ts; declines / obeyed / forced).
+    responses: w.battle.responses.filter((x) => x.f === me).map((x) => ({ result: x.result, t: Math.round(x.t), delay: x.delay, distM: x.distM, reason: x.reason })),
     captureSeconds: w.data.rules.victory.command_capture_seconds, captureRadiusM: w.data.rules.victory.command_radius_m,
   };
 }

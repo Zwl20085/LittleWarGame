@@ -1,4 +1,4 @@
-import { appointCommander, frontUnits, nearestFront, newFront } from './fronts';
+import { appointCommander, frontUnits, nearestFront, newFront, rallyPoint } from './fronts';
 import { frontById, onBoundFront } from './frontref';
 import { resetOperation } from './doctrine';
 import { isCommander } from './formulas';
@@ -28,16 +28,18 @@ export function transferable(u: Unit): boolean {
  * Open a new front aimed at `target` (AI: a new axis; player: an order far from every front).
  * Its commander is appointed at once for `commander_unit` P (no front without a commander), and it
  * takes `want` free line troops nearest the target from the other fronts (each donor keeps
- * `donorKeep` of its free troops). Returns null at `fronts_max` or when P cannot pay the commander.
+ * `donorKeep` of its free troops). Returns null at the perf guard `fronts.soft_max` (3.0: no gameplay cap) or when P cannot pay the commander.
  */
 export function createFront(world: World, f: Faction, target: Objective, want: number, at: V2 = target.pos, withinM = Infinity): Front | null {
   const rules = world.data.rules.command;
-  if (f.fronts.length >= rules.fronts_max) return null;
+  if (f.fronts.length >= world.data.rules.fronts.soft_max) return null;
   const def = world.data.units.get(rules.commander_unit);
   if (def && f.p < def.costP) return null;
   if (def) f.p -= def.costP;
   const n = f.fronts.length + 1;
   const s = newFront(world, f, target, 0, 1 / n);
+  // 3.0 (soak: a tank sat 3 min on a rally point on a 23° forest slope): the rally point is ground vehicles can reach.
+  s.rally = rallyPoint(world, s.rally);
   for (const x of f.fronts) x.share *= (n - 1) / n;
   f.fronts = [...f.fronts, s];
   appointCommander(world, f, s);
@@ -141,13 +143,13 @@ export function frontDistance(s: Front, p: V2): number {
 
 /**
  * The front a player order without a front goes to: the nearest one, or — when the order is
- * farther than `newFrontM` from every front's line and the faction has fewer than `fronts_max`
+ * farther than `newFrontM` from every front's line and the faction is under `fronts.soft_max`
  * fronts — a new front for it (named after the nearest settlement, with its share of the troops).
  */
 export function frontForOrder(world: World, f: Faction, p: V2): Front | undefined {
   const near = nearestFront(f, p);
   if (near && frontDistance(near, p) <= FRONT_OPS.newFrontM) return near;
-  if (f.fronts.length >= world.data.rules.command.fronts_max) return near;
+  if (f.fronts.length >= world.data.rules.fronts.soft_max) return near;
   let obj: Objective | null = null;
   let bd = Infinity;
   for (const o of world.objectives) {

@@ -75,6 +75,20 @@ export interface DirectiveRecord {
   result: 'captured' | 'held' | 'lost' | 'expired' | 'open';
 }
 
+/** 3.0 a front's answer to the supreme-HQ directive (compliance.ts): declined, obeyed after its delay, or forced. */
+export interface ResponseRecord {
+  readonly f: number;
+  readonly front: number;
+  readonly kind: string;
+  readonly t: number;
+  readonly result: 'declined' | 'obeyed' | 'forced';
+  /** Compliance 0–1, the delay it obeyed after (s), its distance to the capital (m). */
+  readonly c: number;
+  readonly delay: number;
+  readonly distM: number;
+  readonly reason: string;
+}
+
 export interface SideTally {
   loss: number; // value lost
   hp: number; // hp lost
@@ -124,6 +138,8 @@ export interface BattleSample {
 export interface BattleLog {
   readonly ops: OpRecord[];
   readonly directives: DirectiveRecord[];
+  /** 3.0: fronts' answers to the directive (declines counted by the labs). */
+  readonly responses: ResponseRecord[];
   readonly engagements: EngagementRecord[];
   readonly captures: CaptureRecord[];
   readonly samples: BattleSample[];
@@ -143,7 +159,7 @@ export interface BattleLog {
 
 export function createBattleLog(): BattleLog {
   return {
-    ops: [], directives: [], engagements: [], captures: [], samples: [], skirmishes: 0, nextId: 1, enabled: true,
+    ops: [], directives: [], responses: [], engagements: [], captures: [], samples: [], skirmishes: 0, nextId: 1, enabled: true,
     activeOp: new Map(), openEng: new Map(), openDir: [], lastPos: new Map(), lastAttack: new Map(), areaGrid: null, gridNx: 0,
   };
 }
@@ -330,6 +346,11 @@ export function noteDirective(world: World, f: number, kind: DirectiveRecord['ki
   };
   push(log.directives, rec);
   log.openDir.push(rec);
+}
+
+/** 3.0: record a front's answer to the directive (compliance.ts; one record per answer, not per think). */
+export function noteResponse(world: World, rec: Omit<ResponseRecord, 't'>): void {
+  push(world.battle.responses, { ...rec, t: world.time });
 }
 
 // ---------------------------------------------------------------- per-second upkeep
