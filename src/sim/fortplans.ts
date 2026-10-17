@@ -121,8 +121,8 @@ export function planStructures(world: World, f: Faction): void {
   planCapitalLine(world, f);
   planZones(world, f);
   // 3.0: works upgrades / minefields / perimeter repairs, and economic-zone jobs.
-  planWorksTiers(world, f);
   planZoneJobs(world, f);
+  planWorksTiers(world, f);
   planPerimeterRepair(world, f);
   requestEngineers(world, f);
 }

@@ -10,7 +10,9 @@ export type InputMode =
    * 2.2: a directive was just issued and its optional place is being picked on the map:
    * click = axis (main effort / threatened place), drag (fortify) = a fortified line.
    */
-  | { kind: 'directive'; directive: DirectiveKind };
+  | { kind: 'directive'; directive: DirectiveKind }
+  /** 3.0: siting an economic zone (click on the map; econZones.ts). */
+  | { kind: 'placeZone' };
 
 /** Shared state between the loop, input handling and HUD panels. */
 export interface GameContext {

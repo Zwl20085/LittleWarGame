@@ -9,6 +9,7 @@ import { frontLabel } from './labels';
 import { SelectionPanel } from './selection';
 import { TopBar } from './topbar';
 import { TownPanel } from './town';
+import { ZonePanel } from './zonePanel';
 
 /** Assembles the layered war-room HUD over the canvas and refreshes it at ~5 Hz. */
 export class Hud {
@@ -21,6 +22,8 @@ export class Hud {
   readonly economy: EconomyPanel;
   /** 2.2 town panel (stock, queue, economic buildings) for the place clicked on the map. */
   readonly town: TownPanel;
+  /** 3.0 economic-zone panel (level, output, level-up) for the zone clicked on the map. */
+  readonly zone: ZonePanel;
   private readonly toasts: HTMLElement;
   private readonly modeHint: HTMLElement;
   private readonly help: HTMLElement;
@@ -31,6 +34,7 @@ export class Hud {
   constructor(parent: HTMLElement, private readonly ctx: GameContext) {
     this.economy = new EconomyPanel(ctx);
     this.town = new TownPanel(ctx);
+    this.zone = new ZonePanel(ctx);
     this.help = h('div', { class: 'help panel paper-stack' });
     this.help.style.display = 'none';
     this.top = new TopBar(ctx, () => this.economy.toggle(), () => this.toggleHelp());
@@ -43,7 +47,7 @@ export class Hud {
     this.hiddenHint = h('div', { class: 'hidden-hint' }, t('hud.hideHint'));
     this.pausedBadge = h('div', { class: 'paused-badge' }, t('hud.paused'));
     this.root = h('div', { class: 'hud' },
-      this.top.el, this.fronts.el, this.selection.el, this.economy.el, this.town.el, this.help,
+      this.top.el, this.fronts.el, this.selection.el, this.economy.el, this.town.el, this.zone.el, this.help,
       h('div', { class: 'bottom-row' }, this.production.el, this.minimap.el),
       this.toasts, this.modeHint, this.pausedBadge, this.production.tip, this.fronts.briefing);
     parent.append(this.root, this.hiddenHint);
@@ -87,6 +91,7 @@ export class Hud {
     this.minimap.relabel();
     this.economy.relabel();
     this.town.relabel();
+    this.zone.relabel();
     this.hiddenHint.textContent = t('hud.hideHint');
     this.pausedBadge.textContent = t('hud.paused');
     if (this.help.style.display !== 'none') this.help.textContent = t('help.body');
@@ -113,10 +118,11 @@ export class Hud {
     this.minimap.refresh();
     this.economy.refresh();
     this.town.refresh();
+    this.zone.refresh();
     // Without ResizeObserver, measure here (forces a synchronous layout after the DOM writes).
     if (!this.sizeObserver) this.syncStackHeights();
     const m = this.ctx.mode;
-    const hint = m.kind === 'attackMove' ? t('cmd.pickAttack') : this.fronts.modeHint();
+    const hint = m.kind === 'attackMove' ? t('cmd.pickAttack') : m.kind === 'placeZone' ? t('zone.pick') : this.fronts.modeHint();
     if (this.modeHint.textContent !== hint) this.modeHint.textContent = hint;
     this.modeHint.style.display = hint ? '' : 'none';
     this.modeHint.className = `mode-hint ${m.kind === 'directive' ? `order k-${DIRECTIVE_TONE[m.directive]}` : ''}`;

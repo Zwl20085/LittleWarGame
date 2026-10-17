@@ -4,6 +4,7 @@ import type {
   Behavior, EconBuilding, Faction, Fort, FxEvent, LogEntry, ManualTask, MatchResult, MoraleState, Objective, Projectile, SetupState, Unit,
 } from './types';
 import type { V2 } from './vec';
+import type { EconZone } from './econZones';
 
 /**
  * Worker → main-thread state transfer. The worker owns the authoritative simulation; the main
@@ -44,6 +45,8 @@ export interface Snapshot {
   readonly placeStock: Float32Array;
   readonly placeContestedSince: Float32Array;
   readonly econ: EconBuilding[];
+  /** 3.0 economic zones (econZones.ts; render + zone panel). */
+  readonly econZones: EconZone[];
   readonly fx: FxEvent[];
   readonly log: LogEntry[];
   /** Observer's visible enemy ids and memory (fog mode only; null in open mode). */
@@ -158,6 +161,7 @@ export function makeSnapshot(match: Match, cur: SnapshotCursor, observer: number
     placeStock: Float32Array.from(w.places, (p) => p.stock),
     placeContestedSince: Float32Array.from(w.places, (p) => p.contestedSince),
     econ: w.econ,
+    econZones: w.econZones,
     fx,
     log,
     // Only the observer's visibility matters on the main thread, and only in fog mode.
@@ -236,6 +240,7 @@ export function applySnapshot(match: Match, snap: Snapshot, observer: number): v
     w.places[i].contestedSince = snap.placeContestedSince[i];
   }
   replace(w.econ, snap.econ);
+  replace(w.econZones, snap.econZones ?? []);
   for (const e of snap.fx) w.fx.push(e);
   if (w.fx.length > 4000) w.fx.splice(0, w.fx.length - 4000);
   for (const l of snap.log) w.log.push(l);
