@@ -1,5 +1,8 @@
 import { beforeAll, describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { loadGameData } from '../src/data';
+import { buildGameData } from '../src/data/loader';
+import type { GameData } from '../src/data/types';
 import { CommandBus, type Command, type CommandOutcome } from '../src/sim/commands';
 import { freeHand } from '../src/sim/fortplans';
 import { normalizedWeights } from '../src/sim/production';
@@ -203,6 +206,41 @@ describe('review MED 6: AI road links try every candidate and remember failures'
     expect(again).toHaveLength(1);
     expect(dist(again[0].b, wants[1].to)).toBeLessThan(1);
   }, 120_000);
+});
+
+describe('review MED 8: loader validates transport / econ_zones / capital_defence', () => {
+  const unitsCsv = readFileSync('docs/data/units.csv', 'utf8');
+  const weaponsCsv = readFileSync('docs/data/weapons.csv', 'utf8');
+  const base = JSON.parse(readFileSync('docs/data/rules.json', 'utf8')) as Record<string, Record<string, unknown>>;
+  const load = (patch: (r: Record<string, Record<string, unknown>>) => void): GameData => {
+    const r = structuredClone(base);
+    patch(r);
+    return buildGameData(unitsCsv, weaponsCsv, JSON.stringify(r));
+  };
+  type Obj = Record<string, unknown>;
+
+  it('accepts the shipped rules', () => {
+    expect(() => load(() => undefined)).not.toThrow();
+  });
+
+  it('fails with the key name on bad transport values', () => {
+    expect(() => load((r) => { (r.transport.class_of as Obj).train = 'hover'; })).toThrow(/transport\.class_of\.train/);
+    expect(() => load((r) => { (r.transport.class_of as Obj).nobody = 'wheeled'; })).toThrow(/transport\.class_of\.nobody/);
+    expect(() => load((r) => { (r.transport.off_road as Obj).boat = 0.5; })).toThrow(/transport\.off_road\.boat/);
+    expect(() => load((r) => { delete (r.transport.off_road as Obj).towed; })).toThrow(/transport\.off_road\.towed/);
+    expect(() => load((r) => { (r.transport.rail as Obj).capacity = 0; })).toThrow(/transport\.rail\.capacity/);
+    expect(() => load((r) => { ((r.transport.rail as Obj).repair as Obj).work_seconds = -1; })).toThrow(/transport\.rail\.repair\.work_seconds/);
+  });
+
+  it('fails with the key name on bad econ_zones / capital_defence values', () => {
+    expect(() => load((r) => { ((r.econ_zones.levels as Obj[])[1]).m_per_min_k = 'x'; })).toThrow(/econ_zones\.levels\[1\]\.m_per_min_k/);
+    expect(() => load((r) => { ((r.econ_zones.levels as Obj[])[0]).p_per_min_k = -2; })).toThrow(/econ_zones\.levels\[0\]\.p_per_min_k/);
+    expect(() => load((r) => { r.econ_zones.road_link_m = 0; })).toThrow(/econ_zones\.road_link_m/);
+    expect(() => load((r) => { r.econ_zones.max_per_faction = 1.5; })).toThrow(/econ_zones\.max_per_faction/);
+    expect(() => load((r) => { r.econ_zones.beaten_output = 2; })).toThrow(/econ_zones\.beaten_output/);
+    expect(() => load((r) => { r.capital_defence.crew_respawn_seconds = 0; })).toThrow(/capital_defence\.crew_respawn_seconds/);
+    expect(() => load((r) => { r.capital_defence.quiet_m = -5; })).toThrow(/capital_defence\.quiet_m/);
+  });
 });
 
 /** Issue one command as `actor` and return its outcome. */
