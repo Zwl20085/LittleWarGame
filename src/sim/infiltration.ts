@@ -172,7 +172,7 @@ const EXACT = new Float64Array(32);
  */
 const ANCHOR_CELL_M = 100;
 const ANCHOR_REFRESH_S = 10;
-interface AnchorGrid { readonly at: number; readonly owners: Int16Array; readonly nx: number; readonly nz: number; readonly nf: number; readonly d: Float64Array }
+interface AnchorGrid { readonly at: number; readonly owners: Int16Array; readonly nx: number; readonly nz: number; readonly nf: number; readonly d: Float64Array; checkedTick: number }
 const anchorGrids = new WeakMap<World, AnchorGrid>();
 
 function anchorOwners(world: World): Int16Array {
@@ -185,8 +185,13 @@ function anchorOwners(world: World): Int16Array {
 
 function anchorGrid(world: World): AnchorGrid {
   const g = anchorGrids.get(world);
+  // Owners can only change between ticks: check once per tick, not once per unit.
+  if (g && g.checkedTick === world.tick) return g;
   const owners = anchorOwners(world);
-  if (g && world.time - g.at < ANCHOR_REFRESH_S && g.owners.length === owners.length && g.owners.every((v, i) => v === owners[i])) return g;
+  if (g && world.time - g.at < ANCHOR_REFRESH_S && g.owners.length === owners.length && g.owners.every((v, i) => v === owners[i])) {
+    g.checkedTick = world.tick;
+    return g;
+  }
   const nx = Math.max(1, Math.ceil(world.terrain.width / ANCHOR_CELL_M));
   const nz = Math.max(1, Math.ceil(world.terrain.depth / ANCHOR_CELL_M));
   const nf = world.factions.length;
@@ -196,7 +201,7 @@ function anchorGrid(world: World): AnchorGrid {
     anchorDistances(world, { x: (i + 0.5) * ANCHOR_CELL_M, z: (j + 0.5) * ANCHOR_CELL_M }, tmp);
     d.set(tmp.subarray(0, nf), (j * nx + i) * nf);
   }
-  const grid: AnchorGrid = { at: world.time, owners, nx, nz, nf, d };
+  const grid: AnchorGrid = { at: world.time, owners, nx, nz, nf, d, checkedTick: world.tick };
   anchorGrids.set(world, grid);
   return grid;
 }
