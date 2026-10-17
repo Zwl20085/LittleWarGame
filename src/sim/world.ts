@@ -1,4 +1,4 @@
-import type { GameData } from '../data/types';
+import type { GameData, UnitDef } from '../data/types';
 import { NavGrid } from './nav';
 import { navCostFns, wheeledNav } from './transport';
 import type { TransportState } from './transportstate';
@@ -155,8 +155,17 @@ export class World {
   }
 
   navFor(u: Unit): NavGrid {
-    return this.nav(u.def.kind === 'vehicle', u.def.maxSlopeDeg, u.def.kind === 'vehicle' && wheeledNav(this.data.rules, u.def));
+    // Called several times per unit per tick: resolve the class once per unit type (and per
+    // upgrade variant def) instead of re-deriving it from the transport rules on every call.
+    let g = this.navOfDef.get(u.def);
+    if (!g) {
+      g = this.nav(u.def.kind === 'vehicle', u.def.maxSlopeDeg, u.def.kind === 'vehicle' && wheeledNav(this.data.rules, u.def));
+      this.navOfDef.set(u.def, g);
+    }
+    return g;
   }
+
+  private readonly navOfDef = new Map<UnitDef, NavGrid>();
 
   emit(e: FxEvent): void {
     if (this.fx.length < 4000) this.fx.push(e);
