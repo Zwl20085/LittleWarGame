@@ -9,13 +9,13 @@ import type { World } from './world';
  * upgrade bits) and cached; every existing read site (`u.def.speed`, `u.def.maxHp`, armour,
  * `u.primary.range` …) sees the upgraded numbers with no per-tick work. A unit carries the bits it
  * has been refitted with (`u.upg`): new units roll out with all of their faction's upgrades
- * (`refitOnSpawn`); existing units take armour / gun / attached guns / motorization at a town
+ * (`refitOnSpawn`); existing units take armour / gun / motorization at a town
  * rearm (`refitAtTown`, settlements.drawSecond) and the "field" items at once (`refitNow`).
  */
 
-/** The upgrade tree in bit order (bit k = UPGRADE_IDS[k]). 13 items. */
+/** The upgrade tree in bit order (bit k = UPGRADE_IDS[k]). 12 items (3.0.1: the attached gun team was removed). */
 export const UPGRADE_IDS = [
-  'inf_guns', 'ap_grenades', 'motorization',
+  'ap_grenades', 'motorization',
   'armour_1', 'armour_2', 'armour_3',
   'gun_1', 'gun_2', 'gun_3',
   'arty_range', 'truck_capacity', 'eng_speed', 'staff',
@@ -28,7 +28,7 @@ export const upgradeBit = (id: string): number => UPG[id as UpgradeId] ?? 0;
 const ARMOUR = UPG.armour_1 | UPG.armour_2 | UPG.armour_3;
 const GUN = UPG.gun_1 | UPG.gun_2 | UPG.gun_3;
 const TANK = ARMOUR | GUN;
-const SQUAD = UPG.inf_guns | UPG.ap_grenades;
+const SQUAD = UPG.ap_grenades;
 /** Squad kit items fired by upgradekit.ts. */
 export const KIT_BITS = SQUAD;
 
@@ -43,8 +43,8 @@ const CLASS_MASK: Readonly<Record<string, number>> = {
 };
 export const classMask = (unitId: string): number => CLASS_MASK[unitId] ?? 0;
 
-/** Items a unit only takes at a town rearm (a refit: new plates, a new gun, a gun team, trucks); the rest apply at once. */
-export const REFIT_AT_TOWN = UPG.inf_guns | UPG.motorization | TANK;
+/** Items a unit only takes at a town rearm (a refit: new plates, a new gun, trucks); the rest apply at once. */
+export const REFIT_AT_TOWN = UPG.motorization | TANK;
 
 /** Number of set bits (levels of a tiered item). */
 function bitCount(x: number): number {

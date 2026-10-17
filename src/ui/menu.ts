@@ -28,7 +28,7 @@ interface SetupState {
   readonly spectate: boolean;
   /** The player's force doctrine (production mix + preferred battle plans). */
   readonly doctrine: Personality;
-  /** 3.0: each AI side's war doctrine (index = faction slot; slot 0 is the player unless spectating). */
+  /** 3.0: each side's war doctrine (index = faction slot; 3.0.1: slot 0 is the player's own unless spectating — auto HQ / research follow it). */
   readonly aiDoctrines: readonly DoctrineChoice[];
 }
 
@@ -78,19 +78,30 @@ function maxFactions(mapId: MapChoice): number {
 
 function toConfig(s: SetupState): MatchConfig {
   const factions = Math.min(maxFactions(s.mapId), s.factions);
-  // 3.0: the player's slot draws whatever doctrine the AI choices leave (it only colours the music).
-  const doctrines = Array.from({ length: factions }, (_, i): DoctrineChoice => (!s.spectate && i === 0 ? 'random' : s.aiDoctrines[i] ?? 'random'));
+  // 3.0.1: the player's slot takes its pick (random = whatever the AI choices leave); the auto HQ and auto research follow it.
+  const doctrines = Array.from({ length: factions }, (_, i): DoctrineChoice => s.aiDoctrines[i] ?? 'random');
   return { mapId: s.mapId, mapSize: s.mapSize, factions, infoMode: s.infoMode, seed: s.seed, difficulty: s.difficulty, playerSlot: 0, spectate: s.spectate, personalities: s.spectate ? undefined : [s.doctrine], doctrines };
+}
+
+/** One doctrine select for slot `i`, 'random' first. */
+function doctrineSelect(s: SetupState, i: number, label: string, set: (slot: number, v: DoctrineChoice) => void): HTMLSelectElement {
+  const cur = s.aiDoctrines[i] ?? 'random';
+  return h('select', { class: 'sel', 'aria-label': label, onchange: (e: Event) => set(i, (e.target as HTMLSelectElement).value as DoctrineChoice) },
+    ...DOCTRINE_CHOICES.map((c) => h('option', { value: c, selected: c === cur, title: t(c === 'random' ? 'wdoc.random.desc' : `wdoc.desc.${c}`) }, t(c === 'random' ? 'wdoc.random' : `wdoc.${c}`))));
+}
+
+/** 3.0.1 玩家作风 / Your doctrine (custom game, not spectating): what the auto HQ and auto research follow. */
+function playerDoctrineField(s: SetupState, set: (slot: number, v: DoctrineChoice) => void): HTMLElement | null {
+  if (s.spectate) return null;
+  return h('div', { class: 'field', title: t('setup.playerDoctrineTip') }, h('span', { class: 'lbl' }, t('setup.playerDoctrine')),
+    h('div', { class: 'doctrine-rows' }, h('div', { class: 'doctrine-row' }, doctrineSelect(s, 0, t('setup.playerDoctrine'), set))));
 }
 
 /** Per-AI doctrine selectors (custom game): one labelled select per AI slot, 'random' first. */
 function doctrineFields(s: SetupState, factions: number, set: (slot: number, v: DoctrineChoice) => void): HTMLElement {
   const rows: HTMLElement[] = [];
   for (let i = s.spectate ? 0 : 1; i < factions; i++) {
-    const cur = s.aiDoctrines[i] ?? 'random';
-    const sel = h('select', { class: 'sel', 'aria-label': `${t('setup.aiDoctrines')} ${t('setup.aiSlot', { roman: SLOT_ROMAN[i] })}`,
-      onchange: (e: Event) => set(i, (e.target as HTMLSelectElement).value as DoctrineChoice) },
-    ...DOCTRINE_CHOICES.map((c) => h('option', { value: c, selected: c === cur, title: t(c === 'random' ? 'wdoc.random.desc' : `wdoc.desc.${c}`) }, t(c === 'random' ? 'wdoc.random' : `wdoc.${c}`))));
+    const sel = doctrineSelect(s, i, `${t('setup.aiDoctrines')} ${t('setup.aiSlot', { roman: SLOT_ROMAN[i] })}`, set);
     rows.push(h('div', { class: 'doctrine-row' }, h('span', { class: 'small' }, t('setup.aiSlot', { roman: SLOT_ROMAN[i] })), sel));
   }
   return h('div', { class: 'field' }, h('span', { class: 'lbl' }, t('setup.aiDoctrines')), h('div', { class: 'doctrine-rows' }, ...rows));
@@ -268,6 +279,7 @@ export function showTitle(root: HTMLElement, data: GameData, onStart: (cfg: Matc
     const seedIn = h('input', { class: 'numin', type: 'number', min: 1, value: state.seed, 'aria-label': t('setup.seed'),
       onchange: (e: Event) => { state = { ...state, seed: Math.max(1, Math.floor(Number((e.target as HTMLInputElement).value)) || 1) }; } });
     const generated = state.mapId === 'generated';
+    const setDoctrine = (slot: number, v: DoctrineChoice): void => { state = { ...state, aiDoctrines: state.aiDoctrines.map((c, k) => (k === slot ? v : c)) }; };
     const parts: (HTMLElement | null)[] = [
       h('div', { class: 'dossier-head' }, h('span', { class: 'stamp' }, t('title.custom')), closeBtn()),
       h('div', { class: 'field' }, h('span', { class: 'lbl' }, t('setup.map')),
@@ -284,7 +296,8 @@ export function showTitle(root: HTMLElement, data: GameData, onStart: (cfg: Matc
       h('div', { class: 'field' }, h('span', { class: 'lbl' }, t('setup.doctrine')),
         h('div', { class: 'seg-group wrap' }, ...DOCTRINES.map((d) => opt(t(`preset.${d}`), d, state.doctrine, (v) => ({ ...state, doctrine: v }))))),
       h('div', { class: 'small note' }, t(`doctrine.${state.doctrine}`)),
-      doctrineFields(state, factions, (slot, v) => { state = { ...state, aiDoctrines: state.aiDoctrines.map((c, k) => (k === slot ? v : c)) }; }),
+      playerDoctrineField(state, setDoctrine),
+      doctrineFields(state, factions, setDoctrine),
       h('div', { class: 'field' }, h('span', { class: 'lbl' }, t('setup.info')),
         h('div', { class: 'seg-group' }, ...(['open', 'fog'] as InfoMode[]).map((m) => opt(t(`info.${m}`), m, state.infoMode, (v) => ({ ...state, infoMode: v }))))),
       h('div', { class: 'field' }, h('span', { class: 'lbl' }, t('setup.seed')), seedIn,

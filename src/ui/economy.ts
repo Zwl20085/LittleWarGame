@@ -5,6 +5,7 @@ import { stockSummary } from '../sim/settlements';
 import type { GameContext } from './context';
 import { h, PressGuard } from './dom';
 import { t } from './i18n';
+import { autoResearchRow } from './upgrades';
 
 /** Layer-3 popover: labour shares, locks, steward toggle and its reason (§6.2). */
 export class EconomyPanel {
@@ -41,7 +42,7 @@ export class EconomyPanel {
       return;
     }
     this.el.style.display = '';
-    const sig = JSON.stringify([f.alloc.map((a) => Math.round(a * 100)), f.locks, f.autoEconomy, f.autoInvest, Math.round(f.econFund.p), Math.round(f.econFund.m), f.stewardReason, f.stewardParams, Math.round(f.incomeP), Math.round(f.incomeM), Math.round(f.econP), Math.round(f.econM), Math.round(f.depot / 10), econCounts(w, f.id), w.econZones.map((z) => (z.owner === f.id ? `${z.level}${z.ruined ? 'x' : ''}${z.linked ? 'l' : ''}` : '')).join()]);
+    const sig = JSON.stringify([f.alloc.map((a) => Math.round(a * 100)), f.locks, f.autoEconomy, f.autoInvest, f.autoResearch, f.upgrades?.want, Math.round((f.upgrades?.fundP ?? 0) + (f.upgrades?.fundM ?? 0)), Math.round(f.econFund.p), Math.round(f.econFund.m), f.stewardReason, f.stewardParams, Math.round(f.incomeP), Math.round(f.incomeM), Math.round(f.econP), Math.round(f.econM), Math.round(f.depot / 10), econCounts(w, f.id), w.econZones.map((z) => (z.owner === f.id ? `${z.level}${z.ruined ? 'x' : ''}${z.linked ? 'l' : ''}` : '')).join()]);
     if (sig === this.sig || this.guard.held) return;
     this.sig = sig;
     const rates = economyRates(f.alloc, w.data.rules);
@@ -58,6 +59,8 @@ export class EconomyPanel {
       h('div', { class: 'row' },
         h('button', { class: `btn ${f.autoInvest ? 'on' : ''}`, title: t('eco.investTip'), onclick: () => this.ctx.issue({ type: 'setAutoInvest', on: !f.autoInvest }) }, f.autoInvest ? t('eco.investOn') : t('eco.investOff')),
         f.autoInvest && (f.econFund.p >= 1 || f.econFund.m >= 1) ? h('span', { class: 'small' }, t('eco.investFund', { p: Math.round(f.econFund.p), m: Math.round(f.econFund.m) })) : null),
+      // 3.0.1: auto research sits next to auto invest (the same toggle as the Upgrades panel's).
+      ...(w.data.rules.upgrades?.enabled && f.upgrades ? [autoResearchRow(f, (on) => this.ctx.issue({ type: 'setAutoResearch', on }))] : []),
       ...f.alloc.map((a, i) => {
         const slider = h('input', { type: 'range', min: 0, max: 100, value: Math.round(a * 100), disabled: f.autoEconomy && !f.locks[i] ? false : false,
           onchange: (e: Event) => {

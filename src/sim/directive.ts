@@ -1,6 +1,7 @@
 import { isCommander } from './formulas';
 import { addZoneLine } from './fronts';
-import { doctrineDirective } from './doctrineai';
+import { doctrineChoice, doctrineDirective } from './doctrineai';
+import { doctrinesOn, profileById } from './doctrines';
 import type { Directive, DirectiveKind, Faction } from './types';
 import { dist, type V2 } from './vec';
 import type { World } from './world';
@@ -59,7 +60,7 @@ function armyRatio(world: World, f: Faction): number {
  * free advance. Applied through `setDirective`, like the player's.
  */
 export function chooseDirective(world: World, f: Faction): boolean {
-  if (f.isPlayer || !f.alive) return false;
+  if (!f.alive || (f.isPlayer && !autoCommandActive(world, f))) return false;
   const cur = f.directive;
   const fin = f.command.finishTarget;
   let kind: DirectiveKind = 'advance';
@@ -69,7 +70,7 @@ export function chooseDirective(world: World, f: Faction): boolean {
     axis = world.hqPos(fin);
   } else {
     // 3.0: the doctrine decides (doctrineai.ts); without one, the 2.2 rule.
-    const d = doctrineDirective(world, f);
+    const d = f.isPlayer ? playerDoctrineDirective(world, f) : doctrineDirective(world, f);
     if (d) {
       kind = d.kind;
       axis = d.axis;
@@ -79,9 +80,40 @@ export function chooseDirective(world: World, f: Faction): boolean {
     }
   }
   const same = cur.kind === kind && ((cur.axis === null && axis === null) || (!!cur.axis && !!axis && dist(cur.axis, axis) < 1));
-  if (same) return false;
+  if (same) {
+    // 3.0.1: the auto HQ adopts a matching manual directive (it is the staff's order from now on).
+    if (cur.manual) f.directive = { ...cur, manual: false, forced: false };
+    return false;
+  }
   const finisherSwitch = kind === 'offensive' || cur.kind === 'offensive';
   if (!finisherSwitch && world.time - cur.issuedAt < AI_DIRECTIVE.keepS && cur.issuedAt > 0) return false;
   setDirective(world, f, kind, axis, null, false);
   return true;
+}
+
+/** 3.0.1: seconds a manual directive pauses the player's auto HQ (rules `command.auto_resume_s`). */
+export const autoResumeS = (world: World): number => world.data.rules.command.auto_resume_s ?? 600;
+
+/**
+ * 3.0.1 auto HQ (斗蛐蛐: the player may just watch): the doctrine AI chooses the player's directive
+ * while `autoCommand` is on and no manual directive is in force. A manual directive pauses it,
+ * except `advance` (the hand-back order); it resumes `auto_resume_s` after the last manual order.
+ */
+export function autoCommandActive(world: World, f: Faction): boolean {
+  if (!f.autoCommand || !f.alive) return false;
+  return autoResumeAt(world, f) <= world.time;
+}
+
+/** Match time at which the auto HQ (re)takes the directive (≤ now: active; the toggle is not read here). */
+export function autoResumeAt(world: World, f: Faction): number {
+  const d = f.directive;
+  if (!d.manual || d.kind === 'advance') return 0;
+  return d.issuedAt + autoResumeS(world);
+}
+
+/** The player's doctrine (Quick Battle draw / custom pick) asked as an AI's would be; null when doctrines are off. */
+function playerDoctrineDirective(world: World, f: Faction): { kind: DirectiveKind; axis: V2 | null } | null {
+  if (!doctrinesOn(world)) return null;
+  const p = profileById(world, f.doctrine);
+  return p ? doctrineChoice(world, f, p) : null;
 }

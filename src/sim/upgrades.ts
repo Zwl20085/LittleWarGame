@@ -1,5 +1,5 @@
 import type { UpgradeRules } from '../data/upgradeRules';
-import { profileOf } from './doctrines';
+import { doctrinesOn, profileOf } from './doctrines';
 import { refund, trySpend } from './economy';
 import type { Faction, Personality, UpgradeState } from './types';
 import { refitNow, UPG, upgradeBit, upgradeRules, UPGRADE_IDS, type UpgradeId } from './upgradestats';
@@ -108,7 +108,8 @@ export function upgradeSecond(world: World, f: Faction): void {
     grantUpgrade(world, f, res.id as UpgradeId);
     world.note(f.id, 'log.upgradeDone', { upg: res.id }, 'info');
   }
-  if (!f.isPlayer) aiBuy(world, f, r);
+  // 3.0.1: the player's HQ staff buy too while Auto-research is on (a manual purchase leaves it on).
+  if (!f.isPlayer || f.autoResearch) aiBuy(world, f, r);
 }
 
 // ------------------------------------------------------------------ AI
@@ -118,16 +119,16 @@ export function upgradeSecond(world: World, f: Faction): void {
  * personality row, then `default`). Items missing from a row are never bought by the AI.
  */
 export const UPGRADE_PRIORITY: Record<string, readonly UpgradeId[]> = {
-  default: ['staff', 'ap_grenades', 'gun_1', 'armour_1', 'truck_capacity', 'inf_guns', 'arty_range', 'eng_speed', 'motorization', 'gun_2', 'armour_2', 'gun_3', 'armour_3'],
-  armor: ['gun_1', 'armour_1', 'gun_2', 'armour_2', 'staff', 'truck_capacity', 'gun_3', 'armour_3', 'ap_grenades', 'motorization', 'inf_guns', 'arty_range', 'eng_speed'],
-  infantry: ['inf_guns', 'ap_grenades', 'staff', 'eng_speed', 'truck_capacity', 'motorization', 'arty_range', 'gun_1', 'armour_1', 'gun_2', 'armour_2', 'gun_3', 'armour_3'],
-  mechanized: ['motorization', 'truck_capacity', 'staff', 'gun_1', 'armour_1', 'ap_grenades', 'inf_guns', 'gun_2', 'armour_2', 'arty_range', 'eng_speed', 'gun_3', 'armour_3'],
-  artillery: ['arty_range', 'inf_guns', 'staff', 'truck_capacity', 'ap_grenades', 'eng_speed', 'gun_1', 'armour_1', 'motorization', 'gun_2', 'armour_2', 'gun_3', 'armour_3'],
+  default: ['staff', 'ap_grenades', 'gun_1', 'armour_1', 'truck_capacity', 'arty_range', 'eng_speed', 'motorization', 'gun_2', 'armour_2', 'gun_3', 'armour_3'],
+  armor: ['gun_1', 'armour_1', 'gun_2', 'armour_2', 'staff', 'truck_capacity', 'gun_3', 'armour_3', 'ap_grenades', 'motorization', 'arty_range', 'eng_speed'],
+  infantry: ['ap_grenades', 'staff', 'eng_speed', 'truck_capacity', 'motorization', 'arty_range', 'gun_1', 'armour_1', 'gun_2', 'armour_2', 'gun_3', 'armour_3'],
+  mechanized: ['motorization', 'truck_capacity', 'staff', 'gun_1', 'armour_1', 'ap_grenades', 'gun_2', 'armour_2', 'arty_range', 'eng_speed', 'gun_3', 'armour_3'],
+  artillery: ['arty_range', 'staff', 'truck_capacity', 'ap_grenades', 'eng_speed', 'gun_1', 'armour_1', 'motorization', 'gun_2', 'armour_2', 'gun_3', 'armour_3'],
   // 3.0 doctrine rows (WP-Y) = rules.json doctrines.profiles.<id>.upgrades; used only while doctrines steer the AI.
-  builder: ['truck_capacity', 'eng_speed', 'staff', 'motorization', 'armour_1', 'ap_grenades', 'inf_guns', 'gun_1', 'arty_range', 'armour_2', 'gun_2', 'armour_3', 'gun_3'],
-  blitz: ['gun_1', 'armour_1', 'motorization', 'truck_capacity', 'gun_2', 'armour_2', 'staff', 'gun_3', 'armour_3', 'ap_grenades', 'inf_guns', 'arty_range', 'eng_speed'],
-  attrition: ['inf_guns', 'arty_range', 'ap_grenades', 'staff', 'eng_speed', 'truck_capacity', 'armour_1', 'gun_1', 'motorization', 'armour_2', 'gun_2', 'armour_3', 'gun_3'],
-  maneuver: ['motorization', 'gun_1', 'arty_range', 'truck_capacity', 'armour_1', 'staff', 'gun_2', 'armour_2', 'ap_grenades', 'inf_guns', 'gun_3', 'armour_3', 'eng_speed'],
+  builder: ['truck_capacity', 'eng_speed', 'staff', 'motorization', 'armour_1', 'ap_grenades', 'gun_1', 'arty_range', 'armour_2', 'gun_2', 'armour_3', 'gun_3'],
+  blitz: ['gun_1', 'armour_1', 'motorization', 'truck_capacity', 'gun_2', 'armour_2', 'staff', 'gun_3', 'armour_3', 'ap_grenades', 'arty_range', 'eng_speed'],
+  attrition: ['arty_range', 'ap_grenades', 'staff', 'eng_speed', 'truck_capacity', 'armour_1', 'gun_1', 'motorization', 'armour_2', 'gun_2', 'armour_3', 'gun_3'],
+  maneuver: ['motorization', 'gun_1', 'arty_range', 'truck_capacity', 'armour_1', 'staff', 'gun_2', 'armour_2', 'ap_grenades', 'gun_3', 'armour_3', 'eng_speed'],
 };
 
 /** Priority table for a doctrine (WP-A) or personality; the default order otherwise. */
@@ -142,7 +143,8 @@ export function upgradePriority(doctrineId?: string, personality?: Personality):
  * doctrine row applies while doctrines steer this faction (doctrines.profileOf); else the personality row.
  */
 export function nextWanted(f: Faction, r: UpgradeRules, world?: World): UpgradeId | null {
-  const key = world && profileOf(world, f) ? doctrineKey(f) : undefined;
+  // 3.0.1: the player's auto research follows its drawn / chosen doctrine too (doctrines on).
+  const key = world && (profileOf(world, f) || (f.isPlayer && doctrinesOn(world))) ? doctrineKey(f) : undefined;
   for (const id of upgradePriority(key, f.personality)) {
     if (owns(f.upgrades, id) || !r.items[id]) continue;
     if ((r.items[id].requires ?? []).every((q) => owns(f.upgrades, q))) return id;
@@ -214,4 +216,10 @@ function aiBuy(world: World, f: Faction, r: UpgradeRules): void {
   const id = s.want;
   releaseUpgradeFund(f);
   if (startResearch(world, f, id) === null) s.want = null;
+}
+
+/** 3.0.1 Auto-research off: the fund set aside goes back to the stock and nothing more is saved for. */
+export function stopAutoResearch(f: Faction): void {
+  releaseUpgradeFund(f);
+  f.upgrades.want = null;
 }

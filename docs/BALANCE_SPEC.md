@@ -543,11 +543,10 @@ contribution = sourceWeight * sqrt(HP_ratio) * moraleFactor
 
 最高统帅部以 P/M 购买，首都研究所一次研究一项（`seconds`），完成后经 src/sim/upgradestats.ts 的
 变体 UnitDef / WeaponDef 生效。价格 `p_k` / `m_k` 按 army_scale × army_scale_income_factor = 1 标定
-（默认 10 倍规模 ×2.5），每拥有一项，下一项贵 `escalation`（6 %）。取消研究返还 `cancel_refund_ratio`（80 %）。
+（默认 10 倍规模 ×2.5），每拥有一项，下一项贵 `escalation`（6 %）。取消研究返还 `cancel_refund_ratio`（80 %）。3.0.1 删除了 inf_guns（配属步兵炮）。
 
 | 项 | 效果（`effects`） | 生效 |
 |---|---|---|
-| inf_guns 配属步兵炮 | 每班一门步兵炮：射程 260 m、10 s 一发、110 伤害 / 6 m 爆半径的曲射榴弹，只打工事、建筑、隐蔽之敌 | 城镇换装 |
 | ap_grenades 反坦克手雷 | 35 m 内对车辆：240 伤害、穿深 85，9 s 一枚 | 立即 |
 | motorization 全面摩托化 | 新步兵班乘卡车（同摩托化步兵的乘车规则）；老部队城镇换装 | 城镇换装 |
 | armour_1–3 坦克装甲 | 每级装甲 ×1.12、耐久 ×1.05、速度 ×0.97 | 城镇换装 |

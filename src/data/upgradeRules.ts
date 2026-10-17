@@ -10,17 +10,6 @@ export interface UpgradeItemRules {
 }
 
 export interface UpgradeEffectRules {
-  /** Attached gun team (infantry gun / mortar): lobbed HE at dug-in targets and works. */
-  readonly inf_gun: {
-    readonly range_m: number;
-    readonly interval_s: number;
-    readonly damage: number;
-    readonly blast_m: number;
-    readonly suppression: number;
-    readonly muzzle_mps: number;
-    readonly sigma_m: number;
-    readonly ammo_cost: number;
-  };
   /** Armour-piercing grenades: close-in hit on a vehicle. */
   readonly ap_grenade: {
     readonly range_m: number;

@@ -5,29 +5,27 @@
 // All scenarios field about the same army value (≈ 2 000–2 600 P+M), so value/cost is comparable.
 //
 //   tanks    6 medium tanks vs 6 medium tanks, 450 m apart, both attack-move   (armour_*, gun_*)
-//   pillbox  10 rifle squads assault 3 manned pillboxes + 2 MG teams            (inf_guns)
 //   grenade  8 rifle squads hold; 4 medium tanks attack-move through them      (ap_grenades)
 //   battery  3 howitzers + 4 squads each side, 600 m apart (beyond 560 m range) (arty_range)
 import type { GameData } from '../../src/data/types';
 import { step } from '../../src/sim/sim';
-import { bindOccupant, placeStructure, structureDef } from '../../src/sim/structures';
 import type { Fort, Unit } from '../../src/sim/types';
 import { grantUpgrade, upgradeCost, type UpgradeId } from '../../src/sim/upgrades';
 import { type V2 } from '../../src/sim/vec';
 import { loadData } from './common';
 import { siteMatch } from './fgkit';
 
-export type Scenario = 'tanks' | 'pillbox' | 'grenade' | 'battery';
+export type Scenario = 'tanks' | 'grenade' | 'battery';
 export const ENGAGE_SCENARIO: Partial<Record<UpgradeId, Scenario>> = {
   armour_1: 'tanks', armour_2: 'tanks', armour_3: 'tanks', gun_1: 'tanks', gun_2: 'tanks', gun_3: 'tanks',
-  inf_guns: 'pillbox', ap_grenades: 'grenade', arty_range: 'battery',
+  ap_grenades: 'grenade', arty_range: 'battery',
 };
 
 export interface EngageTask { kind: 'engage'; scenario: Scenario; item: UpgradeId | 'control'; trial: number; sets: string[] }
 export interface EngageResult { ok: boolean; net: number; cost: number; aLeft: number; bLeft: number; kitShots: number }
 
-const GAP: Record<Scenario, number> = { tanks: 450, pillbox: 420, grenade: 380, battery: 600 };
-const MINUTES: Record<Scenario, number> = { tanks: 4, pillbox: 6, grenade: 4, battery: 5 };
+const GAP: Record<Scenario, number> = { tanks: 450, grenade: 380, battery: 600 };
+const MINUTES: Record<Scenario, number> = { tanks: 4, grenade: 4, battery: 5 };
 
 const unitValue = (data: GameData, us: readonly Unit[]): number =>
   us.reduce((s, u) => { const d = data.units.get(u.def.id)!; return s + (u.hp > 0 && !u.routing ? (d.costP + d.costM) * (u.hp / u.def.maxHp) : 0); }, 0);
@@ -86,20 +84,6 @@ export function runEngage(t: EngageTask): EngageResult {
     A.push(...line(0, 'medium_tank', 6, 0, 26, bPos));
     B.push(...line(1, 'medium_tank', 6, gap, 26, aPos));
     attackers.push(...A, ...B);
-  } else if (t.scenario === 'pillbox') {
-    const facing = Math.atan2(-dir.z, -dir.x);
-    for (const l of [-70, 0, 70]) {
-      const f = placeStructure(w, 1, 'pillbox', at(gap, l), facing, 12);
-      if (f) { f.progress = 1; bWorks.push(f); }
-    }
-    for (const f of bWorks) {
-      const u = spawn(1, 'infantry', f.pos, aPos);
-      if (structureDef(w, 'pillbox').accepts.includes('infantry')) bindOccupant(w, u, f);
-      B.push(u);
-    }
-    B.push(...line(1, 'mg', 2, gap + 10, 100, aPos));
-    A.push(...line(0, 'infantry', 10, 0, 18, bPos));
-    attackers.push(...A);
   } else if (t.scenario === 'grenade') {
     A.push(...line(0, 'infantry', 8, 0, 20, bPos));
     B.push(...line(1, 'medium_tank', 4, gap, 30, aPos));
@@ -115,9 +99,9 @@ export function runEngage(t: EngageTask): EngageResult {
   const ticks = MINUTES[t.scenario] * 60 * w.tickHz;
   for (let i = 0; i < ticks && !w.result; i++) {
     step(m);
-    // Kit use: attached-gun muzzles and AP-grenade blasts (upgradekit.ts emits both).
-    for (const e of w.fx as readonly { t: string; weapon?: string; radius?: number; kind?: string }[]) {
-      if ((e.t === 'muzzle' && e.weapon === 'inf_gun') || (e.t === 'explosion' && e.radius === 2 && e.kind === 'he')) kitShots++;
+    // Kit use: AP-grenade blasts (upgradekit.ts).
+    for (const e of w.fx as readonly { t: string; radius?: number; kind?: string }[]) {
+      if (e.t === 'explosion' && e.radius === 2 && e.kind === 'he') kitShots++;
     }
     w.fx.length = 0;
     if (i % w.tickHz === 0) { const x = v(); if (x.a === 0 || x.b === 0) break; }

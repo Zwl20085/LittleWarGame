@@ -1,7 +1,7 @@
 // 3.0 lab suite `upgrade` (V30_SPEC §9, docs/UPGRADES.md): unit upgrades.
 //
 //   npx tsx scripts/lab30/upgrade.ts [--parts value,rich,motor,engage] [--seeds 7,11,13] [--minutes 30]
-//        [--items inf_guns,gun_1,...] [--rich-seeds 7,11,13,17,19,23] [--rich-minutes 60] [--trials 10] [--jobs 6] [--set path=value ...]
+//        [--items ap_grenades,gun_1,...] [--rich-seeds 7,11,13,17,19,23] [--rich-minutes 60] [--trials 10] [--jobs 6] [--set path=value ...]
 //
 // engage — low-noise single engagements (upgradeEngage.ts): fixed armies on an open corridor, side A
 //         with the item, side B without, paired with a no-item control per trial; value/cost =

@@ -354,17 +354,26 @@ export function thinkTransport(world: World, f: Faction, extraSites: readonly V2
   const st = world.transport;
   const t = transportRules(world.data.rules);
   const ai = t?.ai;
-  if (!st || !t || !ai?.enabled || !f.alive || f.isPlayer) return;
+  // 3.0.1: the player's engineers work on their own too while Auto-engineering is on.
+  if (!st || !t || !ai?.enabled || !f.alive || (f.isPlayer && !f.autoEngineering)) return;
   const due = nextThink.get(world) ?? world.factions.map((x) => x.id * 3);
   nextThink.set(world, due);
   if (world.time < due[f.id]) return;
   due[f.id] = world.time + ai.think_seconds;
-  if (st.jobs.some((j) => j.owner === f.id)) return;
-  if (!freeEngineer(world, f.id)) return;
+  f.autoEngReason = engineeringThink(world, f, extraSites);
+}
+
+/** One engineering think: starts at most one job; returns the reason key (`eng.why.*`) shown in the Engineering popover. */
+function engineeringThink(world: World, f: Faction, extraSites: readonly V2[]): string {
+  const st = world.transport;
+  if (!st) return 'eng.why.none';
+  if (st.jobs.some((j) => j.owner === f.id)) return 'eng.why.busy';
+  if (!freeEngineer(world, f.id)) return 'eng.why.noEngineer';
   const cut = st.lines.find((l) => l.cut && stationOwner(world, st.stations[l.a]) === f.id && stationOwner(world, st.stations[l.b]) === f.id);
-  if (cut && railRules(world) && startRailRepair(world, f.id, cut.id).ok) return;
+  if (cut && railRules(world) && startRailRepair(world, f.id, cut.id).ok) return 'eng.why.rail';
   const road = roadRules(world);
-  if (!road) return;
+  if (!road) return 'eng.why.none';
+  let short = false;
   // Review MEDIUM 6: try the candidates in order, skipping sites whose road failed recently
   // (slope, water, overlap…), so one unbuildable link no longer blocks every other one.
   const failed = linkFailures(world);
@@ -373,11 +382,12 @@ export function thinkTransport(world: World, f: Faction, extraSites: readonly V2
     if (world.time < (failed.get(key) ?? -Infinity)) continue;
     // Keep a reserve: the road is paid from what is left after a few of its own cost.
     const cost = (road.cost_m_k_per_100m * armyScale(world) * dist(want.from, want.to)) / 100;
-    if (availableM(world, f) < cost * ROAD_RESERVE) continue;
+    if (availableM(world, f) < cost * ROAD_RESERVE) { short = true; continue; }
     const res = startRoadJob(world, f.id, want.from, want.to);
-    if (res.ok) return;
+    if (res.ok) return 'eng.why.road';
     failed.set(key, world.time + LINK_RETRY_S);
   }
+  return short ? 'eng.why.funds' : 'eng.why.linked';
 }
 
 /** A road link that failed to start is not tried again at that site for this long (s). */

@@ -247,7 +247,7 @@ export function updateWeapons(world: World, u: Unit): void {
     if (t2 && fire(world, u, w2, t2)) u.cooldown2 = w2.interval * intervalMul(world, u);
     else u.cooldown2 = COMBAT.secondaryRetrySeconds; // nothing in range: don't rescan every tick
   }
-  // 3.0 squad kit upgrades: attached gun team, AP grenades (upgradekit.ts).
+  // 3.0 squad kit upgrade: AP grenades (upgradekit.ts).
   kitFire(world, u);
 }
 

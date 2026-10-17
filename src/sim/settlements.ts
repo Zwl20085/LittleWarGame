@@ -222,7 +222,7 @@ export function drawSecond(world: World): void {
     const core = coreRadius(world, p);
     for (const u of near) {
       if (u.owner !== owner || !drawsAmmo(u) || dist(u.pos, p.pos) > r) continue;
-      // 3.0: units at an own stock take the upgrades they are missing (armour, guns, gun teams, trucks).
+      // 3.0: units at an own stock take the upgrades they are missing (armour, guns, trucks).
       refitAtTown(world, u);
       // In contact: only the defenders inside the settlement draw (no rearming while fighting at its edge).
       if (inContact(world, u) && dist(u.pos, p.pos) > core) continue;

@@ -2,7 +2,6 @@ import * as THREE from 'three';
 import { armourLevel, gunLevel } from '../sim/upgradestats';
 import type { Unit } from '../sim/types';
 import { trs, type InstanceBatch } from './instancing';
-import { writeTilted } from './unitMatrices';
 import { Kit, paint } from './modelKit';
 import { TANKS } from './vehicleModels';
 
@@ -10,7 +9,7 @@ import { TANKS } from './vehicleModels';
  * 3.0 upgrade visuals (V30_SPEC §9): one unit-sized geometry per visual, so each adds at most one
  * instanced mesh whatever the tank class. Placed per instance by a local matrix scaled to the
  * class (`skirtLocal`, `barrelLocal`): side skirts for tank armour, a barrel extension with a
- * muzzle brake for the tank gun. The infantry gun team reuses the anti-tank gun model.
+ * muzzle brake for the tank gun.
  */
 
 const DARK = new THREE.Color('#2f2e2a');
@@ -37,9 +36,6 @@ function barrelGeo(): THREE.BufferGeometry {
   return k.build();
 }
 
-/** Attached gun team: distance behind the squad centre (m) and model scale. */
-const GUN_TEAM_BACK = 7;
-const GUN_TEAM_SCALE = 1.0;
 const _m = new THREE.Matrix4();
 
 type BatchOf = (key: string) => InstanceBatch;
@@ -50,14 +46,6 @@ export function drawTankUpgrades(batch: BatchOf, u: Unit, body: THREE.Matrix4, t
   if (skirt) batch('upg:skirts').push(_m.multiplyMatrices(body, skirt), color);
   const ext = barrelLocal(u.def.id, gunLevel(u.upg));
   if (ext) batch('upg:barrel').push(_m.multiplyMatrices(turret, ext), color);
-}
-
-/** Attached gun team: an infantry gun (the anti-tank gun model) trailing the squad. */
-export function drawGunTeam(batch: BatchOf, x0: number, z0: number, heading: number, ground: (x: number, z: number) => number, color: THREE.Color): void {
-  const x = x0 - Math.cos(heading) * GUN_TEAM_BACK;
-  const z = z0 - Math.sin(heading) * GUN_TEAM_BACK;
-  writeTilted(_m.elements, 0, x, ground(x, z), z, heading, 0, 0, GUN_TEAM_SCALE);
-  batch('gun:at_gun').push(_m, color);
 }
 
 export function upgradeGeometry(id: string): THREE.BufferGeometry | null {

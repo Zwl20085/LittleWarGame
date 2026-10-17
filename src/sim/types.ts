@@ -36,8 +36,7 @@ export interface Unit {
   secondary: WeaponDef | null;
   /** 3.0 upgrade bits this unit carries (upgradestats.ts); 0 = stock unit. */
   upg: number;
-  /** 3.0 next time the attached gun team / AP grenades may fire (upgradekit.ts). */
-  upgGunAt: number;
+  /** 3.0 next time the AP grenades may be thrown (upgradekit.ts). */
   upgNadeAt: number;
   pos: V2;
   prev: V2;
@@ -385,6 +384,14 @@ export interface Faction {
   autoEconomy: boolean;
   /** 2.2.1: the steward invests in economic buildings (default on, the player can hand it back). */
   autoInvest: boolean;
+  /** 3.0.1: the HQ staff buy upgrades for the player too (upgrades.aiBuy); off = research by hand only. */
+  autoResearch: boolean;
+  /** 3.0.1: the engineers lay road links / repair rail on their own for the player too (transportjobs.thinkTransport). */
+  autoEngineering: boolean;
+  /** 3.0.1: the doctrine AI picks the player's directive while no manual directive is in force (directive.chooseDirective). */
+  autoCommand: boolean;
+  /** 3.0.1: why the engineers' last HQ think started no job (i18n key `eng.why.*`; '' = not thought yet). */
+  autoEngReason: string;
   stewardHoldUntil: number;
   stewardLastDir: number;
   stewardReason: string;

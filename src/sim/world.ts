@@ -314,7 +314,6 @@ export class World {
       zocUntil: 0,
       rail: null,
       upg: 0,
-      upgGunAt: 0,
       upgNadeAt: 0,
     };
     // 3.0: a new unit rolls out with its faction's upgrades (upgradestats.ts).

@@ -449,6 +449,8 @@ export interface Rules {
     readonly compliance_threshold: number;
     readonly home_recall_m: number;
     readonly insist_window_s: number;
+    /** 3.0.1: a manual (non-advance) directive pauses the player's auto HQ this long after it was given. */
+    readonly auto_resume_s: number;
     readonly compliance: ComplianceRules;
     /** A lost commander is replaced after this long; until then the front holds without cohesion. */
     readonly commander_respawn_seconds: number;
