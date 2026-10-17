@@ -446,6 +446,9 @@ function convergeOnPoint(world: World, f: Faction, guards: Unit[]): void {
     const d = dist(u.pos, hq);
     if (d > HQ_POINT.convergeM && !(recalled.has(u.frontId) && d <= HQ_POINT.recalledM)) continue;
     u.spearhead = null;
+    // WP-Y: a unit recovering at home (pulled back by a doctrine's higher retreat_hp) rejoins once it
+    // is above the rules' retreat threshold — a breach is all hands (it re-retreats below it).
+    if ((u.behavior === 'retreat' || u.behavior === 'recover') && u.hp > u.def.maxHp * world.data.rules.morale.auto_retreat_hp_ratio) u.behavior = 'advance';
     toGuard(u, f.id);
     guards.push(u);
   }

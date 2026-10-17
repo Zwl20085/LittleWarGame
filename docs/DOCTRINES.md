@@ -23,12 +23,13 @@ the faction card after the first battle with it or after this long), and `profil
 | `occupy`, `occupy_broken`, `broken_ratio` | occupation detachments (× when the strongest enemy army < broken_ratio × ours) | `command.assignOccupations` |
 | `defend_below`, `defend_exit`, `defend_kind`, `contract_below` | directive when outmatched (army ÷ strongest known) | `directive.chooseDirective` → `doctrineai.doctrineChoice` |
 | `attack_ratio`, `offensive{mode, after_s, min_fullness, max_s, break_share, cooldown_s, force_after_s, force_ratio, between}` | the doctrine offensive: `late` / `strike` (enemy capital) / `battle` (isolated enemy front) | `doctrineai.ts` |
-| `retreat_hp` | HP share at which a damaged unit leaves the line | `behavior.needsRetreat` |
-| `raid_rate`, `raid_targets{econ, convoy, rail, zone}`, `raid_on_defence` | raid cadence per target kind (0 = never) | `econwar.planEconRaids`, `operations.planOperations` |
+| `retreat_hp` | HP share at which a damaged unit leaves the line (capital guards keep the rules default) | `behavior.needsRetreat` → `doctrines.retreatHpOf` |
+| `raid_rate`, `raid_targets{econ, convoy, rail, zone}`, `raid_on_defence` | raid cadence per target kind (0 = never); no new raid on a home alert or with ≥ 12 % of the army raiding (`raidsHeld`) | `econwar.planEconRaids`, `operations.planOperations`, `railraid.planRailRaids` |
 | `front_density` | troops counted as fewer when sizing fronts (> 1 = fewer, denser fronts) | `theatre.restructure` |
+| `picket_gap` | picket spacing × (attrition 0.7 tighter, maneuver 1.35 looser, others 1) | `pickets.placePickets` via `doctrines.picketGapMul` |
 | `temperament` | compliance temperament bias (front commanders bolder / more cautious) | `compliance.complianceOf` |
 | `main_share`, `armour_main_share` | main-effort reinforcement share, tanks on the main front under advance | `cityai.balanceReserves`, `armour.armourFront` |
-| `upgrades` | upgrade priority list (placeholder) | `doctrines.upgradePriorities` (WP-H seam) |
+| `upgrades` | AI upgrade purchase order (upgrade ids; = the doctrine row of `upgrades.UPGRADE_PRIORITY`) | `upgrades.nextWanted` (doctrines on only) |
 
 The AI finisher (command.ts) still comes before the doctrine: wars must end.
 
@@ -50,10 +51,12 @@ AI side (随机 / Random + the four), stored with the setup.
 
 ## Seams left
 
-- **rail** / **zone** raid targets: `raid_targets.rail` is in the profile but nothing reads it yet
-  (WP-D rail cut by raiders); zone raids go through the econ raid cadence (econwar handles zones).
-- **pickets**: `doctrines.picketGapMul(world, f)` = 1 / front_density for WP-E.
-- **upgrades**: `doctrines.upgradePriorities(world, f)` for WP-H.
+- **zone** raid target: zone raids go through the econ raid cadence (econwar handles zones).
+- Wired in WP-Y: **rail raids** (`railraid.ts`: a 3–4 squad party at a point on an enemy-held line or
+  station within 1.3 km of our front; 10 s on the spot cuts the line like a lost station, the holder
+  repairs it with engineers; lab `scripts/lab30/railraid.ts`), **picket spacing** (`picket_gap`),
+  **upgrades** (doctrine rows), and the home-defence reserve (`raidsHeld`, `retreatHpOf`, breach rejoin
+  in `homeguard.convergeOnPoint`).
 - **strike route**: blitz offensives use the directive axis; the transport layer (`thinkTransport`)
   decides rail / road movement on its own.
 

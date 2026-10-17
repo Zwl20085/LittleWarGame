@@ -1,4 +1,5 @@
 import type { UpgradeRules } from '../data/upgradeRules';
+import { profileOf } from './doctrines';
 import { refund, trySpend } from './economy';
 import type { Faction, Personality, UpgradeState } from './types';
 import { refitNow, UPG, upgradeBit, upgradeRules, UPGRADE_IDS, type UpgradeId } from './upgradestats';
@@ -122,6 +123,11 @@ export const UPGRADE_PRIORITY: Record<string, readonly UpgradeId[]> = {
   infantry: ['inf_guns', 'ap_grenades', 'staff', 'eng_speed', 'truck_capacity', 'motorization', 'arty_range', 'gun_1', 'armour_1', 'gun_2', 'armour_2', 'gun_3', 'armour_3'],
   mechanized: ['motorization', 'truck_capacity', 'staff', 'gun_1', 'armour_1', 'ap_grenades', 'inf_guns', 'gun_2', 'armour_2', 'arty_range', 'eng_speed', 'gun_3', 'armour_3'],
   artillery: ['arty_range', 'inf_guns', 'staff', 'truck_capacity', 'ap_grenades', 'eng_speed', 'gun_1', 'armour_1', 'motorization', 'gun_2', 'armour_2', 'gun_3', 'armour_3'],
+  // 3.0 doctrine rows (WP-Y) = rules.json doctrines.profiles.<id>.upgrades; used only while doctrines steer the AI.
+  builder: ['truck_capacity', 'eng_speed', 'staff', 'motorization', 'armour_1', 'ap_grenades', 'inf_guns', 'gun_1', 'arty_range', 'armour_2', 'gun_2', 'armour_3', 'gun_3'],
+  blitz: ['gun_1', 'armour_1', 'motorization', 'truck_capacity', 'gun_2', 'armour_2', 'staff', 'gun_3', 'armour_3', 'ap_grenades', 'inf_guns', 'arty_range', 'eng_speed'],
+  attrition: ['inf_guns', 'arty_range', 'ap_grenades', 'staff', 'eng_speed', 'truck_capacity', 'armour_1', 'gun_1', 'motorization', 'armour_2', 'gun_2', 'armour_3', 'gun_3'],
+  maneuver: ['motorization', 'gun_1', 'arty_range', 'truck_capacity', 'armour_1', 'staff', 'gun_2', 'armour_2', 'ap_grenades', 'inf_guns', 'gun_3', 'armour_3', 'eng_speed'],
 };
 
 /** Priority table for a doctrine (WP-A) or personality; the default order otherwise. */
@@ -131,9 +137,13 @@ export function upgradePriority(doctrineId?: string, personality?: Personality):
     ?? UPGRADE_PRIORITY.default;
 }
 
-/** Next item the AI wants: first in its table not owned with its prerequisites met. */
-export function nextWanted(f: Faction, r: UpgradeRules): UpgradeId | null {
-  for (const id of upgradePriority(doctrineKey(f), f.personality)) {
+/**
+ * Next item the AI wants: first in its table not owned with its prerequisites met. With `world` the
+ * doctrine row applies while doctrines steer this faction (doctrines.profileOf); else the personality row.
+ */
+export function nextWanted(f: Faction, r: UpgradeRules, world?: World): UpgradeId | null {
+  const key = world && profileOf(world, f) ? doctrineKey(f) : undefined;
+  for (const id of upgradePriority(key, f.personality)) {
     if (owns(f.upgrades, id) || !r.items[id]) continue;
     if ((r.items[id].requires ?? []).every((q) => owns(f.upgrades, q))) return id;
   }
@@ -175,7 +185,7 @@ function aiThink(world: World, f: Faction, r: UpgradeRules): void {
   const k = costScale(world);
   const eligible = !s.research && world.time >= ai.start_s && !f.command.homeThreat.alert
     && f.incomeP + f.incomeM >= ai.income_floor_k * k && incomeSteady(s, ai.trend_drop);
-  s.want = eligible ? nextWanted(f, r) : null;
+  s.want = eligible ? nextWanted(f, r, world) : null;
   if (!s.want && !s.research) releaseUpgradeFund(f);
 }
 

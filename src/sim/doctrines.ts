@@ -1,6 +1,6 @@
 import type { DoctrineProfileRules } from '../data/doctrineRules';
 import { Rng } from './rng';
-import type { DoctrineId, Faction } from './types';
+import type { DoctrineId, Faction, Unit } from './types';
 import type { World } from './world';
 
 /**
@@ -99,14 +99,44 @@ export function raidIntervalMul(world: World, f: Faction, kind: RaidKind): numbe
   return w > 0 ? 1 / w : Infinity;
 }
 
+/**
+ * Home-defence reserve for the doctrine raids (WP-Y, backdoor regression): an AI steered by a
+ * doctrine launches no new raid (econ, rail, convoy) while its capital's home-defence alert is on, nor
+ * while `maxShare` of its units are already out raiding (attrition's 2× cadence stacked 3–4 parties:
+ * up to 22 % of the army off raiding with the alarm on).
+ */
+export const DOCTRINE_RAID = { maxShare: 0.12 } as const;
+
+/** No new doctrine raid now (home alert, or the raid share is used up); never for the player or with doctrines off. */
+export function raidsHeld(world: World, f: Faction): boolean {
+  if (!profileOf(world, f)) return false;
+  // The real alert (an attack actually coming), not the readiness alarm that is on most of the time.
+  if (f.command.homeThreat.alert) return true;
+  let units = 0;
+  let raiding = 0;
+  for (const u of world.aliveUnits) {
+    if (u.owner !== f.id || u.hp <= 0 || u.fixed || u.def.id === 'supply_truck' || u.def.id === 'commander') continue;
+    units++;
+    if (u.opRole === 'raid') raiding++;
+  }
+  return raiding >= DOCTRINE_RAID.maxShare * Math.max(1, units);
+}
+
+/** HP share at which a damaged unit leaves the line; capital guards keep the rules default (they are home already). */
+export function retreatHpOf(world: World, u: Pick<Unit, 'owner' | 'opRole' | 'opObjective'>): number {
+  const dflt = world.data.rules.morale.auto_retreat_hp_ratio;
+  if (u.opRole === 'garrison' && u.opObjective === `hq:${u.owner}`) return dflt;
+  return retreatHp(world, u.owner) ?? dflt;
+}
+
 /** Raids go on under defend / fortify (attrition interdicts while it holds). */
 export const raidsOnDefence = (world: World, f: Faction): boolean => profileOf(world, f)?.raid_on_defence ?? false;
 
 /** Troops-per-front multiplier (> 1: fewer, denser fronts; frontTiers.scaleFronts). */
 export const frontDensity = (world: World, f: Faction): number => profileOf(world, f)?.front_density ?? 1;
 
-/** Seam for WP-E (infiltration pickets): picket spacing multiplier (< 1 = denser pickets). */
-export const picketGapMul = (world: World, f: Faction): number => 1 / frontDensity(world, f);
+/** Picket spacing multiplier (pickets.placePickets; < 1 = tighter: attrition, > 1 = looser: maneuver). */
+export const picketGapMul = (world: World, f: Faction): number => profileOf(world, f)?.picket_gap ?? 1;
 
 /** Compliance temperament bias (compliance.ts). */
 export const temperamentBias = (world: World, f: Faction): number => profileOf(world, f)?.temperament ?? 0;

@@ -3,7 +3,7 @@ import { boundOrder } from './frontref';
 import { selectTarget } from './combat';
 import { moveTo, stop } from './movement';
 import { isCommander } from './formulas';
-import { raidIntervalMul, raidsOnDefence } from './doctrines';
+import { raidIntervalMul, raidsHeld, raidsOnDefence } from './doctrines';
 import type { Faction, Unit } from './types';
 import { dist, type V2 } from './vec';
 import type { World } from './world';
@@ -57,7 +57,7 @@ const why = (k: string): void => { ECON_WAR_STATS[k] = (ECON_WAR_STATS[k] ?? 0) 
 /** A/B switch for the lab (`ECON_WAR_AB.raids = false` = wave-1: no economic raids). */
 export const ECON_WAR_AB = { raids: true };
 
-const RAIDER_IDS = new Set(['recon', 'infantry', 'motor_inf', 'engineer']);
+export const RAIDER_IDS: ReadonlySet<string> = new Set(['recon', 'infantry', 'motor_inf', 'engineer']);
 const KIND_VALUE: Record<string, number> = { factory: 1, recruit: 0.9, depot: 0.75, ezone1: 0.6, ezone2: 0.95, ezone3: 1.3 };
 
 /** What a raid can target: a 2.2 economic building or (3.0) an economic zone (econZones.ts). */
@@ -85,7 +85,7 @@ const tagId = (tag: string | null): number => (tag && tag.startsWith('econ:') ? 
 const valueOf = (u: Unit): number => (u.def.costP + u.def.costM) * (u.hp / u.def.maxHp);
 
 /** Known hostile (to `f`) combat value within r of p. */
-function knownDefence(world: World, f: number, p: V2, r: number): number {
+export function knownDefence(world: World, f: number, p: V2, r: number): number {
   let v = 0;
   for (const u of world.spatial.query(p.x, p.z, r)) {
     if (u.hp > 0 && u.primary && !isCommander(u.def) && u.def.id !== 'supply_truck' && world.isHostile(f, u.owner) && world.knows(f, u)) v += valueOf(u);
@@ -94,7 +94,7 @@ function knownDefence(world: World, f: number, p: V2, r: number): number {
 }
 
 /** Known hostile value within corridorR of points every corridorStepM along a → b. */
-function corridorDefence(world: World, f: number, a: V2, b: V2): number {
+export function corridorDefence(world: World, f: number, a: V2, b: V2): number {
   const n = Math.max(1, Math.ceil(dist(a, b) / ECON_WAR.corridorStepM));
   let v = 0;
   for (let k = 0; k < n; k++) {
@@ -105,7 +105,7 @@ function corridorDefence(world: World, f: number, a: V2, b: V2): number {
 }
 
 /** Nearest of our front-line cells to p, and its distance. */
-function nearestCell(world: World, f: number, p: V2): { cell: V2 | null; d: number } {
+export function nearestCell(world: World, f: number, p: V2): { cell: V2 | null; d: number } {
   let cell: V2 | null = null;
   let d = Infinity;
   for (const c of world.frontInfo[f]?.cells ?? []) {
@@ -143,7 +143,8 @@ export function pickRaidTarget(world: World, f: Faction, partyValue: number): Ra
   return best;
 }
 
-function freeSquad(u: Unit, bound: ReadonlySet<number>): boolean {
+/** A healthy line squad free to join a raid party (econwar, railraid). */
+export function freeSquad(u: Unit, bound: ReadonlySet<number>): boolean {
   return u.hp > u.def.maxHp * 0.7 && u.opRole === 'line' && !u.spearhead && !u.manual && !u.routing && !u.rearming
     && u.behavior === 'advance' && !bound.has(u.frontId) && u.ammo > 0.25;
 }
@@ -166,7 +167,7 @@ function liveParty(world: World, f: Faction): Party | null {
   return p;
 }
 
-function endRaid(u: Unit): void {
+export function endRaid(u: Unit): void {
   u.opRole = 'line';
   u.opObjective = null;
   u.opTarget = null;
@@ -188,6 +189,7 @@ export function planEconRaids(world: World, f: Faction): void {
   if (f.command.fullness < ECON_WAR.minFullness) return why('thin');
   // The real alert (an attack actually coming), not the readiness alarm that is on most of the time.
   if (f.command.homeThreat.alert) return why('alert');
+  if (raidsHeld(world, f)) return why('held');
   const bound = new Set(f.fronts.filter(boundOrder).map((s) => s.id));
   // Value of a typical party: three rifle squads.
   const rifle = world.data.units.get('infantry');
@@ -202,7 +204,7 @@ export function planEconRaids(world: World, f: Faction): void {
     else if (u.def.id === 'light_tank') tanks.push(u);
   }
   // Engineers demolish fastest, recon slips through: one of each first, then the nearest rifles.
-  pool.sort((a, b) => rank(a) - rank(b) || dist(a.pos, pick.b.pos) - dist(b.pos, pick.b.pos) || a.id - b.id);
+  pool.sort((a, b) => raiderRank(a) - raiderRank(b) || dist(a.pos, pick.b.pos) - dist(b.pos, pick.b.pos) || a.id - b.id);
   const size = Math.min(ECON_WAR.partyMax, ECON_WAR.partyMin + (pick.defence > 0 ? 1 : 0) + (pick.b.progress >= 1 && pick.b.kind !== 'depot' ? 1 : 0));
   const party: Unit[] = [];
   let eng = 0;
@@ -230,7 +232,8 @@ export function planEconRaids(world: World, f: Faction): void {
   world.note(f.id, 'log.econRaid', { n: party.length, bld: pick.b.kind, point: pick.b.placeId ?? '' }, 'info');
 }
 
-const rank = (u: Unit): number => (u.def.id === 'engineer' ? 0 : u.def.id === 'recon' ? 1 : 2);
+/** Party order: engineers, recon, then the rest. */
+export const raiderRank = (u: Unit): number => (u.def.id === 'engineer' ? 0 : u.def.id === 'recon' ? 1 : 2);
 
 const packCache = new WeakMap<World, { tick: number; far: Map<string, number> }>();
 

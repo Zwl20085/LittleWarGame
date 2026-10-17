@@ -27,8 +27,9 @@ import { dist, headingTo, type V2 } from './vec';
 import type { World } from './world';
 import { ARMOUR_AB, orphanTank, paceArmour } from './armour';
 import { thinkEconRaid } from './econwar';
+import { thinkRailRaid } from './railraid';
 import { infiltrationDuty } from './infiltration';
-import { retreatHp } from './doctrines';
+import { retreatHpOf } from './doctrines';
 
 /** Deterministic per-unit spread offset so a squad group doesn't stack on one point. */
 function spread(u: Unit, radius: number): V2 {
@@ -72,8 +73,8 @@ function nearRepairPoint(world: World, u: Unit): boolean {
 
 function needsRetreat(world: World, u: Unit): boolean {
   if (u.def.id === 'supply_truck') return u.hp <= u.def.maxHp * 0.3;
-  // 3.0: attrition preserves its force (doctrines.retreatHp); others the rules default.
-  if (u.hp <= u.def.maxHp * (retreatHp(world, u.owner) ?? world.data.rules.morale.auto_retreat_hp_ratio)) return true;
+  // 3.0: attrition preserves its force (doctrines.retreatHp); others, and every capital guard, the rules default.
+  if (u.hp <= u.def.maxHp * retreatHpOf(world, u)) return true;
   return false;
 }
 
@@ -732,6 +733,8 @@ function thinkInfiltrator(world: World, u: Unit): boolean {
 function thinkOpRaid(world: World, u: Unit): boolean {
   // 2.2: an economic raid party goes for its building (econwar.ts).
   if (u.opObjective?.startsWith('econ:')) return thinkEconRaid(world, u);
+  // 3.0: a rail raid party goes for its track point (railraid.ts).
+  if (u.opObjective?.startsWith('rail:')) return thinkRailRaid(world, u);
   if (u.routing || u.manual || world.time > u.opUntil || u.hp < u.def.maxHp * 0.4 || !u.opTarget) {
     u.opRole = 'line';
     u.opTarget = null;
