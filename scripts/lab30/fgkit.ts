@@ -1,25 +1,11 @@
-// Tiny shared runner for the WP-F/G lab30 suites (defence.ts, economy.ts): data with `--set`
-// overrides, a mulberry RNG, child-process fan-out and a Markdown writer. Kept local so it does
-// not collide with scripts/lab30/common.ts (WP-I) — the lead may fold it in on merge.
+// Shared runner pieces unique to the WP-F/G lab30 suites (defence.ts, economy.ts): the `--name value`
+// reader, a mulberry RNG and the child-process fan-out (LAB_TASK / `@@` line protocol). Data loading
+// and the report writer are common.ts's.
 import { spawn } from 'node:child_process';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { buildGameData } from '../../src/data/loader';
 import type { GameData } from '../../src/data/types';
-import { applyOverrides, parseOverride, type DataText } from '../lab/overrides';
+import { loadData, writeReport as commonWriteReport } from './common';
 
-export const OUT_DIR = 'media/stats/lab30';
-
-const BASE: DataText = {
-  units: readFileSync('docs/data/units.csv', 'utf8'),
-  weapons: readFileSync('docs/data/weapons.csv', 'utf8'),
-  rules: readFileSync('docs/data/rules.json', 'utf8'),
-};
-
-/** Game data with `path=value` overrides (scripts/lab/overrides.ts syntax). */
-export function labData(overrides: readonly string[] = []): GameData {
-  const t = applyOverrides(BASE, overrides.map(parseOverride));
-  return buildGameData(t.units, t.weapons, t.rules);
-}
+export const labData = (overrides: readonly string[] = []): GameData => loadData(overrides);
 
 export function arg(name: string, def: string): string {
   const i = process.argv.indexOf(`--${name}`);
@@ -72,11 +58,5 @@ export function reply<R>(r: R): void {
   process.stdout.write(`@@${JSON.stringify(r)}\n`);
 }
 
-export function writeReport(name: string, md: string, json: unknown): string {
-  mkdirSync(OUT_DIR, { recursive: true });
-  const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-  const base = `${OUT_DIR}/${name}-${stamp}`;
-  writeFileSync(`${base}.md`, md);
-  writeFileSync(`${base}.json`, JSON.stringify(json, null, 2));
-  return base;
-}
+/** Argument order of the WP-F/G suites (name, markdown, json) over common.writeReport. */
+export const writeReport = (name: string, md: string, json: unknown): string => commonWriteReport(name, json, md);
