@@ -135,7 +135,8 @@ function placePickets(world: World, r: InfiltrationRules, s: Front, liners: read
   const budget = Math.floor(cands.length * r.picket_max_share);
   if (budget <= 0) return;
   // Redundancy: other slots within half a gap of the candidate's slot (it can leave without opening a gap).
-  const red = cands.map((u) => slotList.reduce((n, q) => n + (q !== out[u.id] && dist(q, out[u.id]) <= half ? 1 : 0), 0));  const used = new Set<number>();
+  const red = cands.map((u) => slotList.reduce((n, q) => n + (q !== out[u.id] && dist(q, out[u.id]) <= half ? 1 : 0), 0));
+  const used = new Set<number>();
   let placed = 0;
   for (const p of points) {
     if (placed >= budget) return;
@@ -152,6 +153,9 @@ function placePickets(world: World, r: InfiltrationRules, s: Front, liners: read
     const want = towardHome(p, home, r.picket_lean_m);
     const at = world.navFor(u).nearestPassable(want, 40) ?? want;
     out[u.id] = at;
+    // Review MEDIUM 12: the vacated slot no longer covers anything.
+    const k = slotList.indexOf(old);
+    if (k >= 0) slotList.splice(k, 1);
     slotList.push(at);
     used.add(best);
     placed++;

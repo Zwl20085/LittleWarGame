@@ -1,8 +1,9 @@
-import { trySpend } from './economy';
+import { refund, trySpend } from './economy';
 import { moveTo, stop } from './movement';
 import { availableM } from './production';
 import { addLine, railRules, stationOwner } from './rail';
 import { armyScale } from './settlements';
+import { jobOf } from './structures';
 import { Ground } from './terrain';
 import { transportRules } from './transport';
 import type { TransportJob, TransportJobKind } from './transportstate';
@@ -35,8 +36,10 @@ const ROAD_OVERLAP_M = 30;
 const THINK_S = 0.4;
 /** A job nobody has worked on for this long is dropped (s). */
 const STALE_S = 900;
+/** A worker unfit this long (manual order, routing, riding, beyond ASSIGN_RADIUS_M) is released and replaced (s). */
+const UNFIT_S = 60;
 /** Bridge deck width of an engineer road across a water gap (m). */
-const BRIDGE_W = 9;
+export const BRIDGE_W = 9;
 
 // ------------------------------------------------------------------ starting jobs
 
@@ -67,10 +70,13 @@ export function roadSegmentOk(world: World, a: V2, b: V2): { ok: true; gaps: [V2
   return { ok: true, gaps };
 }
 
-function newJob(world: World, owner: number, kind: TransportJobKind, a: V2, b: V2, workSeconds: number, lineId = -1, fromStation = -1, toPlace = -1): TransportJob {
+interface JobCost { readonly p: number; readonly m: number }
+
+function newJob(world: World, owner: number, kind: TransportJobKind, a: V2, b: V2, workSeconds: number, cost: JobCost, lineId = -1, fromStation = -1, toPlace = -1): TransportJob {
   const st = world.transport!;
   const job: TransportJob = {
     id: st.nextId++, owner, kind, a: { ...a }, b: { ...b }, lineId, fromStation, toPlace, workSeconds, progress: 0, workedAt: world.time, worker: -1, startedAt: world.time,
+    costP: cost.p, costM: cost.m,
   };
   st.jobs.push(job);
   return job;
@@ -91,9 +97,10 @@ export function startRoadJob(world: World, f: number, a: V2, b: V2): JobResult {
   const near = (p: V2, q: V2): boolean => dist(p, q) <= ROAD_OVERLAP_M;
   if (world.transport.jobs.some((j) => j.kind === 'road' && [a, b].some((p) => near(p, j.a) || near(p, j.b)))) return { ok: false, reason: 'BUSY' };
   const L = dist(a, b);
-  if (!pay(world, f, 0, (r.cost_m_k_per_100m * armyScale(world) * L) / 100)) return { ok: false, reason: 'NO_BUDGET' };
+  const m = (r.cost_m_k_per_100m * armyScale(world) * L) / 100;
+  if (!pay(world, f, 0, m)) return { ok: false, reason: 'NO_BUDGET' };
   world.note(f, 'log.roadJob', {}, 'info');
-  return { ok: true, job: newJob(world, f, 'road', a, b, (r.seconds_per_100m * L) / 100) };
+  return { ok: true, job: newJob(world, f, 'road', a, b, (r.seconds_per_100m * L) / 100, { p: 0, m }) };
 }
 
 /** Engineers rebuild a cut rail line the faction holds at both ends. */
@@ -107,9 +114,10 @@ export function startRailRepair(world: World, f: number, lineId: number): JobRes
   if (stationOwner(world, st.stations[line.a]) !== f || stationOwner(world, st.stations[line.b]) !== f) return { ok: false, reason: 'NOT_HELD' };
   if (st.jobs.some((j) => j.kind === 'rail' && j.lineId === lineId)) return { ok: false, reason: 'BUSY' };
   const k = armyScale(world);
-  if (!pay(world, f, r.repair.cost_p_k * k, r.repair.cost_m_k * k)) return { ok: false, reason: 'NO_BUDGET' };
+  const cost = { p: r.repair.cost_p_k * k, m: r.repair.cost_m_k * k };
+  if (!pay(world, f, cost.p, cost.m)) return { ok: false, reason: 'NO_BUDGET' };
   world.note(f, 'log.railJob', {}, 'info');
-  return { ok: true, job: newJob(world, f, 'rail', line.pts[0], line.pts[line.pts.length - 1], r.repair.work_seconds, lineId) };
+  return { ok: true, job: newJob(world, f, 'rail', line.pts[0], line.pts[line.pts.length - 1], r.repair.work_seconds, cost, lineId) };
 }
 
 /** Engineers extend the rail from an own station to an own town or city (≤ extend.max_len_m). */
@@ -129,9 +137,10 @@ export function startRailExtension(world: World, f: number, stationId: number, o
   const end = { x: o.pos.x + ((s.pos.x - o.pos.x) / (d || 1)) * Math.min(o.radius, d / 2), z: o.pos.z + ((s.pos.z - o.pos.z) / (d || 1)) * Math.min(o.radius, d / 2) };
   const L = dist(s.pos, end);
   if (L > r.extend.max_len_m) return { ok: false, reason: 'LENGTH' };
-  if (!pay(world, f, 0, (r.extend.cost_m_k_per_100m * armyScale(world) * L) / 100)) return { ok: false, reason: 'NO_BUDGET' };
+  const m = (r.extend.cost_m_k_per_100m * armyScale(world) * L) / 100;
+  if (!pay(world, f, 0, m)) return { ok: false, reason: 'NO_BUDGET' };
   world.note(f, 'log.railJob', {}, 'info');
-  return { ok: true, job: newJob(world, f, 'rail', s.pos, end, (r.extend.seconds_per_100m * L) / 100, -1, stationId, objIdx) };
+  return { ok: true, job: newJob(world, f, 'rail', s.pos, end, (r.extend.seconds_per_100m * L) / 100, { p: 0, m }, -1, stationId, objIdx) };
 }
 
 // ------------------------------------------------------------------ engineers
@@ -169,11 +178,11 @@ export function completeJob(world: World, job: TransportJob): void {
   if (i >= 0) st.jobs.splice(i, 1);
   if (job.kind === 'road') {
     const chk = roadSegmentOk(world, job.a, job.b);
-    paintRoad(world, job.a, job.b, roadRules(world)?.half_width_m ?? 5);
+    paintRoad(world, job.a, job.b, roadHalfWidth(world));
     if (chk.ok) for (const [p, q] of chk.gaps) world.terrain.addBridge(p, q, BRIDGE_W);
     world.onTerrainChanged?.(job.a, job.b);
     st.roads.addSegment(job.a, job.b);
-    st.builtRoads.push({ a: { ...job.a }, b: { ...job.b } });
+    st.builtRoads.push({ a: { ...job.a }, b: { ...job.b }, gaps: chk.ok ? chk.gaps : [] });
     st.version++;
     world.note(job.owner, 'log.roadBuilt', {}, 'info');
     return;
@@ -189,6 +198,9 @@ export function completeJob(world: World, job: TransportJob): void {
   }
   world.note(job.owner, 'log.railBuilt', {}, 'info');
 }
+
+/** Road half width of engineer roads (m). */
+export const roadHalfWidth = (world: World): number => roadRules(world)?.half_width_m ?? 5;
 
 /** Stamp Ground.Road along a → b (half width w), never over water or into houses. */
 export function paintRoad(world: World, a: V2, b: V2, w: number): void {
@@ -216,18 +228,53 @@ export function paintRoad(world: World, a: V2, b: V2, w: number): void {
   }
 }
 
-/** Give each open job without a living worker the nearest free engineer of its owner. */
+/** True while `u` is the worker of an open transport job (fortplans.freeHand leaves it alone). */
+export function onTransportJob(world: World, u: Unit): boolean {
+  const st = world.transport;
+  if (!st) return false;
+  for (const j of st.jobs) if (j.worker === u.id) return true;
+  return false;
+}
+
+/** A worker that can carry on: alive, not manual / routing / riding, within ASSIGN_RADIUS_M of the front. */
+function workerFit(world: World, job: TransportJob): boolean {
+  const u = world.units.get(job.worker);
+  return !!u && u.hp > 0 && !u.manual && !u.routing && !u.rail && dist(u.pos, jobFront(job)) <= ASSIGN_RADIUS_M;
+}
+
+/**
+ * Release workers that died (at once) or stayed unfit for UNFIT_S (review MEDIUM 7: a worker on a
+ * manual order or routing used to hold the job until it went stale), so assignWorkers replaces them.
+ */
+function releaseUnfit(world: World): void {
+  for (const job of world.transport!.jobs) {
+    if (job.worker >= 0 && !world.unitAlive(job.worker)) job.worker = -1;
+    if (job.worker < 0 || workerFit(world, job)) {
+      job.unfitSince = undefined;
+      continue;
+    }
+    if (job.unfitSince === undefined) job.unfitSince = world.time;
+    else if (world.time - job.unfitSince > UNFIT_S) {
+      job.worker = -1;
+      job.unfitSince = undefined;
+      world.note(job.owner, 'log.transportWorkerLost', {}, 'info');
+    }
+  }
+}
+
+/** Give each open job without a worker the nearest free engineer of its owner (none with a works / zone job). */
 function assignWorkers(world: World): void {
   const st = world.transport!;
   const busy = new Set(st.jobs.map((j) => j.worker));
   for (const job of st.jobs) {
-    if (job.worker >= 0 && world.unitAlive(job.worker)) continue;
-    job.worker = -1;
+    if (job.worker >= 0) continue;
     const at = jobFront(job);
     let best: Unit | null = null;
     let bd = ASSIGN_RADIUS_M;
     for (const u of world.aliveUnits) {
-      if (u.owner !== job.owner || u.hp <= 0 || u.def.id !== 'engineer' || u.manual || busy.has(u.id) || u.rail) continue;
+      if (u.owner !== job.owner || u.hp <= 0 || u.def.id !== 'engineer' || u.manual || u.routing || busy.has(u.id) || u.rail) continue;
+      // Review HIGH 1: one owner per engineer — a builder on a works / zone job stays there.
+      if (jobOf(world, u) !== null) continue;
       const d = dist(u.pos, at);
       if (d < bd) { bd = d; best = u; }
     }
@@ -292,7 +339,7 @@ export function freeEngineer(world: World, f: number): boolean {
   if (!st) return false;
   const busy = new Set(st.jobs.map((j) => j.worker));
   for (const u of world.aliveUnits) {
-    if (u.owner === f && u.hp > 0 && u.def.id === 'engineer' && !u.manual && !u.rail && !busy.has(u.id)) return true;
+    if (u.owner === f && u.hp > 0 && u.def.id === 'engineer' && !u.manual && !u.rail && !busy.has(u.id) && jobOf(world, u) === null) return true;
   }
   return false;
 }
@@ -316,13 +363,30 @@ export function thinkTransport(world: World, f: Faction, extraSites: readonly V2
   if (!freeEngineer(world, f.id)) return;
   const cut = st.lines.find((l) => l.cut && stationOwner(world, st.stations[l.a]) === f.id && stationOwner(world, st.stations[l.b]) === f.id);
   if (cut && railRules(world) && startRailRepair(world, f.id, cut.id).ok) return;
-  const want = needRoadLinks(world, f.id, extraSites)[0];
   const road = roadRules(world);
-  if (!want || !road) return;
-  // Keep a reserve: the road is paid from what is left after a few of its own cost.
-  const cost = (road.cost_m_k_per_100m * armyScale(world) * dist(want.from, want.to)) / 100;
-  if (availableM(world, f) < cost * ROAD_RESERVE) return;
-  startRoadJob(world, f.id, want.from, want.to);
+  if (!road) return;
+  // Review MEDIUM 6: try the candidates in order, skipping sites whose road failed recently
+  // (slope, water, overlap…), so one unbuildable link no longer blocks every other one.
+  const failed = linkFailures(world);
+  for (const want of needRoadLinks(world, f.id, extraSites)) {
+    const key = `${f.id}:${Math.round(want.to.x)}:${Math.round(want.to.z)}`;
+    if (world.time < (failed.get(key) ?? -Infinity)) continue;
+    // Keep a reserve: the road is paid from what is left after a few of its own cost.
+    const cost = (road.cost_m_k_per_100m * armyScale(world) * dist(want.from, want.to)) / 100;
+    if (availableM(world, f) < cost * ROAD_RESERVE) continue;
+    const res = startRoadJob(world, f.id, want.from, want.to);
+    if (res.ok) return;
+    failed.set(key, world.time + LINK_RETRY_S);
+  }
+}
+
+/** A road link that failed to start is not tried again at that site for this long (s). */
+const LINK_RETRY_S = 300;
+const linkFailed = new WeakMap<World, Map<string, number>>();
+function linkFailures(world: World): Map<string, number> {
+  let m = linkFailed.get(world);
+  if (!m) linkFailed.set(world, (m = new Map()));
+  return m;
 }
 
 /** Road work is only ordered when the stock holds this many times its cost. */
@@ -334,9 +398,17 @@ export function transportSecond(world: World): void {
   if (!st || !transportRules(world.data.rules)) return;
   for (let i = st.jobs.length - 1; i >= 0; i--) {
     const j = st.jobs[i];
-    if (!world.factions[j.owner]?.alive || world.time - j.workedAt > STALE_S) st.jobs.splice(i, 1);
+    const owner = world.factions[j.owner];
+    if (owner?.alive && world.time - j.workedAt <= STALE_S) continue;
+    st.jobs.splice(i, 1);
+    if (!owner?.alive) continue;
+    // Review MEDIUM 7: say so, and give the stock back when not a metre was built.
+    if (j.progress <= 0) refund(owner, j.costP ?? 0, j.costM ?? 0, world.data.rules);
+    world.note(j.owner, 'log.transportJobDropped', {}, 'warn');
   }
-  if (st.jobs.length > 0) assignWorkers(world);
+  if (st.jobs.length === 0) return;
+  releaseUnfit(world);
+  assignWorkers(world);
 }
 
 /** Open transport jobs of a faction (lab / HUD). */

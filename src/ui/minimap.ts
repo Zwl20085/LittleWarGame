@@ -311,6 +311,8 @@ export class MinimapPanel {
     for (const u of w.units.values()) {
       if (u.hp <= 0) continue;
       if (fog && u.owner !== this.ctx.playerId && !w.visibleTo[this.ctx.playerId].has(u.id)) continue;
+      // Riders aboard a train are hidden (the renderer does the same).
+      if (u.rail?.stage === 'aboard') continue;
       g.fillStyle = w.factions[u.owner].color;
       const s = u.def.kind === 'vehicle' ? 3 : 2;
       g.fillRect(u.pos.x * this.scale - s / 2, u.pos.z * this.scale - s / 2, s, s);

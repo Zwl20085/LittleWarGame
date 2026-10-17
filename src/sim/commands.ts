@@ -118,6 +118,8 @@ const MAX_ORDER_UNITS = 64;
 const validUnitIds = (ids: unknown): ids is number[] => Array.isArray(ids) && ids.length <= MAX_ORDER_UNITS && ids.every((i) => Number.isInteger(i));
 
 const finiteV2 = (p: V2 | undefined): p is V2 => !!p && Number.isFinite(p.x) && Number.isFinite(p.z);
+/** A unit the player may produce (review HIGH 3: not the train, not a front commander). */
+const producibleId = (w: Match['world'], id: string): boolean => !!w.data.units.get(id)?.producible && id !== w.data.rules.command.commander_unit;
 
 function apply(match: Match, env: CommandEnvelope): CommandOutcome {
   const w = match.world;
@@ -126,15 +128,15 @@ function apply(match: Match, env: CommandEnvelope): CommandOutcome {
   const c = env.cmd;
   switch (c.type) {
     case 'setWeight':
-      if (!Number.isFinite(c.weight) || c.weight < 0 || !w.data.units.has(c.unitId)) return fail('BAD_VALUE');
+      if (!Number.isFinite(c.weight) || c.weight < 0 || !producibleId(w, c.unitId)) return fail('BAD_VALUE');
       f.weights = { ...f.weights, [c.unitId]: c.weight };
       return OK;
     case 'setCap':
-      if (!Number.isFinite(c.cap) || c.cap < 0 || !w.data.units.has(c.unitId)) return fail('BAD_VALUE');
+      if (!Number.isFinite(c.cap) || c.cap < 0 || !w.data.units.has(c.unitId) || !producibleId(w, c.unitId)) return fail('BAD_VALUE');
       f.caps = { ...f.caps, [c.unitId]: Math.round(c.cap) };
       return OK;
     case 'togglePause':
-      if (!w.data.units.has(c.unitId)) return fail('BAD_VALUE');
+      if (!w.data.units.has(c.unitId) || !producibleId(w, c.unitId)) return fail('BAD_VALUE');
       f.paused = { ...f.paused, [c.unitId]: !f.paused[c.unitId] };
       return OK;
     case 'queueUnit':

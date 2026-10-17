@@ -80,6 +80,27 @@ export interface TransportJob {
   /** Engineer assigned to it (unit id, −1 = none). */
   worker: number;
   readonly startedAt: number;
+  /** What the job cost when ordered (refunded if it is dropped before any work). */
+  readonly costP?: number;
+  readonly costM?: number;
+  /** Since when the assigned worker has been unfit (manual, routing, riding, far); undefined = fit. */
+  unfitSince?: number;
+}
+
+/** An engineer road: a → b, and the water gaps it bridged (mirrored to the main thread, transportsnap.ts). */
+export interface BuiltRoad {
+  readonly a: V2;
+  readonly b: V2;
+  readonly gaps?: readonly (readonly [V2, V2])[];
+}
+
+/** What the main thread knows of the engineer jobs (transportsnap.ts): enough for the Engineering panel. */
+export interface TransportJobView {
+  readonly owner: number;
+  readonly kind: TransportJobKind;
+  readonly lineId: number;
+  /** The observer's own jobs only (−1 for other factions' jobs). */
+  readonly worker: number;
 }
 
 export interface TransportState {
@@ -91,8 +112,10 @@ export interface TransportState {
   readonly riders: number[];
   readonly jobs: TransportJob[];
   /** Engineer roads laid so far (render + snapshot). */
-  readonly builtRoads: { a: V2; b: V2 }[];
+  readonly builtRoads: BuiltRoad[];
   nextId: number;
+  /** Main-thread mirror only: the open jobs as last reported by the worker (the worker uses `jobs`). */
+  jobView?: TransportJobView[];
   /** Bumped when lines / stations / built roads change (render rebuilds its meshes). */
   version: number;
 }
