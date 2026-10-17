@@ -137,6 +137,21 @@ export interface Unit {
   rearming: boolean;
   /** 2.2: earliest time to search for a rearm point again after none was found. */
   rearmAt: number;
+  /** 3.0: rail trip in progress (rail.ts): walking to the station, waiting, or aboard (hidden). */
+  rail: RailRide | null;
+}
+
+/** 3.0 rail trip of one unit: board at station `from`, ride to `to`, then walk on to `dest`. */
+export interface RailRide {
+  stage: 'toStation' | 'waiting' | 'aboard';
+  readonly from: number;
+  readonly to: number;
+  /** Final destination (updated when a new order arrives while aboard). */
+  dest: V2;
+  /** Train carrying the unit (−1 until boarded). */
+  trainId: number;
+  /** When the current stage began (a walk to the station that takes too long is abandoned). */
+  since: number;
 }
 
 /** 正面推进 / 侧面迂回 / 钳形攻势 / 武装渗透 / 筑垒围攻. */

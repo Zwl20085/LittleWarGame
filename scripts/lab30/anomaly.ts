@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 import type { World } from '../../src/sim/world';
 import { anomalySecond, anomalyWindow, ANOMALY, createAnomalyProbe, CLASSES, type AnomalyClass, type Episode } from './anomalyProbe';
 import { isCombat, isTankUnit } from './anomalyWorld';
-import { createLabMatch, parseArgs, runJobs, runMatch, serveWorker, stamp, writeReport, type MatchSpec } from './common';
+import { createLabMatch, parseArgs, runJobs, runMatch, serveWorker, stamp, writeReport, type MatchSpec } from './runner';
 import { anomalyMarkdown } from './anomalyReport';
 
 export interface ClassCount { records: number; unitWindows: number; episodes: number; high: number; causes: Record<string, number> }

@@ -67,10 +67,12 @@ function parseUnit(row: CsvRow): UnitDef {
     turretTurnDegps: num(row, 'turret_turn_degps'),
     setupSeconds: num(row, 'setup_seconds'),
     packSeconds: num(row, 'pack_seconds'),
+    // 3.0: optional column; false = never bought (the commander is appointed, the train is rail stock).
+    producible: row.producible === undefined || row.producible === '' ? true : bool(row, 'producible'),
   };
   if (u.costP < 0 || u.costM < 0) throw new Error(`units line ${row.__line}: negative cost`);
   if (u.maxHp <= 0) throw new Error(`units line ${row.__line}: max_hp must be > 0`);
-  if (u.population <= 0) throw new Error(`units line ${row.__line}: population must be > 0`);
+  if (u.producible && u.population <= 0) throw new Error(`units line ${row.__line}: population must be > 0`);
   return u;
 }
 

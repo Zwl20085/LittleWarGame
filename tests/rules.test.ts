@@ -18,8 +18,10 @@ function faction(over: Partial<Faction> = {}): Faction {
 }
 
 describe('data loading (AGENT_HANDOFF §2)', () => {
-  it('loads all 13 units (incl. motorized rifles and the front commander) and 13 weapons (incl. the pillbox MG) with valid references', () => {
-    expect(data.units.size).toBe(13);
+  it('loads all 14 units (incl. motorized rifles, the front commander and the 3.0 train) and 13 weapons (incl. the pillbox MG) with valid references', () => {
+    expect(data.units.size).toBe(14);
+    expect(data.units.get('train')?.producible).toBe(false);
+    expect(data.units.get('infantry')?.producible).toBe(true);
     expect(data.weapons.size).toBe(13);
   });
   it('reports the offending field when a value is missing', () => {
