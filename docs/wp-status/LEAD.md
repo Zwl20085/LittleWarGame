@@ -11,15 +11,16 @@ its own note in this folder (`WP-*.md`) on its worktree branch `worktree-agent-<
   scripts/release/*.mjs and electron/*.cjs). User action before release: `npm run release:keygen`,
   paste the public key into `UPDATE_PUBLIC_KEY` in electron/updater.cjs, back up the key.
 
+- WP-K camera (worktree-agent-a8fe6761be36037cd) — merge d76f083 (battle cam respects fog, depth blur off by default; close-in low-angle view 4.4 ms vs 4 ms budget → WP-M).
+- WP-I challenge diversity (worktree-agent-a00de1da53255b7d4) — merge 081b993. Baseline: only shadow_strike (open info) takes AI capitals; supply-starved share ~50 % everywhere (band miss); doctrine_* strategies wait for WP-A.
+
 ## Wave 1 agents still running (merge each when reported; typecheck + tests after every merge)
 | WP | branch | status |
 |---|---|---|
-| K camera/visuals | worktree-agent-a8fe6761be36037cd | done; asked for fog filter on battle cam + depthBlur default off, then merge |
 | D roads/rail | worktree-agent-ab63c300467793cd5 | running |
 | B+C fronts/compliance | worktree-agent-aa55ed9ace45ae466 | running labs |
 | I anomaly lab + ammo fix | worktree-agent-a975a400ec14180f9 | running |
 | F+G econ zones + works | worktree-agent-a7cde76b4ad393c3f | running |
-| I challenge diversity | worktree-agent-a00de1da53255b7d4 | running (Sonnet) |
 
 Merge order when several are ready: D → B+C → F+G → I-anomaly → K → I-challenge (K and I-challenge
 touch few sim files; D/B+C/F+G are the conflict-prone ones: types.ts, snapshot.ts, i18n.ts, hud.ts,
