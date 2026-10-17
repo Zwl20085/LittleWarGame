@@ -297,17 +297,74 @@ function clusters(r: InfiltrationRules, units: readonly Unit[]): Cluster[] {
   return out;
 }
 
+/** Most rear reports a faction keeps at once; past it a new cluster joins the nearest report. */
+const MAX_REPORTS = 8;
+
+interface Acc { sx: number; sz: number; v: number }
+
+/**
+ * The report a cluster updates this pass (review MEDIUM 9). A report is taken by one cluster per
+ * pass (matched within report_match_m); a second cluster joins a taken report only within
+ * report_cluster_m of it, else it gets its own report (up to MAX_REPORTS) — two raids 500 m apart
+ * no longer overwrite one report in turn.
+ */
+function clusterReport(world: World, f: Faction, r: InfiltrationRules, taken: Map<Report, Acc>, c: Cluster, pos: V2): Report {
+  const b = bookOf(f);
+  let best: Report | null = null;
+  let bd = r.report_match_m;
+  for (const rep of b.list) {
+    if (taken.has(rep)) continue;
+    const d = dist(rep.pos, pos);
+    if (d < bd) { bd = d; best = rep; }
+  }
+  if (best) {
+    taken.set(best, { sx: c.sx, sz: c.sz, v: c.v });
+    best.pos = pos;
+    best.value = c.v;
+    best.ids = [...c.ids];
+    best.lastAt = world.time;
+    return best;
+  }
+  let join: Report | null = null;
+  bd = r.report_cluster_m;
+  for (const rep of taken.keys()) {
+    const d = dist(rep.pos, pos);
+    if (d < bd) { bd = d; join = rep; }
+  }
+  if (!join && b.list.length >= MAX_REPORTS) {
+    bd = Infinity;
+    for (const rep of b.list) {
+      const d = dist(rep.pos, pos);
+      if (d < bd) { bd = d; join = rep; }
+    }
+  }
+  if (join) {
+    const acc = taken.get(join) ?? { sx: join.pos.x * join.value, sz: join.pos.z * join.value, v: join.value };
+    acc.sx += c.sx;
+    acc.sz += c.sz;
+    acc.v += c.v;
+    taken.set(join, acc);
+    join.pos = { x: acc.sx / Math.max(1e-6, acc.v), z: acc.sz / Math.max(1e-6, acc.v) };
+    join.value = acc.v;
+    join.ids = [...join.ids, ...c.ids.filter((id) => !join!.ids.includes(id))];
+    join.lastAt = world.time;
+    return join;
+  }
+  const rep: Report = { id: b.seq++, pos, value: c.v, ids: [...c.ids], firstAt: world.time, lastAt: world.time, noted: false, crossed: false, hunters: [], screens: new Map() };
+  b.list = [...b.list, rep];
+  taken.set(rep, { sx: c.sx, sz: c.sz, v: c.v });
+  return rep;
+}
+
 function updateReports(world: World, f: Faction, r: InfiltrationRules, units: readonly Unit[]): void {
   const now = world.time;
+  const taken = new Map<Report, Acc>();
   for (const c of clusters(r, units)) {
     const pos = { x: c.sx / Math.max(1e-6, c.v), z: c.sz / Math.max(1e-6, c.v) };
-    const rep = reportAt(world, f, pos, c.v, c.ids);
-    rep.pos = pos;
-    rep.value = c.v;
-    rep.ids = c.ids;
-    if (!rep.noted && c.v >= r.report_min_value) {
+    const rep = clusterReport(world, f, r, taken, c, pos);
+    if (!rep.noted && rep.value >= r.report_min_value) {
       rep.noted = true;
-      world.note(f.id, 'log.infiltrator', { n: c.ids.length, point: nearestOwnPlace(world, f.id, pos), x: Math.round(pos.x), z: Math.round(pos.z) }, 'alert');
+      world.note(f.id, 'log.infiltrator', { n: rep.ids.length, point: nearestOwnPlace(world, f.id, rep.pos), x: Math.round(rep.pos.x), z: Math.round(rep.pos.z) }, 'alert');
     }
   }
   const b = bookOf(f);

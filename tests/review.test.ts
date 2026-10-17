@@ -17,7 +17,7 @@ import { completeJob, jobFront, needRoadLinks, roadSegmentOk, startRoadJob, thin
 import type { TransportJob } from '../src/sim/transportstate';
 import type { ManualTask } from '../src/sim/types';
 import { selectTarget } from '../src/sim/combat';
-import { rearDeep, rearDepth } from '../src/sim/infiltration';
+import { infiltrationReports, rearDeep, rearDepth, reportInfiltrators } from '../src/sim/infiltration';
 import { picketGap, picketSlots } from '../src/sim/pickets';
 import { holdsLine } from '../src/sim/zoc';
 import { dist, headingTo, type V2 } from '../src/sim/vec';
@@ -363,6 +363,50 @@ describe('review MED 11: the main thread knows the open engineer jobs', () => {
     applyTransport(mirror, snap);
     expect(mirror.transport!.jobView).toEqual(snap.jobs);
   }, 180_000);
+});
+
+describe('review MED 9: rear reports merge clusters only within the cluster radius', () => {
+  it('two raids 500 m apart keep two reports instead of overwriting one', () => {
+    const match = createMatch(data, { mapId: 'generated', factions: 4, infoMode: 'open', seed: 11, difficulty: 'normal', playerSlot: 0, spectate: true });
+    const w = match.world;
+    const r = w.data.rules.infiltration;
+    const f = w.factions[0];
+    const nav = w.nav(false, 35);
+    const gap = (r.report_cluster_m + r.report_match_m) / 2;
+    expect(gap).toBeGreaterThan(r.report_cluster_m);
+    // Two points deep in faction 0's ground, `gap` apart, clear of its units.
+    const hq = w.hqPos(0);
+    let pa: V2 | null = null;
+    let pb: V2 | null = null;
+    for (let rad = 300; rad <= 1500 && !pa; rad += 100) for (let k = 0; k < 32 && !pa; k++) {
+      const ang = (k / 32) * Math.PI * 2;
+      const a = { x: hq.x + Math.cos(ang) * rad, z: hq.z + Math.sin(ang) * rad };
+      const b = { x: a.x + Math.cos(ang + Math.PI / 2) * gap, z: a.z + Math.sin(ang + Math.PI / 2) * gap };
+      if (![a, b].every((p) => nav.passable(p) && rearDepth(w, f, p) > r.report_depth_m + 50)) continue;
+      if (w.aliveUnits.some((u) => u.owner !== 0 && [a, b].some((p) => dist(u.pos, p) < r.report_isolated_m + 50))) continue;
+      pa = a;
+      pb = b;
+    }
+    expect(pa).not.toBeNull();
+    const raid = (p: V2): void => {
+      for (let i = 0; i < 3; i++) {
+        const u = w.spawnUnit(1, 'infantry', nav.nearestPassable({ x: p.x + i * 8, z: p.z }, 30) ?? p, w.factions[1].fronts[0].id);
+        u.manual = { type: 'hold', pos: { ...u.pos } };
+      }
+    };
+    raid(pa!);
+    w.spatial.rebuild(w.aliveUnits);
+    reportInfiltrators(w);
+    const first = infiltrationReports(f).filter((rep) => dist(rep.pos, pa!) < r.report_cluster_m);
+    expect(first).toHaveLength(1);
+    raid(pb!);
+    w.spatial.rebuild(w.aliveUnits);
+    w.tick += w.tickHz;
+    reportInfiltrators(w);
+    const reps = infiltrationReports(f);
+    expect(reps.some((rep) => rep.id === first[0].id && dist(rep.pos, pa!) < r.report_cluster_m)).toBe(true);
+    expect(reps.some((rep) => rep.id !== first[0].id && dist(rep.pos, pb!) < r.report_cluster_m)).toBe(true);
+  }, 120_000);
 });
 
 /** Issue one command as `actor` and return its outcome. */
