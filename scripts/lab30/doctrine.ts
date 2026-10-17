@@ -3,7 +3,10 @@
  * (medium generated map) and a 4-FFA with all four, headless, open information.
  *
  *   npx tsx scripts/lab30/doctrine.ts [--seeds 7,11,13] [--minutes 45] [--jobs 8]
- *        [--suite duel,ffa] [--size medium] [--off] [--tag run]
+ *        [--suite duel,ffa] [--size medium] [--only blitz] [--set "a.b=1;c.d=x"] [--off] [--tag run]
+ *
+ * Duels run both slot orders on every seed (the 1v1 corners are not symmetric). `--only d` keeps the
+ * duels that involve doctrine d; `--set` overrides rules.json paths (JSON values) for experiments.
  *
  * `--off` runs the same matches with doctrine effects switched off (rules doctrines.enabled=false)
  * for the A/B. Output: media/stats/lab30/doctrine-<tag>-<ts>.{md,json}: win matrix, per-doctrine
@@ -100,7 +103,9 @@ function dataDir(off: boolean, set: string): string {
   const dir = mkdtempSync(join(tmpdir(), 'lwg-doct-'));
   const rules = JSON.parse(readFileSync('docs/data/rules.json', 'utf8')) as Record<string, unknown> & { doctrines?: { enabled: boolean } };
   if (off && rules.doctrines) rules.doctrines.enabled = false;
-  for (const kv of set.split(';').filter(Boolean)) {
+  // `--set @file`: one override per line (or ';'-separated).
+  const text = set.startsWith('@') ? readFileSync(set.slice(1), 'utf8') : set;
+  for (const kv of text.split(/[;\r\n]+/).map((x) => x.trim()).filter(Boolean)) {
     const [path, raw] = kv.split('=');
     const keys = path.trim().split('.');
     let o = rules as Record<string, unknown>;

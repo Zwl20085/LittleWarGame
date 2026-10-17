@@ -8,6 +8,8 @@ import {
   occupyWeight, profileOf, raidIntervalMul, retreatHp, temperamentBias,
 } from '../src/sim/doctrines';
 import { doctrineDirective, doctrinePhase } from '../src/sim/doctrineai';
+import { thinkInvestment } from '../src/sim/econai';
+import { investStyleOf } from '../src/sim/econZoneAi';
 import type { DoctrineId } from '../src/sim/types';
 import type { World } from '../src/sim/world';
 
@@ -71,6 +73,13 @@ describe('doctrines: profile levers', () => {
     expect(profileOf(p, p.factions[0])).toBeNull();
     expect(retreatHp(p, 0)).toBeNull();
     expect(investWeight(p, p.factions[0])).toBe(1);
+  });
+
+  it('the doctrine invest weight is the zone investment style of an AI (econZoneAi seam)', () => {
+    const w = duel(['builder', 'blitz']);
+    for (const f of w.factions) thinkInvestment(w, f);
+    expect(investStyleOf(w.factions[0])).toBe(data.rules.doctrines!.profiles.builder.invest);
+    expect(investStyleOf(w.factions[1])).toBe(data.rules.doctrines!.profiles.blitz.invest);
   });
 
   it('production weights and caps are scaled by the doctrine (blitz: motorized, attrition: guns)', () => {
