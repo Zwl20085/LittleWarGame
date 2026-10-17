@@ -103,7 +103,7 @@ export class UpgradesPanel {
       : block === 'LOCKED'
         ? h('span', { class: 'small' }, t('upg.locked', { req }))
         : h('button', { class: `btn ${block === null ? 'primary' : ''}`, disabled: block !== null, title: block ? t(`fail.${block}`) : '', onclick: () => this.ctx.issue({ type: 'research', upgradeId: id }) },
-          block === 'BUSY' ? t('upg.busy') : t('upg.buy'));
+          block === 'RESEARCH_BUSY' ? t('upg.busy') : t('upg.buy'));
     return h('div', { class: `upg-row ${block === 'OWNED' ? 'done' : ''}` },
       h('div', { class: 'upg-name' }, h('b', {}, t(`upg.${id}`)), h('div', { class: 'small' }, t(descKey(id)))),
       h('div', { class: 'upg-cost small' }, t('upg.cost', { p: c.p, m: c.m, s: r?.items[id]?.seconds ?? 0 })),

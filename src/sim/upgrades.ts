@@ -41,7 +41,7 @@ export function upgradeCost(world: World, f: Faction, id: UpgradeId): { p: numbe
 
 export const researchSeconds = (r: UpgradeRules, id: UpgradeId): number => r.items[id]?.seconds ?? 0;
 
-export type ResearchFail = 'DISABLED' | 'BAD_VALUE' | 'OWNED' | 'BUSY' | 'LOCKED' | 'INSUFFICIENT_P' | 'INSUFFICIENT_M';
+export type ResearchFail = 'DISABLED' | 'BAD_VALUE' | 'OWNED' | 'RESEARCH_BUSY' | 'LOCKED' | 'INSUFFICIENT_P' | 'INSUFFICIENT_M';
 
 /** Why `id` cannot be started now, or null. */
 export function researchBlock(world: World, f: Faction, id: string): ResearchFail | null {
@@ -50,7 +50,7 @@ export function researchBlock(world: World, f: Faction, id: string): ResearchFai
   if (!(UPGRADE_IDS as readonly string[]).includes(id) || !r.items[id]) return 'BAD_VALUE';
   const s = f.upgrades;
   if (owns(s, id)) return 'OWNED';
-  if (s.research) return 'BUSY';
+  if (s.research) return 'RESEARCH_BUSY';
   if ((r.items[id].requires ?? []).some((q) => !owns(s, q))) return 'LOCKED';
   const c = upgradeCost(world, f, id as UpgradeId);
   if (f.p + 1e-9 < c.p) return 'INSUFFICIENT_P';

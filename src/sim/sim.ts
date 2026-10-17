@@ -15,6 +15,9 @@ import { convoySecond } from './convoy';
 import { drawSecond, initPlaces, logisticsDemand, seedStocks, stockSecond } from './settlements';
 import { econIncome, econSecond } from './econ';
 import { fundSecond } from './econai';
+import { econZonesSecond, zoneIncome } from './econZones';
+import { minefieldSecond } from './minefields';
+import { capitalDefenceSecond, initCapitalDefence, observeCapital } from './capitalDefence';
 import { createHighCommand, thinkHighCommand } from './command';
 import { initialDirective } from './directive';
 import { buildFrontInfoFor } from './frontai';
@@ -102,6 +105,8 @@ export function createMatch(baseData: GameData, config: MatchConfig): Match {
       if (!placeStructure(world, f.id, 'pillbox', sp.pos, sp.facingDeg * DEG)) world.spawnUnit(f.id, 'mg', sp.pos, f.mainFront, { fixed: true, facingDeg: sp.facingDeg });
     }
   }
+  // 3.0: absolute defence perimeter + artillery position at every capital (capitalDefence.ts).
+  initCapitalDefence(world);
   // Starting territory: settlements near each capital (and closer to it than to any other).
   const initR = data.rules.territory?.initial_radius_m ?? 0;
   for (const o of world.objectives) {
@@ -150,6 +155,8 @@ export function updateVisibility(world: World): void {
       }
     }
     // Owned observation points add an observer with 180 m radius.
+    // 3.0: the capital observation ring (fog mode).
+    observeCapital(world, f.id, vis);
     for (const o of world.objectives) {
       if (o.owner !== f.id || o.type !== 'observation') continue;
       const y = world.terrain.heightAt(o.pos.x, o.pos.z) + 6;
@@ -227,6 +234,9 @@ function economySecond(match: Match): void {
     }
     // 2.2 economic buildings (econ.ts) add to the territory output.
     const econ = econIncome(world, f.id, (fi, p) => inSupply(match, fi, p));
+    const zinc = zoneIncome(world, f.id);
+    econ.p += zinc.p;
+    econ.m += zinc.m;
     f.econP = econ.p;
     f.econM = econ.m;
     const rates = economyRates(f.alloc, rules, bonus.p + econ.p, bonus.m + econ.m, cityShare);
@@ -262,6 +272,10 @@ function economySecond(match: Match): void {
   stockSecond(world, (fi, p) => inSupply(match, fi, p));
   drawSecond(world);
   econSecond(world);
+  // 3.0: economic zones, minefields, the capital perimeter crews.
+  econZonesSecond(world, (p) => match.front.ownerAt(p));
+  minefieldSecond(world);
+  capitalDefenceSecond(world);
   for (const u of world.units.values()) {
     if (u.hp <= 0) continue;
     supplyTick(world, u, 1);
@@ -413,7 +427,7 @@ export function step(match: Match): void {
   if (world.tick % (10 * hz) === 0) {
     for (let i = world.forts.length - 1; i >= 0; i--) {
       const f = world.forts[i];
-      if (f.hp <= 0 && f.kind !== 'pontoon') world.forts.splice(i, 1);
+      if (f.hp <= 0 && f.kind !== 'pontoon' && !f.permanent) world.forts.splice(i, 1);
       else if (f.occupant !== null && !world.unitAlive(f.occupant)) f.occupant = null;
       if (f.occupants && f.occupants.some((id) => !world.unitAlive(id))) f.occupants = f.occupants.filter((id) => world.unitAlive(id));
     }

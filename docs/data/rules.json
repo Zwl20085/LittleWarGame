@@ -194,6 +194,41 @@
       "depot": {"cost_p": 40, "cost_m": 100, "build_seconds": 60, "max_hp": 2200, "m_per_min_k": 0, "p_per_min_k": 0, "stock_cap_k": 14, "fill_per_min_k": 6}
     }
   },
+  "econ_zones": {
+    "comment": "3.0 engineer-built economic zones (经济区, V30_SPEC §7; econZones.ts). Built anywhere on own / neutral ground away from towns by an engineer job; level 1 → 2 → 3 by further jobs + cost. Output (_k: per army_scale 1, × army_scale × army_scale_income_factor, × HP share) is halved without a road link to an own town; a beaten side (capital_defence.min_held_share) gets beaten_output of it (lab: zones far behind the front kept losers alive). Raidable like economic buildings (shellfire, demolition), captured with the ground (HP capped at captured_hp_ratio), ruins rebuilt at rebuild_cost_ratio. enabled=false for the lab.",
+    "enabled": true,
+    "levels": [
+      {"cost_p": 15, "cost_m": 120, "work_seconds": 60, "max_hp": 1800, "p_per_min_k": 4, "m_per_min_k": 8},
+      {"cost_p": 25, "cost_m": 170, "work_seconds": 90, "max_hp": 3000, "p_per_min_k": 8, "m_per_min_k": 16},
+      {"cost_p": 35, "cost_m": 250, "work_seconds": 120, "max_hp": 4500, "p_per_min_k": 12, "m_per_min_k": 26}
+    ],
+    "min_town_distance_m": 220,
+    "min_village_distance_m": 90,
+    "min_zone_distance_m": 220,
+    "min_enemy_distance_m": 300,
+    "unlinked_output": 0.5,
+    "road_link_m": 70,
+    "captured_hp_ratio": 0.6,
+    "rebuild_cost_ratio": 0.6,
+    "max_per_faction": 6,
+    "beaten_output": 0,
+    "builders": 2
+  },
+  "capital_defence": {
+    "comment": "3.0 absolute defence perimeter (绝对国防圈, V23_SPEC §1.3 / V30_SPEC §8; capitalDefence.ts): a free, permanent ring of `strongpoints` bunker-hard strongpoints at radius_m around every capital, each with a fixed MG crew (crew_unit), plus a fixed artillery position (artillery_unit) behind the capital. Small arms cannot break the concrete (it must be stormed by armour or heavy guns); engineers repair it; a dead crew is replaced while its strongpoint stands and the enemy is not close. observation: in fog mode the capital sees every hostile within radius_m (shown on the minimap). A faction holding less than min_held_share of the mean settlements of the living factions (a beaten side, not a backdoor victim) no longer replaces crews or repairs the ring, so wars stay endable. enabled flags are for the lab.",
+    "enabled": true,
+    "radius_m": 210,
+    "strongpoints": 5,
+    "min_held_share": 0.5,
+    "crew_unit": "mg",
+    "artillery_unit": "mortar",
+    "artillery_back_m": 45,
+    "crew_respawn_seconds": 90,
+    "crew_min_hp_ratio": 0.5,
+    "quiet_m": 200,
+    "repair_hp_per_second": 30,
+    "observation": {"enabled": true, "radius_m": 800}
+  },
   "morale": {
     "starting_morale": 100,
     "suppression_enter": 45,
@@ -227,8 +262,22 @@
       "comment": "2.0 defensive buildings (user: 工兵可以建设筑垒区域、炮楼、堡垒，需要步兵/侦察等单位进入驻防，不占人口). Built by engineers (structures.ts); costs are per building and NOT × army_scale (like unit costs). Buildings cost no population and squads inside them do not count against the population cap. A fortified zone (筑垒地域) is a planned layout of trenches + pillboxes + a bunker along a line, not a building of its own.",
       "structures": [
         {"id": "pillbox", "label_zh": "炮楼", "cost_p": 6, "cost_m": 50, "work_seconds": 60, "max_hp": 2750, "capacity": 1, "max_crews": 1, "accepts": ["infantry", "recon", "engineer", "motor_inf", "mg"], "cover": 3, "weapon": "pillbox_mg", "fire_mul": {"damage": 1, "range": 1}, "blind_rear_deg": 90, "occupant_blast_mul": 0.55, "muzzle_raise_m": 2.2},
-        {"id": "bunker", "label_zh": "堡垒", "cost_p": 12, "cost_m": 100, "work_seconds": 100, "max_hp": 5625, "capacity": 2, "max_crews": 1, "accepts": ["infantry", "recon", "engineer", "motor_inf", "mg", "at_gun"], "cover": 3, "weapon": null, "fire_mul": {"damage": 1.2, "range": 1.15}, "blind_rear_deg": 0, "occupant_blast_mul": 0.4, "muzzle_raise_m": 0.8}
+        {"id": "bunker", "label_zh": "堡垒", "cost_p": 12, "cost_m": 100, "work_seconds": 100, "max_hp": 5625, "capacity": 2, "max_crews": 1, "accepts": ["infantry", "recon", "engineer", "motor_inf", "mg", "at_gun"], "cover": 3, "weapon": null, "fire_mul": {"damage": 1.2, "range": 1.15}, "blind_rear_deg": 0, "occupant_blast_mul": 0.4, "muzzle_raise_m": 0.8},
+        {"id": "fortress", "label_zh": "要塞", "cost_p": 28, "cost_m": 260, "work_seconds": 220, "max_hp": 11000, "capacity": 3, "max_crews": 2, "accepts": ["infantry", "recon", "engineer", "motor_inf", "mg", "at_gun"], "cover": 3, "weapon": null, "fire_mul": {"damage": 1.3, "range": 1.2, "accuracy": 1.15}, "blind_rear_deg": 0, "occupant_blast_mul": 0.3, "muzzle_raise_m": 1.2, "absorb_share": 0.65},
+        {"id": "at_emplacement", "label_zh": "反坦克阵地", "cost_p": 8, "cost_m": 70, "work_seconds": 60, "max_hp": 3200, "capacity": 1, "max_crews": 1, "accepts": ["at_gun"], "cover": 3, "weapon": null, "fire_mul": {"damage": 1.1, "range": 1.1, "accuracy": 1.3}, "blind_rear_deg": 120, "occupant_blast_mul": 0.45, "muzzle_raise_m": 0.3, "absorb_share": 0.7},
+        {"id": "strongpoint", "label_zh": "国防圈支撑点", "cost_p": 0, "cost_m": 0, "work_seconds": 100, "max_hp": 9000, "capacity": 2, "max_crews": 1, "accepts": ["infantry", "recon", "engineer", "motor_inf", "mg", "at_gun"], "cover": 3, "weapon": null, "fire_mul": {"damage": 1.25, "range": 1.15}, "blind_rear_deg": 0, "occupant_blast_mul": 0.3, "muzzle_raise_m": 1.5, "absorb_share": 0.72}
       ],
+      "tiers_comment": "3.0 (V30_SPEC §8): works upgrade in place by engineers (worksTiers.ts): pillbox → bunker → fortress, trench → fortified trench (tier 1: hp × hp_mul, wider cover). AT emplacement = dug-in AT gun (accuracy and armour: absorb_share). Minefields: engineer-laid rectangles that slow hostile vehicles and blow them up by chance; engineers clear them slowly. Manned works see farther and spot for artillery. enabled=false switches the whole tier system off for the lab.",
+      "tiers": {
+        "enabled": true,
+        "upgrades": [
+          {"from": "pillbox", "to": "bunker", "cost_p": 8, "cost_m": 60, "work_seconds": 60},
+          {"from": "bunker", "to": "fortress", "cost_p": 16, "cost_m": 160, "work_seconds": 120},
+          {"from": "trench", "to": "trench", "cost_p": 6, "cost_m": 30, "work_seconds": 40, "hp_mul": 2.2, "cover_radius_m": 8}
+        ],
+        "minefield": {"cost_p": 4, "cost_m": 60, "work_seconds": 45, "length_m": 48, "depth_m": 18, "max_hp": 600, "charge_hp": 60, "clear_hp_per_second": 4, "vehicle_speed_mul": 0.5, "trigger_chance_per_second": 0.2, "damage_ratio": 0.3},
+        "manned": {"observation_bonus_m": 120, "artillery_spotting": true}
+      },
       "garrison": {
         "enter_radius_m": 6,
         "leave_radius_m": 9,

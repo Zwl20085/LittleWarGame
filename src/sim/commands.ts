@@ -6,8 +6,10 @@ import type { Match } from './sim';
 import { DIRECTIVE_KINDS, DIRECTIVE_LINE_MIN_M, setDirective } from './directive';
 import { insisted } from './compliance';
 import { releaseFund } from './econai';
+import { applyWorks } from './worksCommands';
 import { applyDirectiveNow } from './theatre';
 import type { DirectiveKind, Unit } from './types';
+import { startRailExtension, startRailRepair, startRoadJob, type JobResult } from './transportjobs';
 import { cancelResearch, startResearch } from './upgrades';
 import { dist, type V2 } from './vec';
 
@@ -41,16 +43,29 @@ export type Command =
   | { type: 'setDirective'; kind: DirectiveKind; axis?: V2; line?: { a: V2; b: V2 }; force?: boolean }
   /** 2.1: stop a fortified-zone project (works already standing remain). */
   | { type: 'cancelZone'; zoneId: number }
+  /** 3.0: found an economic zone at a point / raise or rebuild one (econZones.ts); upgrade a work or lay a minefield (worksTiers.ts). */
+  | { type: 'buildZone'; pos: V2 }
+  | { type: 'upgradeZone'; zoneId: number }
+  | { type: 'upgradeWork'; fortId: number }
+  | { type: 'layMines'; pos: V2; facing: number }
   | { type: 'unitOrder'; unitIds: number[]; order: 'move' | 'moveHold' | 'attackMove' | 'retreat' | 'hold' | 'resume'; pos?: V2; queue?: boolean }
   | { type: 'focus'; unitIds: number[]; targetId: number }
   /** 3.0 unit upgrades: pay for and start researching an item at the capital; cancel the research under way. */
   | { type: 'research'; upgradeId: string }
-  | { type: 'cancelResearch' };
+  | { type: 'cancelResearch' }
+  /** 3.0 engineers: lay a road a -> b (<= road_job.max_len_m; bridges short gaps). */
+  | { type: 'buildRoad'; a: V2; b: V2 }
+  /** 3.0 engineers: rebuild a cut rail line the faction holds at both ends. */
+  | { type: 'repairRail'; lineId: number }
+  /** 3.0 engineers: extend the rail from own station `stationIdx` to own town / city `to` (objective index). */
+  | { type: 'extendRail'; stationIdx: number; to: number };
 
 export type CommandFail =
   | 'FACTION_DEAD' | 'NOT_OWNER' | 'STALE_TARGET' | 'UNREACHABLE' | 'BAD_VALUE' | 'ROUTING'
   | 'LOCKED' | 'INSUFFICIENT_M' | 'INSUFFICIENT_P' | 'OUT_OF_BOUNDS' | 'NO_ORDER' | 'NO_FRONT' | 'NO_SLOT' | 'CONTESTED'
-  | 'LINE_SHORT' | 'LINE_ONLY_FORTIFY' | 'DISABLED' | 'OWNED' | 'BUSY' | 'NO_RESEARCH';
+  | 'LINE_SHORT' | 'LINE_ONLY_FORTIFY' | 'BAD_SITE' | 'MAX_LEVEL' | 'BUSY'
+  | 'TOO_LONG' | 'BAD_TERRAIN' | 'NOT_CUT' | 'JOB_BUSY' | 'NOT_HELD' | 'HAS_STATION' | 'TRANSPORT_OFF'
+  | 'DISABLED' | 'OWNED' | 'RESEARCH_BUSY' | 'NO_RESEARCH';
 
 export interface CommandEnvelope {
   readonly commandId: number;
@@ -137,6 +152,11 @@ function apply(match: Match, env: CommandEnvelope): CommandOutcome {
       if (typeof r !== 'string') return OK;
       return fail(r === 'INSUFFICIENT_P' || r === 'INSUFFICIENT_M' || r === 'NOT_OWNER' || r === 'NO_SLOT' ? r : r === 'CONTESTED' ? 'CONTESTED' : 'BAD_VALUE');
     }
+    case 'buildZone':
+    case 'upgradeZone':
+    case 'upgradeWork':
+    case 'layMines':
+      return applyWorks(match, f, c);
     case 'cancelOrder':
       return cancelOrder(w, f, c.orderId) ? OK : fail('NO_ORDER');
     case 'research': {
@@ -227,6 +247,17 @@ function apply(match: Match, env: CommandEnvelope): CommandOutcome {
       });
       return any ? OK : fail('ROUTING');
     }
+    case 'buildRoad': {
+      if (!finiteV2(c.a) || !finiteV2(c.b)) return fail('BAD_VALUE');
+      if (!w.terrain.inBounds(c.a.x, c.a.z) || !w.terrain.inBounds(c.b.x, c.b.z)) return fail('OUT_OF_BOUNDS');
+      return jobOutcome(startRoadJob(w, env.actor, { x: c.a.x, z: c.a.z }, { x: c.b.x, z: c.b.z }));
+    }
+    case 'repairRail':
+      if (!Number.isInteger(c.lineId)) return fail('BAD_VALUE');
+      return jobOutcome(startRailRepair(w, env.actor, c.lineId));
+    case 'extendRail':
+      if (!Number.isInteger(c.stationIdx) || !Number.isInteger(c.to)) return fail('BAD_VALUE');
+      return jobOutcome(startRailExtension(w, env.actor, c.stationIdx, c.to));
     case 'focus': {
       const t = w.unitAlive(c.targetId);
       if (!t || !w.knows(env.actor, t)) return fail('STALE_TARGET');
@@ -239,6 +270,16 @@ function apply(match: Match, env: CommandEnvelope): CommandOutcome {
       return OK;
     }
   }
+}
+
+const JOB_FAIL: Record<string, CommandFail> = {
+  DISABLED: 'TRANSPORT_OFF', LENGTH: 'TOO_LONG', WATER: 'BAD_TERRAIN', SLOPE: 'BAD_TERRAIN', OUT_OF_BOUNDS: 'OUT_OF_BOUNDS',
+  NO_BUDGET: 'INSUFFICIENT_M', NOT_CUT: 'NOT_CUT', NOT_HELD: 'NOT_HELD', BUSY: 'JOB_BUSY', HAS_STATION: 'HAS_STATION', BAD_TARGET: 'BAD_VALUE',
+};
+
+/** Map an engineer-job refusal (transportjobs.ts) to a structured command failure. */
+function jobOutcome(r: JobResult): CommandOutcome {
+  return r.ok ? OK : fail(JOB_FAIL[r.reason] ?? 'BAD_VALUE');
 }
 
 function formationOffset(i: number, n: number): V2 {

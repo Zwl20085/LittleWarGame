@@ -4,6 +4,7 @@ import type { TransportRules } from '../src/data/types';
 import { moveTo, updateMovement } from '../src/sim/movement';
 import { railRoute, railSecond, railTick } from '../src/sim/rail';
 import { RoadNet } from '../src/sim/roadnet';
+import { CommandBus, type CommandOutcome, type Command } from '../src/sim/commands';
 import { createMatch, type Match } from '../src/sim/sim';
 import { Ground } from '../src/sim/terrain';
 import { groundMul, moveClassOf, transportRules } from '../src/sim/transport';
@@ -207,4 +208,46 @@ describe('3.0 transport: railways and engineer jobs', () => {
     expect(r2).toEqual(r1);
     expect(w.transport!.trains.length).toBe(0);
   }, 180_000);
+
+  it('validates the engineer commands with structured failure reasons', () => {
+    const w = match.world;
+    const st = w.transport!;
+    const bus = new CommandBus();
+    const run = (actor: number, cmd: Command): CommandOutcome => {
+      let out: CommandOutcome = { ok: true };
+      bus.onResult = (_e, o) => { out = o; };
+      bus.issue(match, actor, cmd);
+      bus.flush(match);
+      return out;
+    };
+    const hq = w.hqPos(0);
+    w.factions[0].p = 1e5;
+    w.factions[0].m = 1e5;
+    // Too long, out of bounds, not a number.
+    expect(run(0, { type: 'buildRoad', a: hq, b: { x: hq.x + (hq.x > w.terrain.width / 2 ? -700 : 700), z: hq.z } })).toEqual({ ok: false, reason: 'TOO_LONG' });
+    expect(run(0, { type: 'buildRoad', a: hq, b: { x: -50, z: -50 } })).toEqual({ ok: false, reason: 'OUT_OF_BOUNDS' });
+    expect(run(0, { type: 'buildRoad', a: hq, b: { x: NaN, z: 0 } })).toEqual({ ok: false, reason: 'BAD_VALUE' });
+    // Rail: unknown / whole line, and a line that is not ours.
+    expect(run(0, { type: 'repairRail', lineId: 9999 })).toEqual({ ok: false, reason: 'TRANSPORT_OFF' });
+    const whole = st.lines.find((l) => !l.cut)!;
+    expect(run(0, { type: 'repairRail', lineId: whole.id })).toEqual({ ok: false, reason: 'NOT_CUT' });
+    expect(run(0, { type: 'repairRail', lineId: 0.5 })).toEqual({ ok: false, reason: 'BAD_VALUE' });
+    // A stretch of open ground is accepted and queues a job; a broke faction is refused.
+    let a: V2 | null = null;
+    let b: V2 | null = null;
+    for (let k = 0; k < 64 && !a; k++) {
+      const ang = (k / 64) * Math.PI * 2;
+      const p = { x: hq.x + Math.cos(ang) * 600, z: hq.z + Math.sin(ang) * 600 };
+      const q = { x: p.x + Math.cos(ang + 1.9) * 200, z: p.z + Math.sin(ang + 1.9) * 200 };
+      if (roadSegmentOk(w, p, q).ok) { a = p; b = q; }
+    }
+    expect(a).not.toBeNull();
+    w.factions[0].m = 0;
+    expect(run(0, { type: 'buildRoad', a: a!, b: b! })).toEqual({ ok: false, reason: 'INSUFFICIENT_M' });
+    w.factions[0].m = 1e5;
+    const jobs = st.jobs.length;
+    expect(run(0, { type: 'buildRoad', a: a!, b: b! })).toEqual({ ok: true });
+    expect(st.jobs.length).toBe(jobs + 1);
+    expect(run(2, { type: 'extendRail', stationIdx: 0, to: 0 }).ok).toBe(false);
+  });
 });

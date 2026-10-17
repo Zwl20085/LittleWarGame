@@ -1,5 +1,6 @@
 import type { EconKind, EconRules } from '../data/types';
 import { trySpend } from './economy';
+import { damageZonesAt } from './econZones';
 import { armyScale, placeById, placeContested, placeOwner } from './settlements';
 import type { EconBuilding, Faction, Place, Unit, V3 } from './types';
 import { dist, headingTo, type V2 } from './vec';
@@ -125,6 +126,8 @@ const FOOTPRINT = 7;
 
 /** Shellfire: HE blast at `at` damages buildings within its radius (+ footprint). */
 export function damageEconAt(world: World, at: V3, radius: number, damage: number): void {
+  // 3.0: economic zones take shellfire the same way (econZones.ts).
+  if (world.econZones.length > 0 && radius > 0) damageZonesAt(world, at, radius, damage);
   if (world.econ.length === 0 || radius <= 0) return;
   for (const b of world.econ) {
     if (b.ruined) continue;
@@ -136,7 +139,7 @@ export function damageEconAt(world: World, at: V3, radius: number, damage: numbe
 }
 
 /** Is this unit demolishing enemy buildings it stands next to (raid / infiltration / attack-move / engineers)? */
-function demolisher(u: Unit): boolean {
+export function demolisher(u: Unit): boolean {
   if (u.hp <= 0 || u.fixed || u.routing || u.def.id === 'supply_truck' || u.primary === null) return false;
   if (u.opRole === 'raid' || u.opRole === 'infiltrate') return true;
   if (u.def.id === 'engineer' && u.buildTargetId === null) return true;

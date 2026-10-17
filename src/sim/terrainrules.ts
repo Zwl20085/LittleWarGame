@@ -1,7 +1,8 @@
 import { perch, sightLine } from './buildings';
 import { TERRAIN_COMBAT as TC, BUILDING } from './config';
 import { Ground } from './terrain';
-import { garrisonConcealed } from './structures';
+import { garrisonConcealed, isGarrisoned } from './structures';
+import { mannedObservationM, mannedSpotting } from './worksTiers';
 import type { Unit } from './types';
 import type { V2 } from './vec';
 import type { World } from './world';
@@ -78,7 +79,8 @@ export function observerOf(world: World, u: Unit): Observer {
     obs.z = b.z;
     obs.y = world.terrain.heightAt(b.x, b.z) + Math.min(b.h, BUILDING.perchEyeMaxM) + 1;
   } else {
-    obs.r = u.def.vision * (1 + elev);
+    // 3.0: occupants of a manned work observe farther (worksTiers.ts).
+    obs.r = u.def.vision * (1 + elev) + (u.fortId !== null && isGarrisoned(u) ? mannedObservationM(world) : 0);
     obs.x = u.pos.x;
     obs.z = u.pos.z;
     obs.y = u.y + 1.8;
@@ -98,9 +100,11 @@ export function hasHighObserver(world: World, f: number, t: Unit): boolean {
   for (const o of world.spatial.query(t.pos.x, t.pos.z, TC.highObserverRange)) {
     if (o.owner !== f || o.hp <= 0 || o.routing) continue;
     const high = o.y - t.y >= TC.highGroundM;
-    if (!high && o.cover !== 3) continue;
+    // 3.0: a manned work spots for the artillery like high ground (worksTiers.ts).
+    const manned = o.fortId !== null && isGarrisoned(o) && mannedSpotting(world);
+    if (!high && !manned && o.cover !== 3) continue;
     const ob = observerOf(world, o);
-    if (!high && !ob.perched) continue;
+    if (!high && !manned && !ob.perched) continue;
     const dx = o.pos.x - t.pos.x;
     const dz = o.pos.z - t.pos.z;
     if (dx * dx + dz * dz > ob.r * ob.r) continue;

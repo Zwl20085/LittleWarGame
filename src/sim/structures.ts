@@ -9,6 +9,8 @@ import { availableM } from './production';
 import { hostileMask } from './spatial';
 import { Ground } from './terrain';
 import { dig, openWork } from './works';
+import { needsWork, tierStep } from './worksTiers';
+import { zoneStep } from './econZones';
 import type { Faction, Fort, FortKind, Front, Unit, Zone } from './types';
 import { angleDiff, DEG, dist, headingTo, type V2 } from './vec';
 import type { World } from './world';
@@ -59,9 +61,10 @@ export const STRUCT = {
   trenchSlotBackM: 2,
 } as const;
 
-export type StructureKind = Extract<FortKind, 'pillbox' | 'bunker'>;
+export type StructureKind = Extract<FortKind, 'pillbox' | 'bunker' | 'fortress' | 'at_emplacement' | 'strongpoint'>;
 
-export const isStructure = (k: FortKind): k is StructureKind => k === 'pillbox' || k === 'bunker';
+export const isStructure = (k: FortKind): k is StructureKind =>
+  k === 'pillbox' || k === 'bunker' || k === 'fortress' || k === 'at_emplacement' || k === 'strongpoint';
 
 /** Rules entry for a building kind. */
 export function structureDef(world: World, kind: StructureKind): DefensiveStructureDef {
@@ -159,12 +162,13 @@ function garrisonWeapon(world: World, u: Unit, def: DefensiveStructureDef): Weap
   if (def.weapon) return world.data.weapons.get(def.weapon) ?? null;
   const w = u.primary;
   const m = def.fire_mul;
-  if (!w || !m || (m.damage === 1 && m.range === 1)) return w;
-  const key = `${m.damage}:${m.range}`;
+  const acc = m?.accuracy ?? 1;
+  if (!w || !m || (m.damage === 1 && m.range === 1 && acc === 1)) return w;
+  const key = `${m.damage}:${m.range}:${acc}`;
   let byMul = slitWeapons.get(w);
   if (!byMul) slitWeapons.set(w, (byMul = new Map()));
   let out = byMul.get(key);
-  if (!out) byMul.set(key, (out = { ...w, damage: w.damage * m.damage, range: w.range * m.range }));
+  if (!out) byMul.set(key, (out = { ...w, damage: w.damage * m.damage, range: w.range * m.range, accuracy: Math.min(1, w.accuracy * acc) }));
   return out;
 }
 
@@ -185,6 +189,30 @@ export function leaveStructure(world: World, u: Unit): void {
   const fort = g?.fort ?? world.fortById(u.fortId);
   u.fortId = null;
   if (fort) prune(world, fort);
+}
+
+/**
+ * 3.0: bind a unit into a building whatever `accepts` says (the perimeter's fixed crews,
+ * capitalDefence.ts). No-op when it is full.
+ */
+export function bindOccupant(world: World, u: Unit, fort: Fort): boolean {
+  if (!isStructure(fort.kind) || fort.hp <= 0 || fort.progress < 1) return false;
+  const def = structureDef(world, fort.kind);
+  if (prune(world, fort).length >= def.capacity) return false;
+  enter(world, u, fort, def);
+  return true;
+}
+
+/** 3.0: re-read a building's rules for its occupants after an in-place upgrade (worksTiers.ts). */
+export function refreshGarrison(world: World, fort: Fort): void {
+  if (!isStructure(fort.kind)) return;
+  const def = structureDef(world, fort.kind);
+  for (const id of prune(world, fort)) {
+    const u = world.unitAlive(id);
+    if (!u) continue;
+    u.cover = def.cover;
+    garrisons.set(u, { fort, def, weapon: garrisonWeapon(world, u, def) });
+  }
 }
 
 /** Occupant slot `i` of a building (bunkers: side by side along the front face). */
@@ -267,7 +295,7 @@ function rebind(world: World, u: Unit): Garrison | null {
 export function absorbHit(world: World, u: Unit, dmg: number, penetration: number, attackerOwner: number): number {
   const g = garrisonOf(u);
   if (!g || dmg <= 0) return dmg;
-  const taken = dmg * garrisonRules(world).absorb_share;
+  const taken = dmg * (g.def.absorb_share ?? garrisonRules(world).absorb_share);
   if (penetration > COMBAT.smallArmsPenCutoff) damageStructure(world, g.fort, taken, attackerOwner);
   return dmg - taken;
 }
@@ -402,7 +430,8 @@ export function buildStep(world: World, u: Unit, fort: Fort): boolean {
 }
 
 function completeStructure(world: World, fort: Fort): void {
-  world.note(fort.owner, fort.kind === 'pillbox' ? 'log.pillboxBuilt' : 'log.bunkerBuilt', {}, 'info');
+  if (fort.kind === 'pillbox' || fort.kind === 'bunker') world.note(fort.owner, fort.kind === 'pillbox' ? 'log.pillboxBuilt' : 'log.bunkerBuilt', {}, 'info');
+  else world.note(fort.owner, 'log.workBuilt', { kind: fort.kind }, 'info');
 }
 
 // ---------------------------------------------------------------- jobs and claims
@@ -412,8 +441,9 @@ interface Job { readonly fortId: number; readonly until: number }
 /** Builder assignments made by the planners (fortplans.ts), renewed every HQ think. */
 const jobs = new WeakMap<Unit, Job>();
 
-export function assignJob(world: World, u: Unit, fort: Fort): void {
-  jobs.set(u, { fortId: fort.id, until: world.time + STRUCT.jobSeconds });
+/** Assign a builder to a site: a work (fort) or — 3.0 — an economic zone (ids are world-unique). */
+export function assignJob(world: World, u: Unit, site: { readonly id: number }): void {
+  jobs.set(u, { fortId: site.id, until: world.time + STRUCT.jobSeconds });
 }
 
 /** Current (unexpired) job site id of a unit, or null. */
@@ -542,6 +572,8 @@ function digsFirst(world: World, u: Unit): boolean {
 
 /** Work an assigned site: trench / sandbag (works.dig, riflemen too) or a building (engineers). */
 function work(world: World, u: Unit, fort: Fort): boolean {
+  // 3.0: upgrades, minefields and perimeter repairs (worksTiers.ts).
+  if (fort.upgrade || fort.kind === 'minefield' || (fort.permanent && fort.progress >= 1)) return tierStep(world, u, fort);
   if (isStructure(fort.kind)) return buildStep(world, u, fort);
   if (fort.kind !== 'trench' && fort.kind !== 'sandbag') return false;
   return dig(u, fort, (p) => moveTo(world, u, p), () => stop(u));
@@ -561,7 +593,14 @@ export function structureDuty(world: World, u: Unit, s: Front): boolean {
   if (jobId !== null && !onCall) dropJob(u);
   else if (jobId !== null && !u.routing && !u.spearhead && !u.manual) {
     const fort = world.fortById(jobId);
-    if (!fort || fort.hp <= 0 || fort.progress >= 1 || enemyNear(world, u.owner, fort.pos, STRUCT.noBuildEnemyM)) dropJob(u);
+    if (!fort) {
+      // 3.0: an economic-zone job (econZones.ts).
+      if (zoneStep(world, u, jobId)) {
+        selectTarget(world, u, null);
+        return true;
+      }
+      dropJob(u);
+    } else if (!needsWork(fort) || enemyNear(world, u.owner, fort.pos, STRUCT.noBuildEnemyM)) dropJob(u);
     else if (work(world, u, fort)) {
       selectTarget(world, u, null);
       return true;
