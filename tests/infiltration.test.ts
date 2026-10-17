@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { loadGameData } from '../src/data';
 import { createMatch, step, type Match } from '../src/sim/sim';
 import { speedOf } from '../src/sim/movement';
-import { infiltrationReports, inRear, reportInfiltrators, updateInfiltration } from '../src/sim/infiltration';
+import { infiltrationReports, inRear, reportInfiltrators, threatenedPlaces, updateInfiltration } from '../src/sim/infiltration';
 import { picketGap, picketPoints, picketSlots, reactionGroup, segmentsByProximity } from '../src/sim/pickets';
 import { holdsLine, INFILTRATION_AB, segmentsCross, updateZoc, type ZocContact } from '../src/sim/zoc';
 import type { Front, Unit } from '../src/sim/types';
@@ -292,6 +292,20 @@ describe('rear screen and hunt (infiltration.ts)', () => {
     const still = hunters.filter((u) => u.hp > 0 && u.opRole === 'hunt');
     expect(still.length).toBeGreaterThan(0);
     expect(Math.min(...still.map((u) => dist(u.pos, p)))).toBeLessThan(before);
+  });
+
+  it('screens own economic zones near a report', () => {
+    const match = setup(3);
+    const { world } = match;
+    const r = world.data.rules.infiltration;
+    const f = world.factions[0];
+    const p = at(world.hqPos(0), 600, 0);
+    world.econZones.push({ id: 77, kind: 'ezone2', pos: at(p, 100, 0), facing: 0, owner: 0, level: 2, target: 2, hp: 1, maxHp: 1, progress: 1, ruined: false, linked: true });
+    world.econZones.push({ id: 78, kind: 'ezone1', pos: at(p, 120, 0), facing: 0, owner: 1, level: 1, target: 1, hp: 1, maxHp: 1, progress: 1, ruined: false, linked: true });
+    const places = threatenedPlaces(world, f, r, p);
+    const zone = places.find((x) => x.id === 'ez:77');
+    expect(zone?.squads).toBe(r.screen_squads_city);
+    expect(places.some((x) => x.id === 'ez:78')).toBe(false);
   });
 
   it('ignores enemies at the line (not in the rear) and its own units', () => {

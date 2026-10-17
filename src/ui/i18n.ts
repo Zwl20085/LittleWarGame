@@ -1,4 +1,5 @@
 import { COMMAND_EN, COMMAND_ZH } from './i18n-command';
+import { WORKS_EN, WORKS_ZH } from './i18n-works';
 
 export type Lang = 'zh' | 'en';
 
@@ -102,7 +103,7 @@ const zh: Dict = {
   'status.firing': '射击', 'status.positioning': '转移阵位', 'status.covering': '架设警戒', 'status.settingUp': '架设中',
   'status.observing': '前沿观察', 'status.noBudget': '缺工程预算', 'status.building': '施工中', 'status.buildingPillbox': '修筑炮楼', 'status.buildingBunker': '修筑堡垒', 'status.garrisoned': '据守工事', 'status.enteringStructure': '进入工事驻防', 'status.supplying': '中继补给',
   'status.manualMove': '手动：移动', 'status.manualAttackMove': '手动：攻击移动', 'status.manualFocus': '手动：集火',
-  'status.spearhead': '突破纵深', 'status.raidEcon': '潜入敌后破坏经济设施', 'status.bridging': '架设浮桥', 'status.relocating': '炮兵转移阵地', 'status.huntRaiders': '清剿后方渗透之敌', 'status.hunting': '追剿渗透之敌', 'status.screening': '警戒后方城镇', 'status.intercept': '拦截越线之敌', 'status.rearGuard': '警戒补给线', 'status.garrison': '奉命守备城镇', 'status.homeGuard': '首都警卫', 'status.fallingBack': '有序后撤，回防首都', 'status.occupy': '奉命占领城镇', 'status.toDepot': '返回补给站', 'status.loading': '装载弹药', 'status.convoyOut': '运送补给', 'status.unloading': '分发弹药', 'status.convoyBack': '空车返回', 'status.raiding': '袭击敌补给线', 'status.escort': '掩护补给车',
+  'status.spearhead': '突破纵深', 'status.raidEcon': '潜入敌后破坏经济设施', 'status.bridging': '架设浮桥', 'status.ridingRail': '乘火车机动', 'status.awaitingTrain': '车站候车', 'status.buildingRoad': '修筑道路', 'status.buildingRail': '抢修铁路', 'job.road': '筑路', 'job.rail': '铁路工程', 'log.railCut': '铁路被切断：敌军夺取了沿线车站', 'log.roadJob': '工兵开始修筑道路', 'log.railJob': '工兵开始铁路工程', 'log.roadBuilt': '工兵修通了一段道路', 'log.railBuilt': '铁路已修复通车', 'status.relocating': '炮兵转移阵地', 'status.huntRaiders': '清剿后方渗透之敌', 'status.hunting': '追剿渗透之敌', 'status.screening': '警戒后方城镇', 'status.intercept': '拦截越线之敌', 'status.rearGuard': '警戒补给线', 'status.garrison': '奉命守备城镇', 'status.homeGuard': '首都警卫', 'status.fallingBack': '有序后撤，回防首都', 'status.occupy': '奉命占领城镇', 'status.toDepot': '返回补给站', 'status.loading': '装载弹药', 'status.convoyOut': '运送补给', 'status.unloading': '分发弹药', 'status.convoyBack': '空车返回', 'status.raiding': '袭击敌补给线', 'status.escort': '掩护补给车',
   'status.manualRetreat': '手动：撤退', 'status.manualHold': '手动：固守',
   'morale.normal': '正常', 'morale.suppressed': '受压制', 'morale.pinned': '钉住', 'morale.routing': '溃退', 'morale.wavering': '动摇',
   // logs
@@ -267,7 +268,7 @@ const en: Dict = {
   'status.firing': 'Firing', 'status.positioning': 'Repositioning', 'status.covering': 'Deployed, covering', 'status.settingUp': 'Deploying',
   'status.observing': 'Forward observing', 'status.noBudget': 'No works budget', 'status.building': 'Building', 'status.buildingPillbox': 'Building a pillbox', 'status.buildingBunker': 'Building a bunker', 'status.garrisoned': 'Manning a strongpoint', 'status.enteringStructure': 'Moving into a strongpoint', 'status.supplying': 'Relaying supply',
   'status.manualMove': 'Manual: move', 'status.manualAttackMove': 'Manual: attack-move', 'status.manualFocus': 'Manual: focus fire',
-  'status.spearhead': 'Spearhead: breaking through', 'status.raidEcon': 'Raiding enemy economic buildings', 'status.bridging': 'Building a pontoon bridge', 'status.relocating': 'Battery relocating', 'status.huntRaiders': 'Hunting raiders in the rear', 'status.hunting': 'Hunting infiltrators', 'status.screening': 'Screening a rear town', 'status.intercept': 'Intercepting an intruder', 'status.rearGuard': 'Guarding supply route', 'status.garrison': 'Garrisoning a town (HQ order)', 'status.homeGuard': 'Guarding the capital', 'status.fallingBack': 'Falling back to the capital in good order', 'status.occupy': 'Occupying a town (HQ order)', 'status.toDepot': 'To depot', 'status.loading': 'Loading ammunition', 'status.convoyOut': 'Convoy en route', 'status.unloading': 'Issuing ammunition', 'status.convoyBack': 'Returning empty', 'status.raiding': 'Raiding enemy supply', 'status.escort': 'Protecting convoy',
+  'status.spearhead': 'Spearhead: breaking through', 'status.raidEcon': 'Raiding enemy economic buildings', 'status.bridging': 'Building a pontoon bridge', 'status.ridingRail': 'Riding the railway', 'status.awaitingTrain': 'Waiting for a train', 'status.buildingRoad': 'Building a road', 'status.buildingRail': 'Repairing the railway', 'job.road': 'Road works', 'job.rail': 'Rail works', 'log.railCut': 'Railway cut: the enemy took a station on the line', 'log.roadJob': 'Engineers started a road', 'log.railJob': 'Engineers started rail works', 'log.roadBuilt': 'Engineers finished a stretch of road', 'log.railBuilt': 'Railway line open again', 'status.relocating': 'Battery relocating', 'status.huntRaiders': 'Hunting raiders in the rear', 'status.hunting': 'Hunting infiltrators', 'status.screening': 'Screening a rear town', 'status.intercept': 'Intercepting an intruder', 'status.rearGuard': 'Guarding supply route', 'status.garrison': 'Garrisoning a town (HQ order)', 'status.homeGuard': 'Guarding the capital', 'status.fallingBack': 'Falling back to the capital in good order', 'status.occupy': 'Occupying a town (HQ order)', 'status.toDepot': 'To depot', 'status.loading': 'Loading ammunition', 'status.convoyOut': 'Convoy en route', 'status.unloading': 'Issuing ammunition', 'status.convoyBack': 'Returning empty', 'status.raiding': 'Raiding enemy supply', 'status.escort': 'Protecting convoy',
   'status.manualRetreat': 'Manual: retreat', 'status.manualHold': 'Manual: hold',
   'morale.normal': 'Steady', 'morale.suppressed': 'Suppressed', 'morale.pinned': 'Pinned', 'morale.routing': 'Routing', 'morale.wavering': 'Wavering',
   'log.unitLost': 'Lost {unit} ({weapon})', 'log.routing': '{unit} morale broke', 'log.unitRouting': '{unit} routing',
@@ -351,11 +352,12 @@ const unitNames: Record<string, [string, string]> = {
   howitzer: ['105毫米榴弹炮', '105 mm Howitzer'],
   supply_truck: ['补给卡车（GMC式）', 'Supply Truck (GMC-type)'],
   commander: ['前线指挥官', 'Front Commander'],
+  train: ['军列', 'Train'],
 };
 const unitShort: Record<string, [string, string]> = {
   infantry: ['步兵', 'Rifles'], recon: ['侦察', 'Recon'], mg: ['机枪', 'HMG'], engineer: ['工兵', 'Engineers'], motor_inf: ['摩步', 'Motor rifles'],
   at_gun: ['反坦克', 'AT gun'], mortar: ['迫击炮', 'Mortar'], light_tank: ['轻坦', 'Light tk'], medium_tank: ['中坦', 'Medium tk'],
-  heavy_tank: ['重坦', 'Heavy tk'], howitzer: ['榴弹炮', 'Howitzer'], supply_truck: ['补给车', 'Truck'], commander: ['指挥官', 'Commander'],
+  heavy_tank: ['重坦', 'Heavy tk'], howitzer: ['榴弹炮', 'Howitzer'], supply_truck: ['补给车', 'Truck'], commander: ['指挥官', 'Commander'], train: ['军列', 'Train'],
 };
 const weaponNames: Record<string, [string, string]> = {
   rifle: ['步枪火力', 'rifles'], recon_rifle: ['侦察火力', 'carbines'], engineer_rifle: ['工兵火力', 'SMGs'], mg: ['机枪', 'machine gun'],
@@ -400,7 +402,7 @@ export function t(key: string, params: Record<string, string | number> = {}): st
   const dict = current === 'zh' ? zh : en;
   // 2.2 command strings first (they also replace the 2.1 per-front order texts).
   const cmd = current === 'zh' ? COMMAND_ZH : COMMAND_EN;
-  const raw = cmd[key] ?? dict[key] ?? COMMAND_EN[key] ?? en[key] ?? key;
+  const raw = cmd[key] ?? dict[key] ?? (current === 'zh' ? WORKS_ZH : WORKS_EN)[key] ?? COMMAND_EN[key] ?? en[key] ?? WORKS_EN[key] ?? key;
   return raw.replace(/\{(\w+)\}/g, (_, k: string) => String(params[k] ?? `{${k}}`));
 }
 

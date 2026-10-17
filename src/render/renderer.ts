@@ -21,9 +21,12 @@ import { clothFlag, FLAG_TIME } from './flags';
 import { FieldWorks, isLineWork } from './fieldWorks';
 import { StructureViews, type StructureRecord } from './structures';
 import { registerEconModels } from './econModels';
+import { registerWorksModels } from './worksModels';
+import { structureKind } from './structureKinds';
 import { FrontLines } from './frontLines';
 import { fortModel } from './models';
 import { PontoonView } from './pontoon';
+import { RailField } from './railField';
 import { ScreenOverlay } from './screenOverlay';
 import { TerrainView } from './terrainView';
 import { UnitCounters } from './unitCounters';
@@ -77,6 +80,7 @@ export class GameRenderer {
   private readonly objectiveMarkers: ObjectiveMarkers;
   private readonly fortViews = new Map<number, THREE.Group>();
   private readonly pontoonViews = new Map<number, PontoonView>();
+  private readonly railField: RailField;
   private readonly fieldWorks: FieldWorks;
   /** Pillboxes / bunkers (instanced; works agent). */
   private readonly structureViews: StructureViews;
@@ -170,7 +174,17 @@ export class GameRenderer {
     this.extraViews = new StructureViews(w.terrain, (owner) => w.factions[owner]?.color ?? '#888888');
     // 2.2 economic buildings (factory, recruitment office, depot) through the kind registry.
     registerEconModels();
-    this.extraStructures = () => w.econ;
+    // 3.0: economic zones and the new works kinds (worksModels.ts).
+    const mines = w.data.rules.construction.defensive.tiers?.minefield;
+    registerWorksModels(mines?.depth_m, mines?.length_m);
+    const extra: StructureRecord[] = [];
+    this.extraStructures = () => {
+      if (w.econZones.length === 0) return w.econ;
+      extra.length = 0;
+      for (const b of w.econ) extra.push(b);
+      for (const z of w.econZones) extra.push(z);
+      return extra;
+    };
     this.scene.add(this.extraViews.group);
     this.opArrows = new OpArrows((x, z) => w.terrain.heightAt(x, z));
     this.scene.add(this.opArrows.mesh);
@@ -178,6 +192,9 @@ export class GameRenderer {
     this.scene.add(this.orderLines.group);
     this.objectiveMarkers = new ObjectiveMarkers(w.objectives, w.terrain);
     this.scene.add(this.objectiveMarkers.group);
+    // 3.0 railways, stations, trains and engineer roads (railField.ts).
+    this.railField = new RailField(w.terrain, () => w.transport, (owner) => w.factions[owner]?.color ?? '#888888');
+    this.scene.add(this.railField.group);
     this.buildCities();
     this.freezeStatic();
   }
@@ -321,7 +338,7 @@ export class GameRenderer {
       for (let i = 0; i < this.extraViews.siteCount; i++) this.effects.workSite(this.extraViews.sites[i], dt);
     }
     for (const f of w.forts) {
-      if (f.hp <= 0 || isLineWork(f.kind) || f.kind === 'pillbox' || f.kind === 'bunker') continue;
+      if (f.hp <= 0 || isLineWork(f.kind) || structureKind(f.kind)) continue;
       seen.add(f.id);
       if (f.kind === 'pontoon') {
         let pv = this.pontoonViews.get(f.id);
@@ -551,6 +568,7 @@ export class GameRenderer {
     this.effects.update(dt);
     this.syncObjectives();
     this.syncForts(dt);
+    this.railField.update(alpha);
     this.paintFront(this.match.frontView ?? this.match.front);
     this.drawOverlays(realDt);
     for (let i = this.orderMarkers.length - 1; i >= 0; i--) {
@@ -654,6 +672,7 @@ export class GameRenderer {
 
   dispose(): void {
     this.structureViews.dispose();
+    this.railField.dispose();
     this.extraViews.dispose();
     this.objectiveMarkers.dispose();
     this.overlay.dispose();

@@ -2,6 +2,7 @@ import type { CityDef, MapDef, MapFeature, ObjectiveDef, RiverDef } from './mapd
 import { NameGen } from './names';
 import { ValueNoise } from './noise';
 import { Rng } from './rng';
+import { generateRails } from './railgen';
 import { clamp, dist, type V2 } from './vec';
 
 export type MapSize = 'medium' | 'large';
@@ -13,6 +14,8 @@ export interface GenOptions {
 }
 
 const CELL = 4;
+/** City–city rail links up to this length (m; rules.json transport.rail.city_link_max_m documents it). */
+const RAIL_CITY_LINK_M = 1400;
 
 /** Generic 8-neighbour A* on a coarse grid. Returns cell centres or null. */
 function gridPath(nx: number, nz: number, cell: number, cost: (i: number, j: number) => number, a: V2, b: V2): V2[] | null {
@@ -463,8 +466,13 @@ export function generateMap(opt: GenOptions): MapDef {
     if (path) roads.push(simplify(path, 10));
   }
 
+  // 3.0 railways (railgen.ts): no RNG draws, so every other part of the map is unchanged.
+  const railNet = generateRails({
+    width: W, depth: D, capitals, towns, slopeAt, nearRiver, gridPath, smooth: (p) => chaikin(simplify(p, 8), 2), cityLinkMaxM: RAIL_CITY_LINK_M,
+  });
   const roadMask = new Uint8Array(qnx * qnz);
-  for (const r of roads) for (let s = 0; s < r.length - 1; s++) {
+  // Forests keep off roads and the rail bed.
+  for (const r of [...roads, ...railNet.rails.map((l) => l.pts)]) for (let s = 0; s < r.length - 1; s++) {
     const steps = Math.max(1, Math.ceil(dist(r[s], r[s + 1]) / 8));
     for (let k = 0; k <= steps; k++) {
       const px = r[s].x + ((r[s + 1].x - r[s].x) * k) / steps;
@@ -533,6 +541,6 @@ export function generateMap(opt: GenOptions): MapDef {
     width: W, depth: D, seed: opt.seed, baseHeight: 0, noiseAmp: 0,
     hills: [], ridges: [], roads, forests,
     towns: [...capitalTowns, ...towns.map((t) => ({ x: t.x, z: t.z, r: t.r, buildings: t.buildings, kind: t.kind }))],
-    mud, rivers, cities, objectives, features, heightfield: H,
+    mud, rivers, cities, objectives, features, heightfield: H, rails: railNet.rails, stations: railNet.stations,
   };
 }

@@ -29,6 +29,8 @@ export interface UnitDef {
   readonly turretTurnDegps: number;
   readonly setupSeconds: number;
   readonly packSeconds: number;
+  /** false: never produced (commander: appointed; train: rail stock, rail.ts). */
+  readonly producible: boolean;
 }
 
 export interface WeaponDef {
@@ -53,7 +55,8 @@ export interface WeaponDef {
 /** Shape of docs/data/rules.json (only the fields the sim reads are typed strictly). */
 /** One engineer-built defensive building (rules.json `construction.defensive.structures`). */
 export interface DefensiveStructureDef {
-  readonly id: 'pillbox' | 'bunker';
+  /** 3.0 (V30 §8): fortress (bunker tier 3), at_emplacement (dug-in AT gun), strongpoint (capital perimeter). */
+  readonly id: 'pillbox' | 'bunker' | 'fortress' | 'at_emplacement' | 'strongpoint';
   readonly label_zh: string;
   readonly cost_p: number;
   readonly cost_m: number;
@@ -72,7 +75,9 @@ export interface DefensiveStructureDef {
    * 2.1: firing-slit bonus to the occupants' own weapons (damage and range multipliers; a built-in
    * `weapon` is used as it is). Optional: absent = 1 / 1.
    */
-  readonly fire_mul?: { readonly damage: number; readonly range: number };
+  readonly fire_mul?: { readonly damage: number; readonly range: number; readonly accuracy?: number };
+  /** 3.0: share of a direct hit on an occupant the building takes (default `garrison.absorb_share`; AT emplacement / fortress: armour). */
+  readonly absorb_share?: number;
   /** Rear arc (deg, centred on the back) the occupants cannot fire into; 0 = none. */
   readonly blind_rear_deg: number;
   /** Blast damage multiplier for the occupants (replaces the cover level's blast factor). */
@@ -81,8 +86,104 @@ export interface DefensiveStructureDef {
   readonly muzzle_raise_m: number;
 }
 
+/** 3.0 (V30 §8) in-place upgrade of a work by engineers (pillbox → bunker → fortress, trench → fortified trench). */
+export interface WorkUpgradeDef {
+  readonly from: string;
+  /** Target kind; for a trench the same kind with `tier` + 1. */
+  readonly to: string;
+  readonly cost_p: number;
+  readonly cost_m: number;
+  readonly work_seconds: number;
+  /** Trench tiers only: max HP multiplier and cover radius (m) of the fortified trench. */
+  readonly hp_mul?: number;
+  readonly cover_radius_m?: number;
+}
+
+/** 3.0 defensive works tiers, minefields and the manned-works bonus (`construction.defensive.tiers`). */
+export interface DefenceTierRules {
+  readonly enabled: boolean;
+  readonly upgrades: readonly WorkUpgradeDef[];
+  readonly minefield: {
+    readonly cost_p: number;
+    readonly cost_m: number;
+    readonly work_seconds: number;
+    /** Rectangle: `length_m` along the line, `depth_m` toward the enemy. */
+    readonly length_m: number;
+    readonly depth_m: number;
+    /** Density: one detonation costs `charge_hp`; engineers clear `clear_hp_per_second` each. */
+    readonly max_hp: number;
+    readonly charge_hp: number;
+    readonly clear_hp_per_second: number;
+    readonly vehicle_speed_mul: number;
+    /** Chance per second a hostile vehicle inside sets off a mine, and the damage (× its max HP). */
+    readonly trigger_chance_per_second: number;
+    readonly damage_ratio: number;
+  };
+  readonly manned: {
+    /** Observation range added for occupants of a finished work (m), and whether they spot for artillery. */
+    readonly observation_bonus_m: number;
+    readonly artillery_spotting: boolean;
+  };
+}
+
+/** 3.0 absolute defence perimeter (绝对国防圈) and the capital observation ring (V23 §1.3, V30 §8). */
+export interface CapitalDefenceRules {
+  readonly enabled: boolean;
+  readonly radius_m: number;
+  readonly strongpoints: number;
+  /** Fixed crew (units.csv id) bound into each strongpoint, and the capital's artillery position. */
+  readonly crew_unit: string;
+  readonly artillery_unit: string;
+  readonly artillery_back_m: number;
+  /** A dead crew is replaced after this when its strongpoint stands at ≥ `crew_min_hp_ratio` and no enemy is within `quiet_m`. */
+  readonly crew_respawn_seconds: number;
+  readonly crew_min_hp_ratio: number;
+  /**
+   * A faction holding less than this share of the living factions' mean settlements is beaten: its
+   * ring is no longer manned anew or repaired, and its zones pay `econ_zones.beaten_output` (absent = never).
+   */
+  readonly min_held_share?: number;
+  readonly quiet_m: number;
+  /** Engineers restore this much HP per second each. */
+  readonly repair_hp_per_second: number;
+  readonly observation: { readonly enabled: boolean; readonly radius_m: number };
+}
+
+/** 3.0 engineer-built economic zones (经济区, V30 §7): one entry per level 1..3. */
+export interface EconZoneLevelDef {
+  readonly cost_p: number;
+  readonly cost_m: number;
+  readonly work_seconds: number;
+  readonly max_hp: number;
+  readonly p_per_min_k: number;
+  readonly m_per_min_k: number;
+}
+
+export interface EconZoneRules {
+  readonly enabled: boolean;
+  readonly levels: readonly EconZoneLevelDef[];
+  /** Clearance (m) beyond a town / city's radius, a village's radius, and a capital (+100). */
+  readonly min_town_distance_m: number;
+  readonly min_village_distance_m: number;
+  readonly min_zone_distance_m: number;
+  /** Hostile ground at least this far away to start a zone. */
+  readonly min_enemy_distance_m: number;
+  /** Output share without a road link to an own town. */
+  readonly unlinked_output: number;
+  /** A zone within this of a road counts as on it (fallback road test until roadnet lands). */
+  readonly road_link_m: number;
+  readonly captured_hp_ratio: number;
+  readonly rebuild_cost_ratio: number;
+  readonly max_per_faction: number;
+  /** Output share for a beaten side (capital_defence.min_held_share; absent = 1). */
+  readonly beaten_output?: number;
+  /** Engineers working one zone job. */
+  readonly builders: number;
+}
+
 export interface DefensiveRules {
   readonly structures: readonly DefensiveStructureDef[];
+  readonly tiers?: DefenceTierRules;
   readonly garrison: {
     /** A stopped eligible squad this close to a finished building with room enters it. */
     readonly enter_radius_m: number;
@@ -158,6 +259,46 @@ export interface EconBuildingRules {
   readonly p_per_min_k: number;
   readonly stock_cap_k?: number;
   readonly fill_per_min_k?: number;
+}
+
+/** Movement class for the 3.0 off-road multipliers (rules.json transport.off_road). */
+export type MoveClass = 'tracked' | 'wheeled' | 'infantry' | 'towed';
+
+/** rules.json `transport` (3.0 roads and railways, V30_SPEC §10). */
+export interface TransportRules {
+  readonly enabled: boolean;
+  readonly on_road: number;
+  readonly off_road: Record<MoveClass, number>;
+  readonly class_of?: Record<string, MoveClass>;
+  readonly town_counts_as_road?: boolean;
+  readonly ford_nav_cost?: number;
+  readonly road_job: {
+    readonly max_len_m: number;
+    readonly cost_m_k_per_100m: number;
+    readonly seconds_per_100m: number;
+    readonly half_width_m: number;
+    readonly max_slope_deg: number;
+    readonly bridge_max_span_m: number;
+  };
+  readonly rail: {
+    readonly enabled: boolean;
+    readonly capacity: number;
+    readonly board_radius_m: number;
+    readonly min_trip_m: number;
+    readonly min_saving: number;
+    readonly depart_wait_s: number;
+    readonly unload_s: number;
+    readonly trains_per_faction: number;
+    readonly city_link_max_m: number;
+    readonly stock_transfer_per_min_k: number;
+    /** Supply trucks board trains too (default false: supply rides as stock transfer). */
+    readonly trucks_ride?: boolean;
+    readonly check_seconds: number;
+    readonly frontline_sample_m: number;
+    readonly repair: { readonly cost_p_k: number; readonly cost_m_k: number; readonly work_seconds: number };
+    readonly extend: { readonly max_len_m: number; readonly cost_m_k_per_100m: number; readonly seconds_per_100m: number };
+  };
+  readonly ai?: { readonly enabled: boolean; readonly think_seconds: number; readonly link_max_m: number; readonly max_open_jobs: number };
 }
 
 export interface EconRules {
@@ -274,6 +415,12 @@ export interface Rules {
   readonly logistics?: LogisticsRules;
   /** 2.2 economic buildings (V22_SPEC §5). */
   readonly econ?: EconRules;
+  /** 3.0 roads and railways (V30_SPEC §10; optional for old rule sets = 2.2 movement). */
+  readonly transport?: TransportRules;
+  /** 3.0 economic zones (V30 §7). */
+  readonly econ_zones?: EconZoneRules;
+  /** 3.0 absolute defence perimeter + capital observation ring (V30 §8). */
+  readonly capital_defence?: CapitalDefenceRules;
   readonly morale: {
     readonly suppression_enter: number;
     readonly suppression_exit: number;

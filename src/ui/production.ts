@@ -37,7 +37,7 @@ export class ProductionBar {
     this.tip = h('div', { class: 'unit-tip panel', role: 'tooltip' });
     this.tip.style.display = 'none';
     for (const id of data.unitOrder) {
-      if (id === data.rules.command.commander_unit) continue; // appointed by the supreme HQ, not bought
+      if (id === data.rules.command.commander_unit || !data.units.get(id)?.producible) continue; // appointed by the supreme HQ, not bought
       const name = h('span', { class: 'cname' });
       const cost = h('span', { class: 'ccost num' });
       const count = h('span', { class: 'ccount num' });

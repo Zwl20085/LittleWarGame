@@ -8,7 +8,7 @@ const SC_PRESENT: Unit[] = [];
 
 /** Eligible capturer: infantry/recon/engineer, ≥50 % strength, not routing nor suppressed (§5.3). */
 export function eligibleCapturer(world: World, u: Unit): boolean {
-  if (u.hp <= 0 || u.fixed || u.def.kind !== 'infantry') return false;
+  if (u.hp <= 0 || u.fixed || u.def.kind !== 'infantry' || u.rail?.stage === 'aboard') return false;
   if (u.routing || u.moraleState !== 'normal') return false;
   return u.hp >= u.def.maxHp * world.data.rules.victory.eligible_capture_hp_ratio;
 }

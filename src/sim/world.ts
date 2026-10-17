@@ -1,5 +1,7 @@
 import type { GameData } from '../data/types';
 import { NavGrid } from './nav';
+import { navCostFns, wheeledNav } from './transport';
+import type { TransportState } from './transportstate';
 import { Rng } from './rng';
 import { SpatialHash } from './spatial';
 import { Terrain } from './terrain';
@@ -7,6 +9,7 @@ import type { MapDef } from './mapdef';
 import { MAPS } from './maps';
 import { generateMap } from './mapgen';
 import type { FrontInfo } from './frontai';
+import type { EconZone } from './econZones';
 import type { BatteryReveal } from './operations';
 import { createStats, type MatchStats } from './stats';
 import { createBattleLog, type BattleLog } from './events';
@@ -58,6 +61,8 @@ export class World {
   readonly places: Place[] = [];
   /** 2.2 economic buildings (econ.ts), ruins included. */
   readonly econ: EconBuilding[] = [];
+  /** 3.0 engineer-built economic zones (econZones.ts), ruins included. */
+  readonly econZones: EconZone[] = [];
   readonly fx: FxEvent[] = [];
   readonly log: LogEntry[] = [];
   readonly spatial = new SpatialHash(40);
@@ -82,6 +87,8 @@ export class World {
       g.refreshArea(this.terrain, Math.min(a.x, b.x) - pad, Math.min(a.z, b.z) - pad, Math.max(a.x, b.x) + pad, Math.max(a.z, b.z) + pad);
     }
   };
+  /** 3.0 roads and railways (road graph, rail lines, trains, engineer road / rail jobs; initTransport). */
+  transport: TransportState | null = null;
   /** Sound-ranged enemy batteries (counter-battery intel). */
   readonly batteryReveals: BatteryReveal[] = [];
   result: MatchResult | null = null;
@@ -134,19 +141,20 @@ export class World {
     return a !== b && (this.hostile[a]?.[b] ?? false);
   }
 
-  nav(vehicle: boolean, maxSlopeDeg: number): NavGrid {
+  /** `wheeled` (3.0): same walkability as the vehicle grid, wheeled off-road travel costs (trucks keep to roads). */
+  nav(vehicle: boolean, maxSlopeDeg: number, wheeled = false): NavGrid {
     // Numeric key: this is called several times per unit per tick (no string building).
-    const key = maxSlopeDeg * 2 + (vehicle ? 1 : 0);
+    const key = maxSlopeDeg * 2 + (vehicle ? 1 : 0) + (wheeled ? 1000 : 0);
     let g = this.navCache.get(key);
     if (!g) {
-      g = new NavGrid(this.terrain, { vehicle, maxSlopeDeg });
+      g = new NavGrid(this.terrain, { vehicle, maxSlopeDeg, ...navCostFns(this.data.rules, vehicle, wheeled) });
       this.navCache.set(key, g);
     }
     return g;
   }
 
   navFor(u: Unit): NavGrid {
-    return this.nav(u.def.kind === 'vehicle', u.def.maxSlopeDeg);
+    return this.nav(u.def.kind === 'vehicle', u.def.maxSlopeDeg, u.def.kind === 'vehicle' && wheeledNav(this.data.rules, u.def));
   }
 
   emit(e: FxEvent): void {
@@ -294,6 +302,7 @@ export class World {
       rearming: false,
       rearmAt: 0,
       zocUntil: 0,
+      rail: null,
     };
     this.units.set(u.id, u);
     this.aliveUnits.push(u);

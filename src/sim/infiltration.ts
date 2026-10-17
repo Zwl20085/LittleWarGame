@@ -297,10 +297,13 @@ function ensureHunters(world: World, f: Faction, r: InfiltrationRules, rep: Repo
   }
 }
 
+/** Screen post radius of an economic zone (its sheds stand within ~20 m of the centre). */
+const ECON_ZONE_R = 30;
+
 interface ScreenPlace { readonly id: string; readonly pos: V2; readonly radius: number; readonly squads: number }
 
-/** Own places that a report threatens, nearest first: the capital, cities / towns, and places with own economic buildings. */
-function threatenedPlaces(world: World, f: Faction, r: InfiltrationRules, p: V2): ScreenPlace[] {
+/** Own places that a report threatens, nearest first: the capital, cities / towns, places with own economic buildings, own economic zones (3.0). */
+export function threatenedPlaces(world: World, f: Faction, r: InfiltrationRules, p: V2): ScreenPlace[] {
   const out: (ScreenPlace & { d: number })[] = [];
   const hq = world.hqPos(f.id);
   if (dist(hq, p) < r.screen_radius_m) out.push({ id: `hq:${f.id}`, pos: hq, radius: world.data.rules.victory.command_radius_m, squads: r.screen_squads_city, d: dist(hq, p) });
@@ -314,7 +317,12 @@ function threatenedPlaces(world: World, f: Faction, r: InfiltrationRules, p: V2)
     if (!rich && o.kind !== 'town') continue;
     out.push({ id: o.id, pos: o.pos, radius: o.radius, squads: rich ? r.screen_squads_city : r.screen_squads_town, d });
   }
-  return out.sort((a, b) => a.d - b.d || (a.id < b.id ? -1 : 1)).slice(0, r.screen_max_places);
+  for (const z of world.econZones) {
+    if (z.owner !== f.id || z.ruined) continue;
+    const d = dist(z.pos, p);
+    if (d < r.screen_radius_m) out.push({ id: `ez:${z.id}`, pos: z.pos, radius: ECON_ZONE_R, squads: z.level >= 2 ? r.screen_squads_city : r.screen_squads_town, d });
+  }
+  return out.sort((a, b) => a.d - b.d || (a.id < b.id ? -1 : 1)).slice(0, r.screen_max_places).map(({ id, pos, radius, squads }) => ({ id, pos, radius, squads }));
 }
 
 function ensureScreens(world: World, f: Faction, r: InfiltrationRules, rep: Report, budget: { left: number }): void {
