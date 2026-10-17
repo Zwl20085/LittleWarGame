@@ -304,3 +304,30 @@ Reading it:
 - The score never reaches FAIL on 2.2.1 because the weighted bands mostly pass; the signal is in the per-column
   flags (`never seen`, `cheap-win flags`, captures by the challenger).
 
+
+## 3.0: doctrine_* strategies (WP-A)
+
+`doctrine_builder`, `doctrine_blitz`, `doctrine_attrition`, `doctrine_maneuver`
+(`scripts/challenge/strategies/doctrine.ts`): the challenger plays a 3.0 AI doctrine through the
+command API only — the production mix and caps of the doctrine profile (`setWeight` / `setCap`),
+and every 5 s the doctrine's directive (`doctrineai.doctrineChoice`: defence thresholds, the late /
+strike / battle offensive) via `setDirective` when it changes; attrition also sends 4-squad raiding
+parties (unit `attackMove`) at the nearest enemy convoy / economic site every 90 s. `DOCTRINES=0`
+(env) runs the AI without its doctrines for an A/B.
+
+`--all`, seeds 7 / 11 / 13, 40 min, WP-A head (the AIs have seed-drawn doctrines):
+
+| strategy | AI survival | when not outmatched | first capital taken by the challenger |
+|---|---|---|---|
+| the seven 2.x strategies | **21 / 21** | 21 / 21 | – |
+| armour_raid, shadow_strike, feint, econ_war, siege, ai_only | 100 % | 100 % | – |
+| backdoor | 67 % (seed 11: the attrition AI's capital at 37:07) | 100 % | 37:07 |
+| doctrine_builder | 67 % | 100 % | 32:59 |
+| doctrine_blitz | 67 % | 100 % | 38:28 |
+| doctrine_attrition | 100 % | 100 % | – |
+| doctrine_maneuver | 100 % | 100 % | – |
+
+`backdoor` with `DOCTRINES=0` on the same tree: 100 % (3 / 3). The one loss is an attrition AI
+(retreating damaged units and raiding parties thin its home guard late in the war) — open item.
+The doctrine challengers that take a capital do so late, with the army ratio behind them
+(`defence ÷ attacker` 1.3–2.1 at arrival, not a cheap win).

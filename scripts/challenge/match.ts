@@ -11,11 +11,14 @@ import { INFILTRATION_AB } from '../../src/sim/zoc';
 
 // A/B: INFIL_OFF=1 switches the 3.0 zone of control / pickets / rear screen off in this process.
 if (process.env.INFIL_OFF) INFILTRATION_AB.on = false;
+import { DOCTRINE_AB } from '../../src/sim/doctrines';
 
 // A/B: R7_OFF=hqPoint,eta,assault,counter (or "all"); R7_ON=alarm turns the rejected narrow-alarm recall gate on turns round-7 AI fixes off in this process (docs/CHALLENGE_LAB.md).
 const r7off = (process.env.R7_OFF ?? '').split(',').filter(Boolean);
 for (const k of Object.keys(ROUND7_AB) as (keyof typeof ROUND7_AB)[]) if (r7off.includes(k) || r7off.includes('all')) ROUND7_AB[k] = false;
 for (const k of (process.env.R7_ON ?? '').split(',').filter(Boolean)) if (k in ROUND7_AB) ROUND7_AB[k as keyof typeof ROUND7_AB] = true;
+// A/B: DOCTRINES=0 runs the AI without its 3.0 doctrines (doctrines.ts).
+if (process.env.DOCTRINES === '0') DOCTRINE_AB.on = false;
 import { createExpCollector } from './expLog';
 import { createSampler } from './metrics';
 import { strategyById } from './strategies';

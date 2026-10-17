@@ -1006,3 +1006,65 @@ snapshot 1.4 / 10.7 with older data and 10 % more units). The new work is per fr
 - New i18n keys needed: `status.orderAttack`, `status.orderMove`, `status.orderHold`.
 - Lab helpers: `scripts/lab/fronts21-diag.ts [seed] [minutes] [every]` prints every faction's
   fronts (order, `!` binding, `Z` zone garrison, troops), zones, troops / free / wanted fronts.
+
+## 3.0 doctrines (WP-A, docs/DOCTRINES.md)
+
+`npx tsx scripts/lab30/doctrine.ts` — every doctrine vs every other in 1v1 (medium generated map,
+seeds 7 / 11 / 13, **both slot orders** — the 1v1 corners are not symmetric: slot 0 won 9 of 12
+duels on seeds 7 / 13 in the first run), 45 min, plus the 4-FFA with all four (seeds 7–23,
+doctrines rotated by seed). Tree: feat/v3.0 with zones / works and roads / rail merged. Final
+tuning = rules.json `doctrines` at the WP-A head (`v9`).
+
+### Win matrix (36 duels, row vs column W-D-L; a live match is won at 10 % lead in 0.5 × territory + 0.5 × army share)
+
+| | builder | blitz | attrition | maneuver |
+|---|---|---|---|---|
+| builder | – | 2-1-3 | 3-2-1 | 4-1-1 |
+| blitz | 3-1-2 | – | 2-2-2 | 4-1-1 |
+| attrition | 1-2-3 | 2-2-2 | – | 3-2-1 |
+| maneuver | 1-1-4 | 1-1-4 | 1-2-3 | – |
+
+Overall (36 duels + 6 FFA; FFA 1st = win, last = loss): builder 46 % win / 21 % loss, blitz 42 / 29,
+attrition 29 / 29, maneuver 21 / 58 — no doctrine wins or loses ≥ 75 % (acceptance). FFA places
+(seeds 7, 11, 13, 17, 19, 23): builder 2 2 1 3 3 1, blitz 3 1 3 4 2 4, attrition 4 3 2 2 1 3, maneuver 1 4 4 1 4 2.
+
+### Curves (4-FFA, 6 seeds; × fair share)
+
+| doctrine | territory 10′ / 20′ / 30′ / 45′ | army 10′ / 20′ / 30′ / 45′ | offensive time | raiding | retreating |
+|---|---|---|---|---|---|
+| builder | 0.73 / 1.27 / 1.26 / 1.19 | 1.03 / 1.18 / 1.33 / 1.19 | 29 % | 2 % | 5 % |
+| blitz | 0.56 / 0.82 / 0.90 / 0.92 | 0.97 / 0.88 / 0.80 / 0.94 | 20 % | 1 % | 3 % |
+| attrition | 0.62 / 0.78 / 0.88 / 0.91 | 1.04 / 1.05 / 1.12 / 1.17 | 15 % | 7 % | 6 % |
+| maneuver | 0.53 / 0.73 / 0.83 / 0.78 | 0.96 / 0.88 / 0.75 / 0.71 | 35 % | 4 % | 5 % |
+
+Builder grabs land first and turns it into the largest army; attrition holds less land but keeps
+its army growing (raids 7 % of its troops, pulls damaged units back); blitz pays for its strikes
+(army dips 10–30 min) and recovers late; maneuver spends the most time on the offensive (decisive
+battles) and bleeds for it. Distinctiveness: mean curve distance 0.16–0.75 between doctrines
+(FFA), behaviour fingerprints (13 features) classified to the right doctrine **71–77 %** of the
+time (chance 25 %; between / within ratio 0.9–1.05).
+
+### Pacing (eliminations per hour, same tree, doctrines on vs off)
+
+| run | off (`--off` / `DOCTRINES=0`) | on |
+|---|---:|---:|
+| lab 4-FFA, 6 seeds × 45 min | 4 / 4.5 h = 0.89 | 5 / 4.5 h = 1.11 |
+| soak 45 min, seeds 7, 11, 13 | 2 / 2.25 h = 0.89 | 1 / 2.25 h = 0.44 |
+| together | 6 / 6.75 h = **0.89** | 6 / 6.75 h = **0.89** |
+
+First contact 4:35–5:53 (median 4:57) on and off. The first tuned version ended fewer wars
+(0.59 / h): the doctrines' early defend thresholds kept losers alive and the doctrine offensives
+stopped at their time limit. Fix: 2.2 defend thresholds (0.35 / 0.55) except builder (0.45 / 0.65,
+contract below 0.2), and every doctrine turns its offensive on the HQ's finish target once its army
+is 1.6 × that enemy's (`DOCTRINE_AI.finishRatio`, after 12 min). The pre-merge 2.2-AI soak on
+68f663a was 3 / 2.25 h = 1.33; the merged roads / zones tree is slower to end wars with or without
+doctrines. The 1v1 duels almost never end in 45 min (0 – 2 of 36).
+
+### Tuning history (lab, pre-merge v1–v4, merged v5–v9)
+
+- v1: builder 83 % win / 0 % loss (invest 1.8, occupy 1.8); blitz on `defend` between strikes held
+  0.7 × territory and bled. → builder 1.5 / 1.4, blitz between = advance.
+- v3 (both slot orders): blitz 14 % / 81 % — the `armor` personality is the weak point. → blitz on
+  `balanced` + armour / motorized multipliers (A/B 18 duels: 39 / 39 %).
+- v5 (merged tree): builder 67 % / 14 %, FFA 1st three times (zones double-counted its invest
+  weight). → builder invest / occupy 1.3; the doctrine invest weight is now the zone investment style.

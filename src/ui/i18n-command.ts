@@ -2,9 +2,12 @@
  * 2.2 command-system strings (universal directive, front responses). Looked up by `t()` before the
  * main dictionaries, so the keys here also replace the 2.1 texts that described per-front orders.
  */
+import { DOCTRINE_EN, DOCTRINE_ZH } from './i18n-doctrine';
+
 type Dict = Record<string, string>;
 
 export const COMMAND_ZH: Dict = {
+  ...DOCTRINE_ZH,
   'dir.title': '总方针',
   'dir.offensive': '全线进攻', 'dir.advance': '稳步推进', 'dir.defend': '全线防御', 'dir.fortify': '筑垒固守', 'dir.contract': '战略收缩',
   'dir.short.offensive': '进攻', 'dir.short.advance': '推进', 'dir.short.defend': '防御', 'dir.short.fortify': '筑垒', 'dir.short.contract': '收缩',
@@ -57,6 +60,7 @@ export const COMMAND_ZH: Dict = {
 };
 
 export const COMMAND_EN: Dict = {
+  ...DOCTRINE_EN,
   'dir.title': 'Directive',
   'dir.offensive': 'General offensive', 'dir.advance': 'Steady advance', 'dir.defend': 'General defence', 'dir.fortify': 'Fortify and hold', 'dir.contract': 'Strategic contraction',
   'dir.short.offensive': 'Attack', 'dir.short.advance': 'Advance', 'dir.short.defend': 'Defend', 'dir.short.fortify': 'Fortify', 'dir.short.contract': 'Contract',

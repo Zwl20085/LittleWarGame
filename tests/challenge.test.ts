@@ -24,7 +24,8 @@ describe('challenge lab', () => {
   it('registers every strategy once', () => {
     const ids = STRATEGIES.map((s) => s.id);
     expect(new Set(ids).size).toBe(ids.length);
-    expect(ids).toEqual(['rush', 'turtle', 'two_axis', 'raid', 'late_blitz', 'human_like', 'rush_micro', 'armour_raid', 'shadow_strike', 'backdoor', 'feint', 'econ_war', 'siege', 'ai_only']);
+    expect(ids).toEqual(['rush', 'turtle', 'two_axis', 'raid', 'late_blitz', 'human_like', 'rush_micro', 'armour_raid', 'shadow_strike', 'backdoor', 'feint', 'econ_war', 'siege', 'ai_only',
+      'doctrine_builder', 'doctrine_blitz', 'doctrine_attrition', 'doctrine_maneuver']);
   });
 });
 

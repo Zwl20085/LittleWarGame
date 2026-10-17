@@ -1,3 +1,4 @@
+import type { DoctrineRules } from './doctrineRules';
 import type { ComplianceRules, FrontRules } from './frontRules';
 import type { InfiltrationRules } from './infiltrationRules';
 export type UnitKind = 'infantry' | 'crew' | 'vehicle';
@@ -459,6 +460,8 @@ export interface Rules {
   readonly fronts: FrontRules;
   /** 3.0 sparse fronts: zone of control, pickets, rear screen (zoc.ts, pickets.ts, infiltration.ts). */
   readonly infiltration: InfiltrationRules;
+  /** 3.0 AI doctrines (sim/doctrines.ts); absent = doctrines off. */
+  readonly doctrines?: DoctrineRules;
   /** Engineer construction; `defensive` = 2.0 pillboxes / bunkers (structures.ts, BALANCE_SPEC §10). */
   readonly construction: {
     readonly defensive: DefensiveRules;

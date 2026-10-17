@@ -1,6 +1,7 @@
 import { garrisonsZone } from './theatre';
 import { boundLine, frontById } from './frontref';
 import { massSlot } from './frontslots';
+import { armourMainShare } from './doctrines';
 import type { Faction, Front, Unit } from './types';
 import { dist, type V2 } from './vec';
 import type { World } from './world';
@@ -206,7 +207,8 @@ export function armourFront(world: World, f: Faction, tankCounts?: Map<number, n
   const counts = tankCounts ?? countTanks(world, f);
   let all = 0;
   for (const v of counts.values()) all += v;
-  return (counts.get(main.id) ?? 0) < Math.max(1, all * ARMOUR.advanceMainShare) ? main.id : -1;
+  // 3.0: maneuver / blitz keep more of the armour in the main body (doctrines.armourMainShare).
+  return (counts.get(main.id) ?? 0) < Math.max(1, all * armourMainShare(world, f, ARMOUR.advanceMainShare)) ? main.id : -1;
 }
 
 /** Live tanks (and tank orders in production) per front id. */

@@ -151,6 +151,8 @@ svg.brass-gauge .needle { transform-origin: 30px 31px; transition: transform 400
 .resolve .fill { height: 100%; width: 100%; transform-origin: left; transition: transform 300ms var(--ease); }
 .resolve .num { color: var(--on-steel); font-size: var(--fs-s); min-width: 3ch; }
 .resolve.dead { opacity: 0.4; text-decoration: line-through; }
+.resolve .doc { color: var(--on-steel); opacity: 0.75; font-size: calc(10px * var(--ui)); white-space: nowrap; letter-spacing: 0.02em; }
+.resolve .doc:empty { display: none; }
 .resolve.me .roman { outline: 2px solid var(--brass-hi); outline-offset: 1px; }
 
 /* Left column (2.0): supreme-HQ orders card, front dossiers (pinned index cards), briefing, log. */
@@ -450,6 +452,10 @@ svg.brass-gauge .needle { transform-origin: 30px 31px; transition: transform 400
 .settings-form { display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px; }
 .field { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .field .lbl { width: calc(96px * var(--ui)); flex: none; }
+.doctrine-rows { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 0; }
+.doctrine-row { display: flex; align-items: center; gap: 6px; }
+.doctrine-row .small { width: 4.5em; flex: none; }
+.doctrine-row .sel { flex: 1; min-width: 0; }
 .field.check { cursor: pointer; }
 .field input[type='range'] { flex: 1; min-width: 120px; }
 .note { font-style: italic; }
@@ -571,6 +577,7 @@ svg.brass-gauge .needle { transform-origin: 30px 31px; transition: transform 400
   .resolves { gap: 5px; }
   .topbar:not(.spectator) .np.grow .resolve .num { display: none; }
   .topbar:not(.spectator) .resolve .bar { width: 18px; }
+  .resolve .doc { display: none; }
   .gauge-np { gap: 3px; }
   svg.brass-gauge { width: calc(44px * var(--ui)); height: calc(27px * var(--ui)); }
   .key { min-width: calc(28px * var(--ui)); padding: 0 5px; }

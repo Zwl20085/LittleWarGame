@@ -28,6 +28,7 @@ import type { World } from './world';
 import { ARMOUR_AB, orphanTank, paceArmour } from './armour';
 import { thinkEconRaid } from './econwar';
 import { infiltrationDuty } from './infiltration';
+import { retreatHp } from './doctrines';
 
 /** Deterministic per-unit spread offset so a squad group doesn't stack on one point. */
 function spread(u: Unit, radius: number): V2 {
@@ -71,7 +72,8 @@ function nearRepairPoint(world: World, u: Unit): boolean {
 
 function needsRetreat(world: World, u: Unit): boolean {
   if (u.def.id === 'supply_truck') return u.hp <= u.def.maxHp * 0.3;
-  if (u.hp <= u.def.maxHp * world.data.rules.morale.auto_retreat_hp_ratio) return true;
+  // 3.0: attrition preserves its force (doctrines.retreatHp); others the rules default.
+  if (u.hp <= u.def.maxHp * (retreatHp(world, u.owner) ?? world.data.rules.morale.auto_retreat_hp_ratio)) return true;
   return false;
 }
 

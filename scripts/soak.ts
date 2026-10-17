@@ -20,6 +20,7 @@ import { mannedShare } from '../src/sim/structures';
 import { STRATEGY_AI } from '../src/sim/strategyai';
 import { STORM_AB } from '../src/sim/storm';
 import { THEATRE_AB } from '../src/sim/theatre';
+import { DOCTRINE_AB } from '../src/sim/doctrines';
 import { stockSummary } from '../src/sim/settlements';
 import { econCounts } from '../src/sim/econ';
 import type { World } from '../src/sim/world';
@@ -34,6 +35,8 @@ if (process.env.HOME_DEFENCE === '0') STRATEGY_AI.homeDefence = false;
 if (process.env.STORM === '0') STRATEGY_AI.storm = false;
 // A/B: SIEGE=0 turns only the round-4 capital siege off.
 if (process.env.SIEGE === '0') STORM_AB.siege = false;
+// A/B: DOCTRINES=0 turns the 3.0 AI doctrines off (doctrines.ts).
+if (process.env.DOCTRINES === '0') DOCTRINE_AB.on = false;
 // A/B: THEATRE=0 turns the 2.0 AI supreme HQ (dynamic fronts and orders, theatre.ts) off.
 if (process.env.THEATRE === '0') STRATEGY_AI.theatre = false;
 // …or only some of its parts: THEATRE_OFF=stances,structure,counter

@@ -1,5 +1,6 @@
 import { isCommander } from './formulas';
 import { addZoneLine } from './fronts';
+import { doctrineDirective } from './doctrineai';
 import type { Directive, DirectiveKind, Faction } from './types';
 import { dist, type V2 } from './vec';
 import type { World } from './world';
@@ -67,8 +68,15 @@ export function chooseDirective(world: World, f: Faction): boolean {
     kind = 'offensive';
     axis = world.hqPos(fin);
   } else {
-    const r = armyRatio(world, f);
-    if (r < AI_DIRECTIVE.defendBelow || (cur.kind === 'defend' && r < AI_DIRECTIVE.defendExit)) kind = 'defend';
+    // 3.0: the doctrine decides (doctrineai.ts); without one, the 2.2 rule.
+    const d = doctrineDirective(world, f);
+    if (d) {
+      kind = d.kind;
+      axis = d.axis;
+    } else {
+      const r = armyRatio(world, f);
+      if (r < AI_DIRECTIVE.defendBelow || (cur.kind === 'defend' && r < AI_DIRECTIVE.defendExit)) kind = 'defend';
+    }
   }
   const same = cur.kind === kind && ((cur.axis === null && axis === null) || (!!cur.axis && !!axis && dist(cur.axis, axis) < 1));
   if (same) return false;

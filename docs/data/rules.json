@@ -388,6 +388,61 @@
     "hunt_max_units": 12,
     "hunt_max_s": 240
   },
+  "doctrines": {
+    "comment": "3.0 AI doctrines (V30_SPEC §1, sim/doctrines.ts, sim/doctrineai.ts, docs/DOCTRINES.md). Each AI supreme HQ has one: builder 优先发育, blitz 一波直捣黄龙, attrition 稳扎稳打, maneuver 寻机决战. The profile scales the existing AI levers (production mix and caps, investment appetite, occupation detachments, directive thresholds, damaged-unit retreat, raid cadence and targets, troops per front, compliance temperament, main-effort share, armour on the main front) and picks the doctrine offensive (late: convert a late lead; strike: one deep offensive on an enemy capital when the ratio is met, then re-arm; battle: hunt an isolated enemy front at attack_ratio). enabled=false = no doctrine effects (2.2 AI). The player's faction is never steered by its doctrine (it only colours the music in spectate).",
+    "enabled": true,
+    "reveal_s": 300,
+    "profiles": {
+      "builder": {
+        "personality": "balanced",
+        "production": {"engineer": 1.5, "supply_truck": 1.3, "infantry": 1.1, "heavy_tank": 0.8},
+        "caps": {"engineer": 1.7, "supply_truck": 1.3},
+        "invest": 1.3, "occupy": 1.3, "occupy_broken": 1.3, "broken_ratio": 0.5,
+        "attack_ratio": 1.35, "defend_below": 0.45, "defend_exit": 0.65, "defend_kind": "defend", "contract_below": 0.2,
+        "retreat_hp": 0.25,
+        "raid_rate": 0.6, "raid_targets": {"econ": 1, "convoy": 0.5, "rail": 0, "zone": 1}, "raid_on_defence": false,
+        "front_density": 1.0, "temperament": 0, "main_share": 1.0, "armour_main_share": 0.6,
+        "offensive": {"mode": "late", "after_s": 1500, "min_fullness": 0.8, "max_s": 900, "break_share": 0.6, "cooldown_s": 240, "force_after_s": 0, "force_ratio": 0, "between": "advance"},
+        "upgrades": ["truck_capacity", "engineer_speed", "staff", "full_motorization", "tank_armour"]
+      },
+      "blitz": {
+        "personality": "balanced",
+        "production": {"medium_tank": 1.6, "heavy_tank": 1.3, "light_tank": 1.3, "motor_inf": 2.2, "howitzer": 0.6, "mortar": 0.7, "engineer": 0.8},
+        "caps": {"motor_inf": 2.0, "medium_tank": 1.5, "heavy_tank": 1.3, "light_tank": 1.3},
+        "invest": 0.5, "occupy": 1.0, "occupy_broken": 1.2, "broken_ratio": 0.5,
+        "attack_ratio": 1.2, "defend_below": 0.35, "defend_exit": 0.55, "defend_kind": "defend", "contract_below": 0,
+        "retreat_hp": 0.2,
+        "raid_rate": 0.5, "raid_targets": {"econ": 1, "convoy": 0.5, "rail": 0, "zone": 0}, "raid_on_defence": false,
+        "front_density": 1.15, "temperament": 0.2, "main_share": 1.4, "armour_main_share": 0.8,
+        "offensive": {"mode": "strike", "after_s": 540, "min_fullness": 0.7, "max_s": 720, "break_share": 0.6, "cooldown_s": 150, "force_after_s": 480, "force_ratio": 1.15, "between": "advance"},
+        "upgrades": ["tank_gun", "tank_armour", "full_motorization", "truck_capacity"]
+      },
+      "attrition": {
+        "personality": "infantry",
+        "production": {"mg": 1.3, "at_gun": 1.3, "howitzer": 1.4, "engineer": 1.4, "light_tank": 0.7, "recon": 1.3},
+        "caps": {"mg": 1.5, "at_gun": 1.5, "howitzer": 2.0, "engineer": 1.5, "recon": 1.5},
+        "invest": 1.0, "occupy": 0.8, "occupy_broken": 1.2, "broken_ratio": 0.5,
+        "attack_ratio": 1.6, "defend_below": 0.35, "defend_exit": 0.55, "defend_kind": "fortify", "contract_below": 0,
+        "retreat_hp": 0.35,
+        "raid_rate": 2.0, "raid_targets": {"econ": 1, "convoy": 1, "rail": 1, "zone": 1}, "raid_on_defence": true,
+        "front_density": 1.5, "temperament": -0.1, "main_share": 1.0, "armour_main_share": 0.6,
+        "offensive": {"mode": "late", "after_s": 1800, "min_fullness": 0.8, "max_s": 900, "break_share": 0.65, "cooldown_s": 300, "force_after_s": 0, "force_ratio": 0, "between": "advance"},
+        "upgrades": ["attached_guns", "artillery_range", "ap_grenades", "staff"]
+      },
+      "maneuver": {
+        "personality": "mechanized",
+        "production": {"howitzer": 1.7, "medium_tank": 1.3, "light_tank": 1.1, "mg": 0.7},
+        "caps": {"motor_inf": 2.0, "medium_tank": 1.5, "howitzer": 2.0, "light_tank": 1.3},
+        "invest": 0.8, "occupy": 0.7, "occupy_broken": 1.6, "broken_ratio": 0.6,
+        "attack_ratio": 1.5, "defend_below": 0.35, "defend_exit": 0.55, "defend_kind": "defend", "contract_below": 0,
+        "retreat_hp": 0.25,
+        "raid_rate": 0.7, "raid_targets": {"econ": 1, "convoy": 1, "rail": 0, "zone": 0}, "raid_on_defence": false,
+        "front_density": 1.3, "temperament": -0.05, "main_share": 1.8, "armour_main_share": 0.9,
+        "offensive": {"mode": "battle", "after_s": 300, "min_fullness": 0.5, "max_s": 420, "break_share": 0.6, "cooldown_s": 60, "force_after_s": 0, "force_ratio": 0, "between": "advance"},
+        "upgrades": ["full_motorization", "tank_gun", "artillery_range", "truck_capacity"]
+      }
+    }
+  },
   "information": {"default_mode": "open", "supported_modes": ["open", "fog"], "enemy_memory_seconds": 15},
   "manual_control": {
     "move_completion_radius_m": 8,

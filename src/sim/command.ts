@@ -17,6 +17,7 @@ import { boundOrder, lendsGarrisons } from './frontref';
 import { applyDirectiveNow, thinkTheatre } from './theatre';
 import { complianceDue } from './compliance';
 import { chooseDirective } from './directive';
+import { occupyWeight } from './doctrines';
 import { econWorth } from './econwar';
 import type { Faction, Objective, Unit } from './types';
 import { dist, headingTo, type V2 } from './vec';
@@ -394,9 +395,10 @@ function assignOccupations(world: World, f: Faction, occupy: Directive[]): void 
   // Adaptive: nearest places first (fixed-time detachments marching far tended to expire).
   const order = adaptive() ? byReach(occupy, pool) : occupy;
   // Round 2: more detachments for a bigger idle pool and a needier economy (was a flat 3 × 3).
-  const maxDetachments = f.command.finisher ? FINISH.occupyDetachments : eagerOn()
+  // 3.0: the doctrine's occupation eagerness (builder takes every free town; maneuver after the battle).
+  const maxDetachments = f.command.finisher ? FINISH.occupyDetachments : Math.round(occupyWeight(world, f) * (eagerOn()
     ? Math.min(EAGER.occupyCap, EAGER.occupyBase + Math.floor((pool.length / EAGER.occupyPerUnits) * (0.5 + f.command.need)))
-    : HQ.occupyMaxDetachments;
+    : HQ.occupyMaxDetachments));
   for (const d of order) {
     if (detachments >= maxDetachments) break;
     if (active.has(d.obj)) {

@@ -1,6 +1,7 @@
 import type { Faction, Objective, OperationKind, Posture, Personality, Front, Unit } from './types';
 import { crossings } from './terrainai';
 import { frontById } from './frontref';
+import { markContact } from './doctrines';
 import { dist, type V2 } from './vec';
 import type { World } from './world';
 
@@ -221,7 +222,10 @@ function tally(e: EngagementRecord, f: number): SideTally {
 /** Damage hook (from applyDamage): open / feed the engagement at the victim's area, charge the op. */
 export function noteHit(world: World, victim: Unit, attackerOwner: number, hp: number, killed: boolean): void {
   const log = world.battle;
-  if (!log.enabled || hp <= 0 || attackerOwner < 0 || attackerOwner === victim.owner) return;
+  if (hp <= 0 || attackerOwner < 0 || attackerOwner === victim.owner) return;
+  // 3.0: the first battle between two factions reveals their doctrines to each other (doctrines.ts).
+  if ((world.factions[attackerOwner]?.contactAt[victim.owner] ?? 0) < 0) markContact(world, attackerOwner, victim.owner);
+  if (!log.enabled) return;
   const maxHp = victim.fixed ? 1400 : victim.def.maxHp;
   const value = (victim.def.costP + victim.def.costM) * (hp / maxHp);
   const key = areaKey(world, victim.pos);
