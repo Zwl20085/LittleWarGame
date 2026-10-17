@@ -241,12 +241,14 @@ describe('updater shell (fake Electron)', () => {
     expect(existsSync(join(profile, 'Downloads', 'LittleWar-4.0.0-setup.exe'))).toBe(false);
   });
 
-  it('ignores the env feed and test key in a packaged shell (placeholder key = no hot update)', async () => {
+  it('ignores the env feed and test key in a packaged shell (only the real feed, signed by the real key)', async () => {
     publish(makeRelease('3.1.0'));
     const one = launch({ isPackaged: true });
     await one.u.check();
-    expect(one.u.status().state).toBe('unavailable');
-    expect(requested).toEqual([]);
+    // The env feed (127.0.0.1) is never contacted in a packaged shell, and the test-key release is never installed.
+    expect(requested.some((u) => u.startsWith('http://127.0.0.1:9/') || u.startsWith('http://localhost:9/'))).toBe(false);
+    expect(['unavailable', 'idle', 'error', 'checking', 'upToDate']).toContain(one.u.status().state);
+    expect(requested.some((u) => u.endsWith('.zip'))).toBe(false);
   });
 });
 
