@@ -1,34 +1,26 @@
 # WP-F + WP-G status (economic zones, defensive works) — resumable note
 
-Branch: the WP-F/G agent worktree branch, based on `feat/v3.0` (bd00fdc). Spec: `docs/V30_SPEC.md` §7, §8; V23 §1.3.
+Branch: the WP-F/G agent worktree branch, based on `feat/v3.0` at bd00fdc (not yet merged with later v3.0).
+Spec: `docs/V30_SPEC.md` §7, §8; V23 §1.3.
 
 ## Done
-- 87b8cf3 sim core (WIP commit):
-  - `src/sim/econZones.ts` zones (start / level-up / rebuild, engineer job via structures.assignJob ids,
-    output × level × HP × road link, capture with ground, demolition, shellfire), road-link fallback
-    over `MapDef.roads` graph — SEAM `world.roadnet.linkedToOwnTown(owner, p)`.
-  - `src/sim/econZoneAi.ts` AI placement (called from econai.thinkInvestment), `INVEST_STYLE` table +
-    `setInvestStyle` (SEAM for doctrines).
-  - `src/sim/worksTiers.ts` upgrades (pillbox→bunker→fortress, trench tier 1), AI planner (from
-    fortplans.planStructures), manned observation / artillery spotting helpers.
-  - `src/sim/minefields.ts` lay / slow / detonate / clear.
-  - `src/sim/capitalDefence.ts` perimeter strongpoints + fixed MG crews + mortar position, respawn,
-    repair jobs, fog observation ring (sim.updateVisibility).
-  - rules.json blocks `econ_zones`, `construction.defensive.tiers`, `capital_defence` (+ loader validation).
+- 87b8cf3 sim core: `econZones.ts`, `econZoneAi.ts`, `worksTiers.ts`, `minefields.ts`, `capitalDefence.ts`; rules.json blocks
+  `econ_zones`, `construction.defensive.tiers`, `capital_defence`; hooks in structures / fortplans / sim / econ / econwar /
+  movement / works / terrainrules.
+- cae7674 commands (`buildZone`, `upgradeZone`, `upgradeWork`, `layMines` → `src/sim/worksCommands.ts`), snapshot
+  `econZones`, UI: economy panel "build zone" → map click mode `placeZone`, `src/ui/zonePanel.ts`, minimap ring + zones,
+  strings `src/ui/i18n-works.ts` (zh + en).
+- 12a6af2 render: `src/render/worksModels.ts` (ezone1..3, fortress, at_emplacement, strongpoint, minefield).
+- 674e1fe tests: `tests/econZones.test.ts`, `tests/worksTiers.test.ts`; econwar / structures tests adjusted for the perimeter.
+- 37d1f92 labs: `scripts/lab30/defence.ts`, `scripts/lab30/economy.ts`, helper `scripts/lab30/fgkit.ts`.
 
 ## Baseline (before)
-- `npx tsx scripts/soak.ts 45 7,11,13`: eliminations 2 / 1 / 1 in 3 × 45 min = **1.78 / hour**.
+- `npx tsx scripts/soak.ts 45 7,11,13` at bd00fdc: eliminations 2 / 1 / 1 in 3 × 45 min = **1.78 / hour**.
 
-## Remaining (next steps)
-1. Commands: buildZone {pos}, upgradeZone {zoneId}, upgradeWork {fortId}, layMines {pos, facing} (sim/commands.ts).
-2. Snapshot: `econZones` array (snapshot.ts make/apply).
-3. UI: EconomyPanel "build zone" button → InputMode `placeZone` (ui/context.ts, input.ts modeClick);
-   ZonePanel (click a zone: level, output, link, level-up/rebuild); mode hint; minimap ring; i18n zh+en
-   (status.buildingZone/upgrading/layingMines/repairing, log.zone*, log.work*, log.minefieldGone).
-4. Render: register `ezone1..3`, `fortress`, `at_emplacement`, `strongpoint`, `minefield` kinds
-   (render/worksModels.ts) and feed zones through renderer.extraStructures; exclude new kinds from fortModel fallback.
-5. Tests: tests/econZones.test.ts, tests/worksTiers.test.ts; run `npm test` (determinism).
-6. Labs: scripts/lab30/defence.ts (assault vs tiers, raids vs minefields, cheap-win ring on/off),
-   scripts/lab30/economy.ts (income curves, zones vs pure army 20/45 min).
-7. Soak after: `npx tsx scripts/soak.ts 45 7,11,13` — eliminations/hour must stay ≥ 1.78.
-8. Tuning seen so far: zones take ~12 min to reach level 1 (engineers busy / long walks).
+## In progress
+- Lab runs: defence (assault + mines, then cheapwin), economy, soak after. Tune from the numbers.
+
+## Seams for the lead
+- `world.roadnet.linkedToOwnTown(owner, p)` (econZones.linkedAt) — fallback walks `MapDef.roads`.
+- `INVEST_STYLE` / `setInvestStyle` (econZoneAi.ts) — doctrine weights.
+- `scripts/lab30/fgkit.ts` may be folded into `scripts/lab30/common.ts`.
