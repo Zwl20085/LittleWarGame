@@ -6,6 +6,7 @@ import {
 } from '../src/sim/econZones';
 import { INVEST_STYLE, investStyleOf, pickZoneSite, setInvestStyle } from '../src/sim/econZoneAi';
 import { assignJob } from '../src/sim/structures';
+import { profileOf } from '../src/sim/doctrines';
 import type { V2 } from '../src/sim/vec';
 import type { World } from '../src/sim/world';
 
@@ -124,7 +125,8 @@ describe('economic zones', () => {
   it('investment style table: per-faction override for the doctrine wiring', () => {
     const { world: w } = setup();
     const f = w.factions[0];
-    expect(investStyleOf(f)).toBe(INVEST_STYLE[f.personality] ?? 1);
+    // 3.0 (WP-A): an AI's doctrine invest weight is its style once it has thought; else the personality table.
+    expect(investStyleOf(f)).toBe(profileOf(w, f)?.invest ?? INVEST_STYLE[f.personality] ?? 1);
     setInvestStyle(f, 2.5);
     expect(investStyleOf(f)).toBe(2.5);
     expect(INVEST_STYLE.builder).toBeGreaterThan(INVEST_STYLE.blitz);
