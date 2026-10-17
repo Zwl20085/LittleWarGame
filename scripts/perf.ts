@@ -6,7 +6,9 @@ import { populationCap } from '../src/sim/production';
 const data = buildGameData(readFileSync('docs/data/units.csv', 'utf8'), readFileSync('docs/data/weapons.csv', 'utf8'), readFileSync('docs/data/rules.json', 'utf8'));
 const mapId = (process.argv[2] ?? 'four_cities') as 'four_cities' | 'generated';
 const secs = Number(process.argv[3] ?? 90);
-const m = createMatch(data, { mapId, factions: 4, infoMode: 'open', seed: Number(process.argv[4] ?? 7), difficulty: 'normal', playerSlot: 0, spectate: true });
+// SIZE=large picks the large generated map (default medium).
+const mapSize = process.env.SIZE === 'large' ? 'large' : 'medium';
+const m = createMatch(data, { mapId, mapSize, factions: 4, infoMode: 'open', seed: Number(process.argv[4] ?? 7), difficulty: 'normal', playerSlot: 0, spectate: true });
 const w = m.world;
 const t0 = performance.now();
 let last = performance.now();
@@ -23,6 +25,8 @@ for (let i = 0; i < 20 * secs; i++) {
   tickMs[i] = performance.now() - ts;
   if (i % WINDOW === WINDOW - 1) {
     const now = performance.now();
+    let winMs = 0;
+    for (let k = i - WINDOW + 1; k <= i; k++) winMs += tickMs[k];
     const held = w.factions.map((f) => w.objectives.filter((o) => o.owner === f.id).length).join('/');
     const inc = w.factions.map((f) => `${Math.round(f.incomeP)}p${Math.round(f.incomeM)}m`).join(' ');
     const arty = w.log.filter((l) => l.key === 'log.unitLost' && (l.params.unit === 'howitzer' || l.params.unit === 'mortar')).length;
@@ -47,7 +51,7 @@ for (let i = 0; i < 20 * secs; i++) {
     const raidN = all.filter((u) => u.opRole === 'raid').length, guardN = all.filter((u) => u.opRole === 'rearguard').length;
     const raids = w.log.filter((l) => l.key === 'log.raidLaunched').length;
     const trucksLost = w.log.filter((l) => l.key === 'log.unitLost' && l.params.unit === 'supply_truck').length;
-    console.log(`t=${Math.round(w.time)}s units ${w.units.size} ${((now - last) / WINDOW).toFixed(1)}ms/tick ff ${((NavGrid.builds - lastBuilds) / (WINDOW / 20)).toFixed(2)}/s held ${held} inc ${inc} lost ${w.factions.map((f) => f.lostUnits).join('/')} R ${w.factions.map((f) => Math.round(f.resolve)).join('/')} pop ${w.factions.map((f) => f.popPresent + '+' + f.popReserved).join('/')} stock ${w.factions.map((f) => Math.round(f.p) + '|' + Math.round(f.m)).join(' ')} artyLost ${arty} trucksLost ${trucksLost} raids ${raids} onRaid ${raidN} guards ${guardN} crowd ${crowd.toFixed(1)} stuck ${stuck}(ford ${stuckFord} water ${stuckWater}) pontoons [${bridges}] popCap ${w.factions.map((f) => populationCap(w, f)).join('/')} spear ${spear} modes ${modes}`);
+    console.log(`t=${Math.round(w.time)}s units ${w.units.size} ${(winMs / WINDOW).toFixed(2)}ms/tick ${(winMs * 1000 / WINDOW / Math.max(1, w.units.size)).toFixed(2)}us/unit ff ${((NavGrid.builds - lastBuilds) / (WINDOW / 20)).toFixed(2)}/s held ${held} inc ${inc} lost ${w.factions.map((f) => f.lostUnits).join('/')} R ${w.factions.map((f) => Math.round(f.resolve)).join('/')} pop ${w.factions.map((f) => f.popPresent + '+' + f.popReserved).join('/')} stock ${w.factions.map((f) => Math.round(f.p) + '|' + Math.round(f.m)).join(' ')} artyLost ${arty} trucksLost ${trucksLost} raids ${raids} onRaid ${raidN} guards ${guardN} crowd ${crowd.toFixed(1)} stuck ${stuck}(ford ${stuckFord} water ${stuckWater}) pontoons [${bridges}] popCap ${w.factions.map((f) => populationCap(w, f)).join('/')} spear ${spear} modes ${modes}`);
     last = now;
     lastBuilds = NavGrid.builds;
   }
