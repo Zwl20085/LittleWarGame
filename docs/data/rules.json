@@ -310,7 +310,7 @@
         "personality": "balanced",
         "production": {"engineer": 1.5, "supply_truck": 1.3, "infantry": 1.1, "heavy_tank": 0.8},
         "caps": {"engineer": 1.7, "supply_truck": 1.3},
-        "invest": 1.8, "occupy": 1.8, "occupy_broken": 1.8, "broken_ratio": 0.5,
+        "invest": 1.5, "occupy": 1.4, "occupy_broken": 1.4, "broken_ratio": 0.5,
         "attack_ratio": 1.35, "defend_below": 0.6, "defend_exit": 0.85, "defend_kind": "defend", "contract_below": 0.3,
         "retreat_hp": 0.25,
         "raid_rate": 0.6, "raid_targets": {"econ": 1, "convoy": 0.5, "rail": 0, "zone": 1}, "raid_on_defence": false,
@@ -319,15 +319,15 @@
         "upgrades": ["truck_capacity", "engineer_speed", "staff", "full_motorization", "tank_armour"]
       },
       "blitz": {
-        "personality": "armor",
-        "production": {"motor_inf": 2.0, "medium_tank": 1.2, "mortar": 0.6, "howitzer": 0.5, "mg": 0.7, "engineer": 0.6},
+        "personality": "balanced",
+        "production": {"medium_tank": 1.6, "heavy_tank": 1.3, "light_tank": 1.3, "motor_inf": 2.2, "howitzer": 0.6, "mortar": 0.7, "engineer": 0.8},
         "caps": {"motor_inf": 2.0, "medium_tank": 1.5, "heavy_tank": 1.3, "light_tank": 1.3},
-        "invest": 0.5, "occupy": 0.7, "occupy_broken": 1.2, "broken_ratio": 0.5,
-        "attack_ratio": 1.25, "defend_below": 0.4, "defend_exit": 0.6, "defend_kind": "defend", "contract_below": 0,
+        "invest": 0.5, "occupy": 1.0, "occupy_broken": 1.2, "broken_ratio": 0.5,
+        "attack_ratio": 1.3, "defend_below": 0.4, "defend_exit": 0.6, "defend_kind": "defend", "contract_below": 0,
         "retreat_hp": 0.2,
         "raid_rate": 0.5, "raid_targets": {"econ": 1, "convoy": 0.5, "rail": 0, "zone": 0}, "raid_on_defence": false,
         "front_density": 1.15, "temperament": 0.2, "main_share": 1.4, "armour_main_share": 0.8,
-        "offensive": {"mode": "strike", "after_s": 420, "min_fullness": 0.7, "max_s": 480, "break_share": 0.55, "cooldown_s": 150, "force_after_s": 420, "force_ratio": 1.0, "between": "defend"},
+        "offensive": {"mode": "strike", "after_s": 540, "min_fullness": 0.7, "max_s": 480, "break_share": 0.65, "cooldown_s": 150, "force_after_s": 480, "force_ratio": 1.15, "between": "advance"},
         "upgrades": ["tank_gun", "tank_armour", "full_motorization", "truck_capacity"]
       },
       "attrition": {
@@ -346,7 +346,7 @@
         "personality": "mechanized",
         "production": {"howitzer": 1.7, "medium_tank": 1.3, "light_tank": 1.1, "mg": 0.7},
         "caps": {"motor_inf": 2.0, "medium_tank": 1.5, "howitzer": 2.0, "light_tank": 1.3},
-        "invest": 0.8, "occupy": 0.6, "occupy_broken": 1.6, "broken_ratio": 0.6,
+        "invest": 0.8, "occupy": 0.9, "occupy_broken": 1.6, "broken_ratio": 0.6,
         "attack_ratio": 1.5, "defend_below": 0.45, "defend_exit": 0.65, "defend_kind": "defend", "contract_below": 0,
         "retreat_hp": 0.25,
         "raid_rate": 0.7, "raid_targets": {"econ": 1, "convoy": 1, "rail": 0, "zone": 0}, "raid_on_defence": false,

@@ -69,16 +69,19 @@ function specs(a: ReturnType<typeof parseArgs>, data: string): Spec[] {
   const minutes = a.num('minutes', 45);
   const size = a.str('size', 'medium') as 'medium' | 'large';
   const suites = a.str('suite', 'duel,ffa').split(',');
+  const only = a.str('only', '');
   const out: Spec[] = [];
   const base = { minutes, mapSize: size, src: 'src', data };
   if (suites.includes('duel')) {
     for (let i = 0; i < DOCTRINES.length; i++) {
       for (let j = i + 1; j < DOCTRINES.length; j++) {
-        seeds.forEach((seed, k) => {
-          // Alternate the slots by seed so neither doctrine always has the same corner.
-          const pair = k % 2 === 0 ? [DOCTRINES[i], DOCTRINES[j]] : [DOCTRINES[j], DOCTRINES[i]];
-          out.push({ ...base, seed, factions: 2, suite: 'duel', doctrines: pair, config: { doctrines: pair } });
-        });
+        if (only && DOCTRINES[i] !== only && DOCTRINES[j] !== only) continue;
+        // Both slot orders on every seed: the 1v1 corners are not symmetric (slot 0 won 9 of 12 on seeds 7 / 13 in v2).
+        for (const seed of seeds) {
+          for (const pair of [[DOCTRINES[i], DOCTRINES[j]], [DOCTRINES[j], DOCTRINES[i]]]) {
+            out.push({ ...base, seed, factions: 2, suite: 'duel', doctrines: pair, config: { doctrines: pair } });
+          }
+        }
       }
     }
   }
@@ -91,12 +94,21 @@ function specs(a: ReturnType<typeof parseArgs>, data: string): Spec[] {
   return out;
 }
 
-/** Data dir with doctrines switched off (A/B), else docs/data. */
-function dataDir(off: boolean): string {
-  if (!off) return 'docs/data';
+/** Data dir with rules overrides (`--set "a.b=1;c.d=x"`) and doctrines switched off for the A/B (`--off`), else docs/data. */
+function dataDir(off: boolean, set: string): string {
+  if (!off && !set) return 'docs/data';
   const dir = mkdtempSync(join(tmpdir(), 'lwg-doct-'));
-  const rules = JSON.parse(readFileSync('docs/data/rules.json', 'utf8')) as { doctrines?: { enabled: boolean } };
-  if (rules.doctrines) rules.doctrines.enabled = false;
+  const rules = JSON.parse(readFileSync('docs/data/rules.json', 'utf8')) as Record<string, unknown> & { doctrines?: { enabled: boolean } };
+  if (off && rules.doctrines) rules.doctrines.enabled = false;
+  for (const kv of set.split(';').filter(Boolean)) {
+    const [path, raw] = kv.split('=');
+    const keys = path.trim().split('.');
+    let o = rules as Record<string, unknown>;
+    for (const k of keys.slice(0, -1)) o = o[k] as Record<string, unknown>;
+    let v: unknown = raw.trim();
+    try { v = JSON.parse(raw); } catch { /* a bare string */ }
+    o[keys[keys.length - 1]] = v;
+  }
   writeFileSync(join(dir, 'rules.json'), JSON.stringify(rules));
   for (const f of ['units.csv', 'weapons.csv']) writeFileSync(join(dir, f), readFileSync(`docs/data/${f}`));
   return dir;
@@ -105,7 +117,7 @@ function dataDir(off: boolean): string {
 async function main(): Promise<void> {
   const a = parseArgs(process.argv.slice(2));
   const off = a.has('off');
-  const list = specs(a, dataDir(off));
+  const list = specs(a, dataDir(off, a.str('set', '')));
   const tag = a.str('tag', off ? 'off' : 'run');
   console.log(`doctrine lab: ${list.length} matches (${tag})`);
   const t0 = performance.now();

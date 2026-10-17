@@ -27,8 +27,8 @@ export const DOCTRINE_AI = {
   /** Battle: enemy value within lineR of an enemy front's line point is that front's force … */
   lineR: 450,
   /** … isolated when the known enemy within isolationR is at most isolationMul × it. */
-  isolationR: 1300,
-  isolationMul: 1.35,
+  isolationR: 1000,
+  isolationMul: 1.8,
   /** Smallest enemy force worth a decisive battle (value). */
   minBattle: 400,
   /** Battle over (won) when the enemy at the axis is down to this share of its value at launch. */
@@ -85,7 +85,11 @@ export interface DoctrineChoice { readonly kind: DirectiveKind; readonly axis: V
 /** The doctrine's directive this think, or null (no doctrine: the 2.2 choice). */
 export function doctrineDirective(world: World, f: Faction): DoctrineChoice | null {
   const p = profileOf(world, f);
-  if (!p) return null;
+  return p ? doctrineChoice(world, f, p) : null;
+}
+
+/** The directive profile `p` asks of faction `f` now (also used by the challenge lab's doctrine_* strategies). */
+export function doctrineChoice(world: World, f: Faction, p: DoctrineProfile): DoctrineChoice {
   const a = armies(world, f);
   const ratio = a.top > 0 ? a.mine / a.top : Infinity;
   setEnemyBroken(f, a.top < p.broken_ratio * a.mine);

@@ -12,6 +12,7 @@ import { Hud } from './ui/hud';
 import { t } from './ui/i18n';
 import { CameraControls } from './ui/cameraControls';
 import { InputController } from './ui/input';
+import { MusicCues } from './ui/musicCues';
 import { showPauseMenu } from './ui/pause';
 import { showResults } from './ui/results';
 import { onSettingsChange, prefersReducedMotion, settings, type Settings } from './ui/settings';
@@ -59,6 +60,7 @@ export class Game {
   private readonly offSettings: () => void;
   private pauseMenu: (() => void) | null = null;
   private readonly audio: AudioSession;
+  private readonly cues: MusicCues;
 
   constructor(private readonly root: HTMLElement, data: GameData, readonly config: MatchConfig, private readonly exits: { again: () => void; menu: () => void }, opts: GameOptions = {}) {
     this.attract = !!opts.attract;
@@ -89,8 +91,11 @@ export class Game {
       },
       toast(text, sev) { self.hud?.toast(text, sev); },
     };
+    // 3.0 music wiring: doctrine theme, offensive / capital lost / quiet cues (ui/musicCues.ts).
+    this.cues = new MusicCues(config.playerSlot, spectator, !this.attract);
     this.bus.onResult = (env, out) => {
       if (!out.ok && env.actor === config.playerSlot) this.hud?.toast(t(`fail.${out.reason as CommandFail}`), 'warn');
+      this.cues.onCommand(env, out);
     };
     if (this.host) {
       this.host.onCommandResult = this.bus.onResult;
@@ -197,6 +202,7 @@ export class Game {
     if (!this.host) alpha = ctx.paused ? 1 : Math.min(1, this.acc / w.dt);
     // Audio reads world.fx before the renderer consumes it.
     this.audio.update(dtReal, w, this.renderer.rig, ctx.paused, !this.renderSuspended);
+    this.cues.update(w);
     if (!this.renderSuspended) this.renderer.frame(alpha, ctx.paused ? 0 : dtReal * ctx.speed);
     this.hudTimer -= dtReal;
     if (this.hud && this.hudTimer <= 0) {
@@ -238,6 +244,7 @@ export class Game {
   dispose(): void {
     cancelAnimationFrame(this.raf);
     this.audio.dispose();
+    this.cues.dispose();
     this.host?.dispose();
     window.removeEventListener('resize', this.onResize);
     this.offSettings();
