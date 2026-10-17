@@ -179,3 +179,27 @@ User (2026-10-10): the supreme HQ gives ONE command; every front decides its own
   again within 30 s, or the HUD toggle 强制执行 / Force (`setDirective.force`), sets `Directive.forced`: every front obeys
   at once. Obeyed orders under a player directive stay binding as in 2.2. The AI supreme HQ's directives use the same
   model. Lab switch `COMPLIANCE_AB.on`; labs `scripts/lab30/fronts.ts`, `scripts/lab30/directive.ts`.
+
+## 9. 3.0 — sparse fronts and infiltration (as built, WP-E)
+
+- **Zone of control** (`zoc.ts`, rules `infiltration`): every 0.5 s, right after the visibility pass, an enemy within
+  `zoc_m` (150) of a front's *line unit* (line role, not manual / garrison / raid / spearhead / mounted, no guns or
+  trucks) moves at `zoc_speed_mul` (0.5) and is revealed to that faction. Two facing lines only slow each other; a real
+  intruder (a detachment, raid or column) is also chased by up to `engage_per_intruder` line units (leash
+  `engage_leash_m`, status 拦截越线之敌 / Intercepting). Moving across the segment between two own line units closer
+  than `contact_gap_m` (250) is a *line crossing*: it is reported at once and the front's reaction group intercepts.
+  Cost: one owner-masked `findOwner` per unit per pass (cells without a hostile owner are skipped).
+- **Pickets and reaction group** (`pickets.ts`, end of `planFront`): picket points every `picket_gap_m` (220) ×
+  `picket_tier_mul[tier]` along the front's whole stretch; an uncovered point takes the spare infantry squad with the
+  most redundant slot (≤ `picket_max_share` of the front's infantry). Pickets are line slots (binding-order rules
+  unchanged). `reaction_share` (15 %) of the front's combat units, motorized first then tanks, stand
+  `reaction_back_m` behind the middle while the front is not pushing. Each front's stretch is now the front cells
+  nearest its own line (`segmentsByProximity`): the 2.x split by array index gave fronts stretches far from them.
+- **Rear screen and hunt** (`infiltration.ts`): a known enemy on own ground (or unclaimed ground nearest the own
+  capital) `report_depth_m` from hostile-held ground and away from its own line units is an infiltrator; clusters
+  worth `report_min_value` are announced (log 渗透警报 / Infiltrator reported + a blinking minimap ring). The nearest
+  free units (not fighting, not on a binding order) hunt it until `hunt_ratio`:1 (追剿渗透之敌 / Hunting), and the
+  capital, cities / towns, towns with economic buildings and own economic zones within `screen_radius_m` get 1–2
+  squads posted toward it (警戒后方城镇 / Screening). Hunters + screens ≤ `response_max_share` of the army.
+- Lab switch `INFILTRATION_AB` (sub-switches zoc / engage / rear / pickets / segments); challenge `INFIL_OFF=1`;
+  lab `scripts/lab30/infiltration.ts [--fog]`; tests `tests/infiltration.test.ts`.
