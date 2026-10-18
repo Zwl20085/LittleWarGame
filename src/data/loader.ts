@@ -127,6 +127,7 @@ function validateLogistics(rules: Rules): void {
       if (!(l.stock_cap_k?.[k] > 0) || !(l.draw_radius_m?.[k] > 0)) throw new Error(`rules.json: logistics stock_cap_k / draw_radius_m missing for ${k}`);
     }
     if (!(l.rearm_per_second > 0) || !(l.rearm_until > l.rearm_below)) throw new Error('rules.json: logistics rearm rates invalid');
+    if (l.tank_rearm_multiplier !== undefined && !(l.tank_rearm_multiplier > 0)) throw new Error('rules.json: logistics.tank_rearm_multiplier must be > 0');
     if (l.place_fill_burst !== undefined && !(l.place_fill_burst > 0)) throw new Error('rules.json: logistics.place_fill_burst must be > 0');
     if (l.steward_stock_target !== undefined && !(l.steward_stock_target > 0 && l.steward_stock_target <= 1)) throw new Error('rules.json: logistics.steward_stock_target must be in (0, 1]');
   }

@@ -35,6 +35,12 @@ const DEFAULTS: LogisticsRules = {
 export const logisticsRules = (world: World): LogisticsRules => world.data.rules.logistics ?? DEFAULTS;
 export const armyScale = (world: World): number => world.data.rules.proposed_defaults.army_scale ?? 1;
 
+/** 3.0.2: share of a full load `u` may take per second (tanks rearm at tank_rearm_multiplier × the rate). */
+export function rearmRate(l: LogisticsRules, u: Unit): number {
+  const tank = u.def.id.endsWith('_tank') ? (l.tank_rearm_multiplier ?? 1) : 1;
+  return l.rearm_per_second * tank;
+}
+
 /** Crowding: share of the full rate each of `n` units drawing at one point receives. */
 export function crowdEfficiency(l: LogisticsRules, n: number): number {
   return 1 / (1 + l.crowd_penalty * Math.max(0, n - l.crowd_free));
@@ -235,7 +241,7 @@ export function drawSecond(world: World): void {
     let budget = Math.min(p.stock, l.place_handover_per_second_k * k);
     for (const u of SC_NEEDY) {
       if (budget <= 1e-9) break;
-      const give = Math.min((1 - u.ammo) * u.def.supplyDemand, l.rearm_per_second * eff * u.def.supplyDemand, budget);
+      const give = Math.min((1 - u.ammo) * u.def.supplyDemand, rearmRate(l, u) * eff * u.def.supplyDemand, budget);
       u.ammo = Math.min(1, u.ammo + give / u.def.supplyDemand);
       budget -= give;
       p.stock -= give;
