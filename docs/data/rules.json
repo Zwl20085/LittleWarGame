@@ -152,6 +152,8 @@
     "initial_stock_ratio": 0.6,
     "draw_radius_m": {"capital": 200, "city": 130, "town": 100},
     "rearm_per_second": 0.012,
+    "tank_rearm_multiplier": 2,
+    "tank_rearm_comment": "3.0.2 armoured-assault round: tanks rearm at twice the rate (stocks and trucks); their guns also cost a tenth of the ammo (weapons.csv) and they carry 30 % more hp (units.csv).",
     "rearm_comment": "Share of a full load a unit receives per second at a stock or a truck (40 s empty to full), before crowding.",
     "crowd_free": 6,
     "crowd_penalty": 0.15,

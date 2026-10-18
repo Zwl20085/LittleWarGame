@@ -2,7 +2,7 @@ import { moveTo, stop } from './movement';
 import { frontById } from './frontref';
 import { safeRear } from './frontai';
 import type { Faction, Front, Place, Unit } from './types';
-import { crowdEfficiency, drawsAmmo, inContact, logisticsRules, armyScale, nearestStock, placeById, placeContested, placeOwner } from './settlements';
+import { crowdEfficiency, drawsAmmo, inContact, logisticsRules, armyScale, nearestStock, placeById, placeContested, placeOwner, rearmRate } from './settlements';
 import { dist, type V2 } from './vec';
 import type { World } from './world';
 import { truckCapacityMul } from './upgradestats';
@@ -292,7 +292,7 @@ export function convoySecond(world: World, f: Faction): void {
         u.lastSuppliedAt = world.time;
         const need = ammoNeed(u);
         if (need <= 0 || budget <= 1e-9) continue;
-        const give = Math.min(need, l.rearm_per_second * eff * u.def.supplyDemand, budget);
+        const give = Math.min(need, rearmRate(l, u) * eff * u.def.supplyDemand, budget);
         u.ammo = Math.min(1, u.ammo + give / u.def.supplyDemand);
         budget -= give;
         t.cargo -= give;

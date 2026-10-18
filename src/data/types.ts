@@ -210,6 +210,8 @@ export interface LogisticsRules {
   readonly initial_stock_ratio: number;
   readonly draw_radius_m: Record<PlaceKind, number>;
   readonly rearm_per_second: number;
+  /** 3.0.2 armoured-assault round: tanks draw at rearm_per_second × this (stocks and trucks). Absent = 1. */
+  readonly tank_rearm_multiplier?: number;
   readonly crowd_free: number;
   readonly crowd_penalty: number;
   readonly place_handover_per_second_k: number;

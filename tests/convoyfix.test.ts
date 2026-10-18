@@ -37,8 +37,9 @@ describe('3.0 convoy fix: tanks short of ammunition get resupplied', () => {
   it('a tank that cannot fire one shell starts rearming even above rearm_below', () => {
     const w = setup();
     const t = quiet(w.spawnUnit(0, 'heavy_tank', spot(w, 300, 0), front(w)));
-    const shell = t.primary!.ammoCost;
-    expect(shell).toBeGreaterThan(L.rearm_below);
+    // 3.0.2 (tank guns cost a tenth): give the test tank a dearer shell so one shot still exceeds rearm_below.
+    const shell = L.rearm_below * 2;
+    t.primary = { ...t.primary!, ammoCost: shell };
     t.ammo = (L.rearm_below + shell) / 2;
     w.spatial.rebuild(w.aliveUnits);
     rearmDuty(w, t, noMove, noMove, false);
