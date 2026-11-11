@@ -112,8 +112,9 @@ export class World {
     this.rngScatter = new Rng(config.seed ^ 0x9e3779b9);
     this.rngAi = new Rng(config.seed ^ 0x7f4a7c15);
     const n = Math.min(config.factions, this.map.cities.length);
+    const coalition = config.teams === '2v2' && n === 4;
     for (let a = 0; a < n; a++) {
-      this.hostile.push(Array.from({ length: n }, (_, b) => a !== b));
+      this.hostile.push(Array.from({ length: n }, (_, b) => (coalition ? a % 2 !== b % 2 : a !== b)));
       this.visibleTo.push(new Set());
       this.lastSeen.push(new Map());
     }

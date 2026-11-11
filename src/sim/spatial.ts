@@ -32,9 +32,18 @@ export class SpatialHash {
   private ownerBit = new Int32Array(0);
   private units: Unit[] = [];
   private cellOf = new Int32Array(0);
+  private dirtyUnits: readonly Unit[] | null = null;
 
   constructor(private readonly size: number, private width = 4096, private depth = 4096) {
     this.resize(width, depth);
+  }
+
+  /**
+   * Defer the grid rebuild until the next spatial query (used by the main-thread mirror, where
+   * most rendered frames never query `world.spatial`).
+   */
+  markDirty(units: readonly Unit[]): void {
+    this.dirtyUnits = units;
   }
 
   setBounds(width: number, depth: number): void {
@@ -63,6 +72,7 @@ export class SpatialHash {
    * that array when units die mid-tick, which would shift the indices this grid stores.
    */
   rebuild(units: readonly Unit[]): void {
+    this.dirtyUnits = null;
     const list = this.units;
     const n = units.length;
     list.length = n;
@@ -115,6 +125,7 @@ export class SpatialHash {
    * Stops at the first match (no result array), for the many "is any enemy near?" checks.
    */
   findOwner(x: number, z: number, r: number, owners: number, pred: (u: Unit) => boolean): Unit | null {
+    if (this.dirtyUnits) this.rebuild(this.dirtyUnits);
     const s = this.size;
     const i0 = Math.max(0, Math.floor((x - r) / s));
     const i1 = Math.min(this.nx - 1, Math.floor((x + r) / s));
@@ -152,6 +163,7 @@ export class SpatialHash {
    * `query`). Cells without any such owner are skipped without scanning their units.
    */
   queryOwners(x: number, z: number, r: number, owners: number, out: Unit[] = []): Unit[] {
+    if (this.dirtyUnits) this.rebuild(this.dirtyUnits);
     out.length = 0;
     const s = this.size;
     const i0 = Math.max(0, Math.floor((x - r) / s));

@@ -26,6 +26,13 @@
 
 ## What's new in 3.0
 
+**3.0.3 — war ledger, 2v2 coalition war, orchestra 2.0, diorama life & faster simulation.**
+- **2v2 Coalition War & tactical siege breakers:** Custom Battle (and `?quick&teams=2v2`) adds a **2v2 Coalition** mode (Factions I & III vs. II & IV) with shared live spotting, intel and allied victory. Stopped infantry squads now capture and garrison abandoned enemy pillboxes, bunkers and fortresses, and pocketed capitals holding zero towns after 15 minutes suffer reduced base output (`0.65×`) so late-war sieges conclude cleanly. Rifle squads motorized by *Full motorization* join armoured spearheads.
+- **Clickable dispatches & post-match War Ledger:** Every entry in the war-room dispatch log resolves its battlefield coordinates and pans the camera there on click. The post-match results screen adds an interactive `<canvas>` **War Ledger** timeline (**Settlements**, **Army Value**, **Income**).
+- **Diorama bridges, train steam & crew animations:** Engineer-built roads crossing rivers now construct timber decks and side railings, railway bridges carry steel side girders, and moving troop trains puff locomotive steam and play rhythmic chug/rail audio (`train`). Firing a tank rocks its hull suspension, gun crew loader `#1` steps to the breech to ram the next shell on recoil, and engineers swing shovels while building or clearing mines.
+- **Orchestra 2.0 & tactile war-room audio:** Each orchestral section bus now passes through an opposite-panned Haas early-reflection stage (`4.5–9.5 ms`) for wide concert-hall seating, consecutive melodic notes glide with `32 ms` legato portamento, brass stabs get a marcato lip-attack scoop, and extended matches cycle through fifth-related tonal centres (`Dm → Gm → Cm → Fm → Am`). Issuing a Supreme HQ directive plays a heavy rubber-stamp thud (`stamp`), and demolishing a building plays a masonry-and-timber collapse (`collapse`).
+- **Runtime & coding efficiency:** Unit snapshots bit-pack four state enums into `F.flags` (`STRIDE` 34 → 30 floats, `-12 %` payload) with O(1) lookup maps and zero per-tick closure allocations, the main-thread spatial hash is marked dirty on snapshot arrival and rebuilt lazily only on UI queries, and the shared flow-field pool keeps 16 hot `Float32Array` fields (`navPool.ts`, `frontSpear.ts`, `homeguardUnit.ts`, every source file `< 800` lines).
+
 **3.0.2 — armoured assault.** Tanks are the spearhead again: tank guns and coaxial MGs use a tenth of the ammunition per shot (a full load lasts ten times as long), tanks rearm at towns and from trucks at twice the rate, and light / medium / heavy tanks carry 30 % more hp (1235 / 2730 / 4160). Anti-tank guns and shell damage are unchanged, so a medium tank now takes three AT penetrations instead of two.
 
 **3.0.1 — hands-off play.** You can now do nothing and just watch: by default your HQ staff run every 3.0 system for you — **Auto-research** buys upgrades in your doctrine's order, **Auto-engineering** lays road links and repairs rail, and **Auto HQ** picks your directive by your doctrine (pick it in a Custom game as *Your doctrine*, or let Quick Battle draw one). Any order you give takes over: a directive you issue stands until you issue Advance or 10 minutes pass, and each toggle hands a system back to you. The infantry attached-gun upgrade is gone (12 upgrades now).
@@ -156,6 +163,18 @@
     <td><b>Cameras for watching.</b> <kbd>K</kbd> is the battle cam: it finds the hottest fight you can see, frames it and cuts to the next. <kbd>F</kbd> follows the selected unit or front, <kbd>O</kbd> orbits and <kbd>Tab</kbd> flies out to the overview and back.</td>
   </tr>
 </table>
+<br/>
+
+<div align="center">
+<img src="docs/media/war-ledger-anim.svg" width="100%" alt="Animated war-room diagram: on the left, clicking a telegraph dispatch in the HUD pans the camera reticle from Oakhaven to Millbrook Depot; on the right, the post-match War Ledger plots four factions' Army Value curves across 40 minutes of war" />
+<br/><sub><b>Clickable telegraph dispatches and the post-match War Ledger.</b> Every line in the war-room log—spearheads, infiltration alerts, captured towns, finished fortresses—can be clicked to jump the camera straight to the action. When a war ends, the results screen plots every faction's <b>Settlements</b>, <b>Army Value</b> and <b>Income</b> over time from the worker's 30-second ledger samples.</sub>
+</div>
+<br/>
+
+<div align="center">
+<img src="docs/media/diorama-orchestra-anim.svg" width="100%" alt="Animated war-room showcase: timber engineer bridges, steel rail girders, steaming troop trains and crew loader animations on the left; Orchestra 2.0 stereo Haas seating and legato portamento in the centre; 2v2 Coalition War and captured enemy bunkers on the right" />
+<br/><sub><b>Diorama life, Orchestra 2.0 and 2v2 Coalition War.</b> Engineer roads crossing rivers build timber bridges with side railings, troop trains puff steam and clatter over steel girder spans, gun loaders step to the breech after each shot, and engineers dig rhythmically at work sites. The score seats each section across a wide stereo Haas stage with legato portamento and modal key shifts, while Custom Battle adds a <b>2v2 Coalition</b> mode (Factions I &amp; III vs. II &amp; IV) with shared intelligence.</sub>
+</div>
 <br/>
 
 <div align="center">
@@ -405,6 +424,20 @@ flowchart LR
 
   The stalls came from shader programs relinked whenever overlay route lines were rebuilt, a minimap that repainted the control field cell by cell, forced layouts in the HUD and full instance-buffer uploads every frame ([PERFORMANCE, 2.2 round](docs/PERFORMANCE.md#22-round-render-agent)). The simulation step is unchanged by that round; the mean tick is 2.5–3.0 ms at 430–450 units at 25 min.
 
+<div align="center">
+<img src="docs/media/perf-pipeline-anim.svg" width="100%" alt="Animated schematic of the 3.0.3 runtime pipeline: 20 Hz Web Worker with shared 16-hot flow-field pool, bit-packed 30-float unit snapshot transfer, and 60 FPS main-thread diorama with lazy spatial hashing" />
+<br/><sub><b>3.0.3 data-oriented runtime pipeline.</b> The worker packs unit snapshots in a single pass with O(1) enum maps and bit-packed <code>F.flags</code> (<code>STRIDE</code> 34 → 30 floats), keeps 16 hot <code>Float32Array</code> flow fields in its shared 192 MB pool with zero-fill slab cooling, and marks the main-thread spatial hash dirty so it rebuilds only when UI picking queries it.</sub>
+</div>
+<br/>
+
+| 3.0.3 runtime & coding efficiency | Before (3.0.2) | After (3.0.3) |
+|---|---|---|
+| Unit snapshot `STRIDE` | 34 floats (136 B / unit) | **30 floats (120 B / unit, -12 %)** |
+| Snapshot state encoding (`setup`, `morale`, `behavior`, `truck`) | 4 × `Array.indexOf()` per unit per tick | **O(1) map lookup + bit-packed into `F.flags` (`bits 8..16`)** |
+| Main-thread `SpatialHash.rebuild` in `applySnapshot` | 20 Hz unconditional rebuild + `new Set()` | **Lazy `markDirty()` (0 rebuilds unless UI picks) + 0-alloc HP sweep** |
+| Flow-field hot cache & A* heap (`navPool.ts`) | 6 hot fields, full-slab `.fill()` on cool, `new Heap()` per path | **16 hot fields, zero-fill slab cool, reusable `heap.clear()`** |
+| Largest source file in `src/` | 895 lines (`fronts.ts`, `homeguard.ts`, `nav.ts`) | **≤ 754 lines** (extracted `navPool.ts`, `frontSpear.ts`, `homeguardUnit.ts`) |
+
 - **Render budget.** Settlement markers are drawn as 4 instanced meshes instead of about 600, and larger vegetation and settlement tiles bring the scene down to about 500 objects. Impact effects are pooled. Map labels come from cached sprites. Each soldier is a few floats in a flat array, stepped every frame, with no per-soldier objects. Quality tiers set the shadow map, pixel ratio, scatter and effect detail.
 - **Numbers you can inspect.** Balance and AI changes are tested in headless wars before they ship:
   - `scripts/balance.ts` prints a ledger for each unit type, a kill matrix and an economy timeline.
@@ -493,7 +526,8 @@ It also prints an attacker × victim kill matrix, damage shares by attacker for 
     <tr><td>2.0</td><td>Supreme HQ and front commanders, pillboxes and bunkers, armoured thrusts, challenge lab, impact effects</td><td><img src="https://img.shields.io/badge/shipped-3a3326?style=flat-square" alt="shipped" /></td></tr>
     <tr><td>2.1</td><td>Fortress war: permanent fortified zones, binding orders, stronger and cheaper works, capital pillboxes, grounded units and detailed towns</td><td><img src="https://img.shields.io/badge/shipped-3a3326?style=flat-square" alt="shipped" /></td></tr>
     <tr><td>2.2</td><td>Economic war: one supreme-HQ directive answered by every front, supply stocks in every town with gradual rearm, per-town production, factories, recruiting offices and depots with raids, roadside farms as cover, armour groups, a weaker AT gun, fog-of-war Quick Battle, update check, a smoother renderer</td><td><img src="https://img.shields.io/badge/shipped-3a3326?style=flat-square" alt="shipped" /></td></tr>
-    <tr><td><b>3.0</b></td><td><b>Doctrine war: four clashing AI doctrines, unlimited fronts with Corps / Army / Army Group tiers, front commanders who may decline an order (and a Force switch), roads and railways, engineer-built economic zones, fortresses, AT emplacements, minefields and a capital defence perimeter, 13 unit upgrades, zone of control and infiltrator hunts, camera modes and time of day, signed automatic updates, a debug lab, doctrine themes in the score</b></td><td><img src="https://img.shields.io/badge/this_release-a63f36?style=flat-square" alt="this release" /></td></tr>
+    <tr><td><b>3.0</b></td><td><b>Doctrine war: four clashing AI doctrines, unlimited fronts with Corps / Army / Army Group tiers, front commanders who may decline an order (and a Force switch), roads and railways, engineer-built economic zones, fortresses, AT emplacements, minefields and a capital defence perimeter, 12 unit upgrades, zone of control and infiltrator hunts, camera modes and time of day, signed automatic updates, a debug lab, doctrine themes in the score</b></td><td><img src="https://img.shields.io/badge/shipped-3a3326?style=flat-square" alt="shipped" /></td></tr>
+    <tr><td><b>3.0.1–3.0.3</b></td><td><b>Hands-off staff automation (Auto HQ / research / engineering), tougher &amp; deeper-mag armoured spearheads, upgraded motorised rifles in spearheads, clickable war-room dispatch log, post-match War Ledger timeline charts, building collapse audio, 30-float bit-packed snapshots &amp; lazy spatial mirror</b></td><td><img src="https://img.shields.io/badge/this_release-a63f36?style=flat-square" alt="this release" /></td></tr>
     <tr><td>3.0.x</td><td>War pace: with zones, works and the perimeter on, four-way AI wars end about half as often as in 2.2 (0.9 eliminations an hour against 1.3–1.8); a tuning pass on the perimeter, works tiers and zone output</td><td><img src="https://img.shields.io/badge/in_progress-8a6a2c?style=flat-square" alt="in progress" /></td></tr>
     <tr><td>3.0.x</td><td>Performance round on large maps with every 3.0 system on</td><td><img src="https://img.shields.io/badge/in_progress-8a6a2c?style=flat-square" alt="in progress" /></td></tr>
     <tr><td>3.x</td><td>Harder AI difficulties</td><td><img src="https://img.shields.io/badge/planned-6b7a3a?style=flat-square" alt="planned" /></td></tr>

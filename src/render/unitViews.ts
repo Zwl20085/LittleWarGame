@@ -336,11 +336,19 @@ export class UnitViews {
       let kneel = false;
       let tilt = 0;
       let lift = 0;
+      let sStride = stride;
+      const building = u.def.id === 'engineer' && !u.moving && (u.buildTargetId !== null || u.behavior === 'hold');
       if (sv > WALKING) {
         // Walking: lean into the stride, rise as the legs pass.
         const amp = Math.min(1, sv / 1.2);
         tilt = -0.12 * amp;
         lift = (amp * STRIDE_AMP - Math.abs(stride)) * 0.12 * SOLDIER_SCALE;
+      } else if (building) {
+        // Engineers actively building works or clearing mines swing their shovel / torso rhythmically.
+        const dig = Math.sin(this.frameNo * 0.18 + k * 1.7);
+        tilt = -0.34 + dig * 0.22;
+        sStride = dig * 0.35;
+        settled = false;
       } else if (sit === 'pinned' || (sit === 'engaged' && r > 0.6 && r < 0.85)) {
         tilt = -1.25;
         lift = 0.2 * SOLDIER_SCALE;
@@ -356,14 +364,14 @@ export class UnitViews {
       v.cacheKneel[k] = kneel ? 1 : 0;
       v.cacheGround[k] = gy;
       if (blobs) this.soldierBlob(sx, gy, sz, sol[o + SC], sol[o + SS], tilt < -1);
-      if (moving) {
-        // Marching squads never use the cache: write straight into the batch.
+      if (moving || building) {
+        // Marching or actively digging squads never use the static cache: write straight into the batch.
         const b = kneel ? kneelB : standFor(k);
-        const at = b.next(v.color, kneel ? 0 : stride); // may grow the batch: read matrices after
+        const at = b.next(v.color, kneel ? 0 : sStride); // may grow the batch: read matrices after
         writeYZcs(b.matrices, at, sx, y, sz, sol[o + SC], -sol[o + SS], tilt, SOLDIER_SCALE);
       } else {
         writeYZcs(v.cache, k * 16, sx, y, sz, sol[o + SC], -sol[o + SS], tilt, SOLDIER_SCALE);
-        (kneel ? kneelB : standFor(k)).pushArray(v.cache, k * 16, v.color, kneel ? 0 : stride);
+        (kneel ? kneelB : standFor(k)).pushArray(v.cache, k * 16, v.color, kneel ? 0 : sStride);
       }
     }
     v.settled = settled;
@@ -471,7 +479,8 @@ export class UnitViews {
 
   /** Body / turret / crew matrices for a unit with a hull or a gun. */
   private bodyMatrix(v: UnitView, out: THREE.Matrix4): THREE.Matrix4 {
-    writeTilted(out.elements, 0, v.x, v.y, v.z, v.heading, v.pitch, v.roll, v.spec.scale);
+    const pitchKick = v.spec.vehicle && v.recoil > 0 ? -Math.sin(v.recoil * Math.PI) * 0.055 * v.recoil : 0;
+    writeTilted(out.elements, 0, v.x, v.y, v.z, v.heading, v.pitch + pitchKick, v.roll, v.spec.scale);
     return out;
   }
 
@@ -534,9 +543,11 @@ export class UnitViews {
       }
       // Slot in turret space around the gun's (unrecoiled) pivot at the unit origin, so the
       // crew walk around with the gun as it traverses instead of being carried rigidly.
+      // After firing (v.recoil > 0), crew loader #1 steps forward to the breech to ram the next round.
       const te = turret.elements;
-      const cx = v.goal[k * 2];
-      const cz = v.goal[k * 2 + 1];
+      const loadCycle = k === 1 && v.recoil > 0.05 ? Math.sin(v.recoil * Math.PI) : 0;
+      const cx = v.goal[k * 2] + loadCycle * 1.15;
+      const cz = v.goal[k * 2 + 1] * (1 - loadCycle * 0.55);
       const px = te[0] * cx + te[8] * cz + v.x;
       const pz = te[2] * cx + te[10] * cz + v.z;
       // At their posts the crew face the gun's line of fire.

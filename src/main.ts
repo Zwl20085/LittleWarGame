@@ -70,6 +70,7 @@ if (params.has('quick')) {
     mapId,
     mapSize: params.get('size') === 'large' ? 'large' : 'medium',
     factions: mapId === 'greystone_pinecreek' ? 2 : Number(params.get('factions') ?? 4),
+    teams: params.get('teams') === '2v2' ? '2v2' : 'ffa',
     infoMode: params.get('fog') !== null ? 'fog' : 'open',
     seed: Number(params.get('seed') ?? 7),
     difficulty: 'normal',

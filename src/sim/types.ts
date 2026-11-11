@@ -566,6 +566,8 @@ export interface MatchConfig {
   readonly doctrines?: readonly (DoctrineId | 'random')[];
   readonly playerSlot: number;
   readonly spectate?: boolean;
+  /** 'ffa' (default) = everyone hostile; '2v2' = Coalition War (slots 0 & 2 vs. slots 1 & 3). */
+  readonly teams?: 'ffa' | '2v2';
 }
 
 export interface MatchResult {

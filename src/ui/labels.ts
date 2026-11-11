@@ -1,3 +1,4 @@
+import type { V2 } from '../sim/vec';
 import type { World } from '../sim/world';
 import { lang, t, unitShortName, weaponName } from './i18n';
 
@@ -51,4 +52,33 @@ export function frontLabel(world: World, faction: number, frontId: number): stri
   if (!s.name) return t('front.numbered', { n: s.id + 1 });
   const dup = fronts.filter((x) => x.name === s.name && x.id < s.id).length;
   return t('front.named', { place: objectiveLabel(world, s.name) }) + (ORDINAL[dup] ?? ` ${dup + 1}`);
+}
+
+/** Resolve the world `(x, z)` location associated with a log entry's parameter bag, if any. */
+export function logPosition(world: World, faction: number, params: Record<string, string | number>): V2 | null {
+  if (typeof params.x === 'number' && typeof params.z === 'number') return { x: params.x, z: params.z };
+  const pt = typeof params.point === 'string' && params.point ? params.point : typeof params.into === 'string' && params.into ? params.into : '';
+  if (pt) {
+    if (pt.startsWith('cap:')) {
+      const f = Number(pt.slice(4));
+      return world.factions[f] ? world.hqPos(f) : null;
+    }
+    const o = world.objectives.find((x) => x.id === pt);
+    if (o) return o.pos;
+  }
+  if (typeof params.feature === 'number') {
+    const feat = (world.map.features ?? [])[params.feature];
+    if (feat) return feat.pos;
+  }
+  if (typeof params.city === 'number' && world.factions[params.city]) return world.hqPos(params.city);
+  const fronts = world.factions[faction]?.fronts ?? [];
+  if (typeof params.front === 'number') {
+    const s = fronts.find((x) => x.id === params.front);
+    if (s) return s.front;
+  }
+  if (typeof params.front === 'string' && params.front) {
+    const s = fronts.find((x) => x.name === params.front || frontLabel(world, faction, x.id) === params.front);
+    if (s) return s.front;
+  }
+  return world.factions[faction] ? world.hqPos(faction) : null;
 }

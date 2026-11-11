@@ -194,6 +194,7 @@ export class GameRenderer {
     this.scene.add(this.objectiveMarkers.group);
     // 3.0 railways, stations, trains and engineer roads (railField.ts).
     this.railField = new RailField(w.terrain, () => w.transport, (owner) => w.factions[owner]?.color ?? '#888888');
+    this.railField.onSteam = (x, y, z) => this.effects.chimneySmoke(x, y, z);
     this.scene.add(this.railField.group);
     this.buildCities();
     this.freezeStatic();
@@ -568,7 +569,7 @@ export class GameRenderer {
     this.effects.update(dt);
     this.syncObjectives();
     this.syncForts(dt);
-    this.railField.update(alpha);
+    this.railField.update(alpha, dt);
     this.paintFront(this.match.frontView ?? this.match.front);
     this.drawOverlays(realDt);
     for (let i = this.orderMarkers.length - 1; i >= 0; i--) {

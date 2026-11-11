@@ -23,7 +23,10 @@ const BALLAST = new THREE.Color('#5c574f');
 const BALLAST_CUT = new THREE.Color('#7d4a3a');
 const SLEEPER = new THREE.Color('#4b3a2a');
 const RAIL = new THREE.Color('#9a9a96');
+const GIRDER = new THREE.Color('#4a4d50');
 const DIRT = new THREE.Color('#8c7b5e');
+const TIMBER_DECK = new THREE.Color('#6e5438');
+const TIMBER_RAIL = new THREE.Color('#4b3a2a');
 const _m = new THREE.Matrix4();
 const _q = new THREE.Quaternion();
 const _p = new THREE.Vector3();
@@ -31,8 +34,8 @@ const _s = new THREE.Vector3();
 const _e = new THREE.Euler();
 const _c = new THREE.Color();
 
-/** A piece of straight track: centre, heading, length, height. */
-interface Piece { readonly x: number; readonly z: number; readonly y: number; readonly h: number; readonly len: number; readonly cut: boolean }
+/** A piece of straight track or road: centre, heading, length, height, and whether it bridges water. */
+interface Piece { readonly x: number; readonly z: number; readonly y: number; readonly h: number; readonly len: number; readonly cut: boolean; readonly bridge: boolean }
 
 export class RailField {
   readonly group = new THREE.Group();
@@ -40,6 +43,8 @@ export class RailField {
   private cutKey = '';
   private statics: THREE.InstancedMesh[] = [];
   private readonly trains: THREE.InstancedMesh;
+  /** Emits locomotive steam puffs while trains move along a line. */
+  onSteam: ((x: number, y: number, z: number) => void) | null = null;
 
   constructor(private readonly terrain: Terrain, private readonly state: () => TransportState | null, private readonly colorOf: (owner: number) => string) {
     this.group.name = 'rails';
@@ -51,13 +56,14 @@ export class RailField {
   }
 
   /** Height of the track bed at (x, z): the ground, or a bridge deck over water. */
-  private bedY(x: number, z: number): number {
+  private bedY(x: number, z: number): { y: number; bridge: boolean } {
     const t = this.terrain;
     const i = Math.max(0, Math.min(t.nx - 1, Math.round(x / t.cell)));
     const j = Math.max(0, Math.min(t.nz - 1, Math.round(z / t.cell)));
     const w = t.waterSurface[j * t.nx + i];
     const g = t.heightAt(x, z);
-    return Number.isNaN(w) ? g : Math.max(g, w + 1.2);
+    const bridge = !Number.isNaN(w) && g <= w + 0.6;
+    return { y: Number.isNaN(w) ? g : Math.max(g, w + 1.2), bridge };
   }
 
   private pieces(pts: readonly V2[], step: number, cut: boolean): Piece[] {
@@ -73,7 +79,8 @@ export class RailField {
         const t = (s + 0.5) / n;
         const x = a.x + (b.x - a.x) * t;
         const z = a.z + (b.z - a.z) * t;
-        out.push({ x, z, y: this.bedY(x, z), h, len: L / n, cut });
+        const { y, bridge } = this.bedY(x, z);
+        out.push({ x, z, y, h, len: L / n, cut, bridge });
       }
     }
     return out;
@@ -98,8 +105,15 @@ export class RailField {
     const sleepers = this.instanced(box, plain, ties, () => [0.26, 0.14, 2.5, 0.33], () => SLEEPER);
     const railPieces = beds.flatMap((p) => [-1, 1].map((side) => ({ ...p, side })));
     const rails = this.instanced(box, metal, railPieces, (p) => [p.len + 0.05, 0.14, 0.08, 0.44], null, (p) => (p as Piece & { side: number }).side * GAUGE * 0.5);
-    const roads = st.builtRoads.flatMap((r) => this.pieces([r.a, r.b], PIECE, false));
-    const dirt = this.instanced(box, plain, roads, (p) => [p.len + 0.4, 0.12, 8, 0.06], () => DIRT);
+    const railBridgeSides = beds.filter((p) => p.bridge).flatMap((p) => [-1, 1].map((side) => ({ ...p, side })));
+    const railGirders = this.instanced(box, plain, railBridgeSides, (p) => [p.len + 0.15, 0.9, 0.24, 0.55], () => GIRDER, (p) => (p as Piece & { side: number }).side * 2.1);
+    const allRoads = st.builtRoads.flatMap((r) => this.pieces([r.a, r.b], PIECE, false));
+    const dryRoads = allRoads.filter((p) => !p.bridge);
+    const bridgeRoads = allRoads.filter((p) => p.bridge);
+    const bridgeSides = bridgeRoads.flatMap((p) => [-1, 1].map((side) => ({ ...p, side })));
+    const dirt = this.instanced(box, plain, dryRoads, (p) => [p.len + 0.4, 0.12, 8, 0.06], () => DIRT);
+    const roadDeck = this.instanced(box, plain, bridgeRoads, (p) => [p.len + 0.4, 0.36, 8.2, 0.18], () => TIMBER_DECK);
+    const roadRails = this.instanced(box, plain, bridgeSides, (p) => [p.len + 0.2, 0.85, 0.26, 0.72], () => TIMBER_RAIL, (p) => (p as Piece & { side: number }).side * 3.95);
     const stationGeo = stationGeometry();
     const stations = new THREE.InstancedMesh(stationGeo, tintedMaterial(0.9, 0.05), Math.max(1, st.stations.length));
     st.stations.forEach((s, k) => {
@@ -114,7 +128,7 @@ export class RailField {
     stations.count = st.stations.length;
     stations.castShadow = true;
     stations.receiveShadow = true;
-    for (const m of [bed, sleepers, rails, dirt, stations]) {
+    for (const m of [bed, sleepers, rails, railGirders, dirt, roadDeck, roadRails, stations]) {
       if (!m) continue;
       m.matrixAutoUpdate = false;
       this.statics.push(m);
@@ -139,7 +153,7 @@ export class RailField {
   }
 
   /** Per frame: rebuild static track when it changed; pose the trains (interpolated by alpha). */
-  update(alpha: number): void {
+  update(alpha: number, dt = 0): void {
     const st = this.state();
     if (!st) return;
     const cutKey = st.lines.map((l) => (l.cut ? 1 : 0)).join('');
@@ -156,11 +170,17 @@ export class RailField {
       // The model's origin is mid-train: shift it back so the locomotive leads from the train position.
       const cx = x - Math.cos(t.heading) * TRAIN_LEN * 0.5;
       const cz = z - Math.sin(t.heading) * TRAIN_LEN * 0.5;
-      _p.set(cx, this.bedY(cx, cz) + 0.3, cz);
+      const by = this.bedY(cx, cz).y + 0.3;
+      _p.set(cx, by, cz);
       _q.setFromEuler(_e.set(0, -t.heading, 0));
       _m.compose(_p, _q, _s.set(1, 1, 1));
       this.trains.setMatrixAt(k, _m);
       this.trains.setColorAt(k, _c.set(this.colorOf(t.owner)));
+      if (this.onSteam && dt > 0 && Math.hypot(t.pos.x - t.prev.x, t.pos.z - t.prev.z) > 0.05 && Math.random() < dt * 7) {
+        const sx = x - Math.cos(t.heading) * 2.2;
+        const sz = z - Math.sin(t.heading) * 2.2;
+        this.onSteam(sx, by + 3.4, sz);
+      }
     }
     this.trains.count = n;
     this.trains.instanceMatrix.needsUpdate = true;

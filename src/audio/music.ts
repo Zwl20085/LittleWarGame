@@ -43,7 +43,12 @@ interface Bus {
   readonly gain: GainNode;
   readonly filter: BiquadFilterNode | null;
   last: number;
+  lastNoteEnd: number;
+  lastMidi: number;
 }
+
+/** Cycle-of-fifths tonal shifts (semitones from D minor) across extended multi-phrase matches. */
+const TONAL_CYCLE = [0, 0, 5, 0, -2, 3, -5, 0] as const;
 
 export class Music {
   private readonly c: AudioContext;
@@ -66,6 +71,8 @@ export class Music {
   private nextBar = 0;
   private x = 0;
   private lastBright = -1;
+  private phraseCount = 0;
+  private transpose = 0;
   /** Notes started per second, averaged over ~8 s (debug / CPU budget). */
   notesPerSec = 0;
   private noteAcc = 0;
@@ -76,7 +83,7 @@ export class Music {
     this.out = c.createGain();
     this.out.gain.value = SCORE_TRIM;
     this.out.connect(mix.musicIn);
-    const mk = (l: Layer): Bus => {
+    const mk = (l: Layer, idx: number): Bus => {
       const cfg = LAYER_BUS[l];
       const gain = c.createGain();
       gain.gain.value = 0;
@@ -92,12 +99,23 @@ export class Music {
       const pan = c.createStereoPanner();
       pan.pan.value = cfg.pan;
       head.connect(pan).connect(this.out);
+      // Stereo Haas early-reflection stage: opposite-panned short delay tap (4.5..9.5 ms)
+      // gives each orchestral section natural concert-hall width instead of a mono point source.
+      if (Math.abs(cfg.pan) > 0.04) {
+        const haasDelay = c.createDelay(0.02);
+        haasDelay.delayTime.value = 0.0045 + (idx % 5) * 0.0012;
+        const haasGain = c.createGain();
+        haasGain.gain.value = 0.24;
+        const haasPan = c.createStereoPanner();
+        haasPan.pan.value = Math.max(-1, Math.min(1, -cfg.pan * 0.82));
+        head.connect(haasDelay).connect(haasGain).connect(haasPan).connect(this.out);
+      }
       const send = c.createGain();
       send.gain.value = cfg.send * SCORE_TRIM;
       head.connect(send).connect(mix.musicVerb);
-      return { gain, filter, last: -1 };
+      return { gain, filter, last: -1, lastNoteEnd: 0, lastMidi: -1 };
     };
-    this.bus = Object.fromEntries(LAYERS.map((l) => [l, mk(l)])) as Record<Layer, Bus>;
+    this.bus = Object.fromEntries(LAYERS.map((l, idx) => [l, mk(l, idx)])) as Record<Layer, Bus>;
     this.nextBar = c.currentTime + 0.15;
     this.pending.push(...sampleKeys());
     this.startWorker();
@@ -197,6 +215,10 @@ export class Music {
     if (this.nextBar < now - 0.05) this.nextBar = now + 0.05;
     while (this.nextBar < now + LOOKAHEAD) {
       const plan = this.conductor.nextBar({ mode: this.mode, intensity, retreat: this.retreat, outcome: this.outcome });
+      if (plan.bar === 0) {
+        this.phraseCount++;
+        this.transpose = this.mode === 'battle' && plan.theme !== 'fill' ? TONAL_CYCLE[Math.floor(this.phraseCount / 2) % TONAL_CYCLE.length] : 0;
+      }
       const spb = 60 / plan.bpm;
       for (const e of plan.events) {
         if (!this.audible) break;
@@ -234,35 +256,54 @@ export class Music {
   }
 
   private play(e: NoteEv, t: number, spb: number): void {
-    const s = this.samples.get(sampleId(e.inst, sampleRoot(e.inst, e.midi), e.v));
+    const pitched = e.inst !== 'snare' && e.inst !== 'bdrum' && e.inst !== 'cymbal';
+    const midi = pitched ? e.midi + this.transpose : e.midi;
+    const s = this.samples.get(sampleId(e.inst, sampleRoot(e.inst, midi), e.v));
     if (!s || e.vel < 0.004) return;
     if (e.vel < QUIET_VEL && this.sounding(t) >= MAX_NOTES) {
       this.skipped++;
       return;
     }
     const c = this.c;
+    const b = this.bus[e.layer];
     const src = c.createBufferSource();
     src.buffer = s.buf;
-    const rate = Math.pow(2, (e.midi - s.root) / 12);
-    if (rate !== 1) src.playbackRate.value = rate;
+    const rate = Math.pow(2, (midi - s.root) / 12);
+    const dur = Math.max(0.05, e.dur * spb);
+    const isLegato = s.loopEnd > 0 && Math.abs(t - b.lastNoteEnd) < 0.085 && b.lastMidi >= 0 && Math.abs(midi - b.lastMidi) > 0 && Math.abs(midi - b.lastMidi) <= 7;
+    const isMarcato = s.loopEnd > 0 && (e.inst === 'brass' || e.inst === 'tbn' || e.inst === 'horn') && dur < 0.42 && e.atk < 0.04;
+    if (isLegato) {
+      const prevRate = Math.max(0.25, Math.pow(2, (b.lastMidi - s.root) / 12));
+      src.playbackRate.setValueAtTime(prevRate, t);
+      src.playbackRate.exponentialRampToValueAtTime(rate, t + 0.032);
+    } else if (isMarcato) {
+      src.playbackRate.setValueAtTime(rate * 1.011, t);
+      src.playbackRate.exponentialRampToValueAtTime(rate, t + 0.024);
+    } else if (rate !== 1) {
+      src.playbackRate.value = rate;
+    }
     const g = c.createGain();
     const p = g.gain;
-    src.connect(g).connect(this.bus[e.layer].gain);
-    src.start(t);
+    src.connect(g).connect(b.gain);
+    const offset = isLegato ? Math.min(0.08, s.loopStart * 0.35) : 0;
+    src.start(t, offset);
     src.onended = () => g.disconnect();
     if (s.loopEnd > 0) {
       src.loop = true;
       src.loopStart = s.loopStart;
       src.loopEnd = s.loopEnd;
-      const dur = Math.max(0.05, e.dur * spb);
-      const atk = Math.min(Math.max(0.005, e.atk), dur * 0.9);
+      const atk = Math.min(Math.max(0.005, isLegato ? Math.min(e.atk, 0.045) : e.atk), dur * 0.9);
       const rel = Math.max(0.05, e.rel);
+      const peakVel = isMarcato ? Math.min(1, e.vel * 1.14) : e.vel;
       p.setValueAtTime(0, t);
-      p.linearRampToValueAtTime(e.vel, t + atk);
-      p.setValueAtTime(e.vel, t + dur);
+      p.linearRampToValueAtTime(peakVel, t + atk);
+      if (isMarcato && dur > atk + 0.03) p.exponentialRampToValueAtTime(Math.max(0.001, e.vel * 0.82), t + dur);
+      else p.setValueAtTime(e.vel, t + dur);
       p.setTargetAtTime(0, t + dur, rel / 4);
       src.stop(t + dur + rel * 1.25);
       this.track(t + dur + rel * 1.25);
+      b.lastNoteEnd = t + dur;
+      b.lastMidi = midi;
     } else {
       p.value = e.vel;
       this.track(t + s.buf.duration / rate);

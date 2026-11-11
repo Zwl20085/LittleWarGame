@@ -6,7 +6,7 @@ import type { World } from '../sim/world';
 import type { GameContext } from './context';
 import { fmtTime, h, PressGuard } from './dom';
 import { t } from './i18n';
-import { factionLabel, frontLabel, localizeParams, objectiveLabel } from './labels';
+import { factionLabel, frontLabel, localizeParams, logPosition, objectiveLabel } from './labels';
 import { inPosition, ZonesSection } from './zones';
 
 /** The five directives: palette order, hotkey (input.ts DIRECTIVE_KEYS), glyph and the order colour they read as. */
@@ -418,7 +418,13 @@ export class FrontsPanel {
     const mine = w.log.filter((l) => (this.ctx.spectator ? l.severity !== 'info' || l.key === 'log.pointTaken' : l.faction === pid) && !l.key.startsWith('log.protect')).slice(-6);
     this.log.innerHTML = '';
     for (const l of mine.reverse()) {
-      this.log.append(h('div', { class: `ev ${l.severity}` }, h('span', { class: 'ts' }, fmtTime(l.tick / w.tickHz)), ' ', t(l.key, localizeParams(w, l.params))));
+      const pos = logPosition(w, l.faction, l.params);
+      const item = h('div', {
+        class: `ev ${l.severity}`,
+        style: pos ? 'cursor:pointer' : '',
+        onclick: pos ? () => this.ctx.renderer.rig.lookAt(pos.x, pos.z) : undefined,
+      }, h('span', { class: 'ts' }, fmtTime(l.tick / w.tickHz)), ' ', t(l.key, localizeParams(w, l.params)));
+      this.log.append(item);
     }
   }
 }

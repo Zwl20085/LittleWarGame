@@ -1,0 +1,153 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 330" role="img" aria-label="Animated war-room schematic of the 3.0.3 simulation worker, hot/cold flow-field pool, bit-packed 30-float snapshot transfer, and lazy main-thread spatial hash">
+  <defs>
+    <linearGradient id="pp-paper" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#efe5c8"/>
+      <stop offset="55%" stop-color="#e4d6b3"/>
+      <stop offset="100%" stop-color="#d8c79e"/>
+    </linearGradient>
+    <radialGradient id="pp-vignette" cx="50%" cy="50%" r="68%">
+      <stop offset="70%" stop-color="#000" stop-opacity="0"/>
+      <stop offset="100%" stop-color="#2b2114" stop-opacity="0.26"/>
+    </radialGradient>
+    <pattern id="pp-grid" width="36" height="36" patternUnits="userSpaceOnUse">
+      <path d="M 36 0 L 0 0 0 36" fill="none" stroke="#6e5d41" stroke-width="0.55" stroke-opacity="0.2"/>
+    </pattern>
+    <style>
+      .p-head { font: 700 12.5px 'Courier New', monospace; letter-spacing: 2.2px; fill: #4a3d28; }
+      .p-title { font: 700 14px 'Georgia', serif; fill: #2b2318; }
+      .p-sub { font: 11.5px 'Georgia', serif; fill: #4d402c; }
+      .p-code { font: 700 11px 'Courier New', monospace; fill: #2b2318; }
+      .p-pill { font: 700 10px 'Courier New', monospace; letter-spacing: 1px; fill: #fff8e6; }
+      .p-bit { font: 700 10px 'Courier New', monospace; fill: #f7f0dc; }
+
+      @keyframes dialWave {
+        0% { r: 8px; stroke-opacity: 0.9; }
+        100% { r: 42px; stroke-opacity: 0; }
+      }
+      @keyframes streamDash {
+        to { stroke-dashoffset: -36; }
+      }
+      .dial-ring-1 { animation: dialWave 2.8s ease-out infinite; }
+      .dial-ring-2 { animation: dialWave 2.8s ease-out 1.4s infinite; }
+      .stream-line { animation: streamDash 1.2s linear infinite; }
+    </style>
+  </defs>
+
+  <!-- Parchment background -->
+  <rect width="1200" height="330" rx="6" fill="url(#pp-paper)"/>
+  <rect width="1200" height="330" rx="6" fill="url(#pp-grid)"/>
+  <rect width="1200" height="330" rx="6" fill="url(#pp-vignette)"/>
+  <rect x="8" y="8" width="1184" height="314" rx="4" fill="none" stroke="#4a3d28" stroke-width="1.5" stroke-opacity="0.55"/>
+  <rect x="12" y="12" width="1176" height="306" rx="2" fill="none" stroke="#4a3d28" stroke-width="0.6" stroke-opacity="0.4"/>
+
+  <text x="28" y="34" class="p-head">3.0.3 DATA-ORIENTED RUNTIME PIPELINE · WORKER SIM → BIT-PACKED SNAPSHOT → LAZY MIRROR</text>
+
+  <!-- ================= STAGE 1: WEB WORKER (20 HZ DETERMINISTIC SIM) ================= -->
+  <g transform="translate(28, 50)">
+    <rect x="0" y="0" width="368" height="252" rx="5" fill="#f7eed3" stroke="#3a3326" stroke-width="1.8"/>
+    <rect x="0" y="0" width="368" height="28" rx="5" fill="#3a3326"/>
+    <text x="14" y="18" class="p-pill">WEB WORKER · 20 HZ DETERMINISTIC SIM</text>
+    <text x="292" y="18" class="p-pill" fill="#e2b857">&lt;760 LOC/FILE</text>
+
+    <!-- Subcard A: Shared Flow-Field Pool -->
+    <rect x="12" y="40" width="344" height="98" rx="4" fill="#efe3c2" stroke="#6e5d41" stroke-width="1.2"/>
+    <text x="22" y="59" class="p-title">Shared Flow-Field Cache (navPool.ts)</text>
+    <text x="22" y="76" class="p-sub">• 16 hot Float32 fields + cold Int16 slabs (192 MB cap)</text>
+    <text x="22" y="93" class="p-sub">• Zero-fill slab cooling · Reusable A* binary heap</text>
+    <text x="22" y="110" class="p-sub">• Lazy Dial bucket wave · 320 m path chunks</text>
+    <text x="22" y="127" class="p-code" fill="#6b7a3a">HOT_FIELDS: 6 → 16 · heap.clear() (0 alloc/path)</text>
+
+    <!-- Animated Dial wavefront mini-diagram -->
+    <g transform="translate(306, 86)">
+      <circle r="40" fill="#23291f" stroke="#4a3d28" stroke-width="1.2"/>
+      <circle class="dial-ring-1" cx="0" cy="0" r="10" fill="none" stroke="#e2b857" stroke-width="1.6"/>
+      <circle class="dial-ring-2" cx="0" cy="0" r="10" fill="none" stroke="#e2b857" stroke-width="1.6"/>
+      <circle r="4" fill="#a63f36" stroke="#fff8e6" stroke-width="1"/>
+    </g>
+
+    <!-- Subcard B: Modular Sim & Combined-Arms Spearheads -->
+    <rect x="12" y="148" width="344" height="92" rx="4" fill="#efe3c2" stroke="#6e5d41" stroke-width="1.2"/>
+    <text x="22" y="167" class="p-title">Combined-Arms &amp; Modular AI</text>
+    <text x="22" y="184" class="p-sub">• frontSpear.ts: Upgraded motorised rifles join tank spearheads</text>
+    <text x="22" y="201" class="p-sub">• homeguardUnit.ts: HQ ring defence, trench/bunker manning</text>
+    <text x="22" y="218" class="p-sub">• Single-pass snapshot packing (0 filter/from closures/tick)</text>
+    <text x="22" y="233" class="p-code" fill="#a63f36">isSpearMobile(u) = tank || motorized || isMotorized(u)</text>
+  </g>
+
+  <!-- ================= STAGE 2: BIT-PACKED SNAPSHOT STREAM ================= -->
+  <g transform="translate(422, 50)">
+    <rect x="0" y="0" width="356" height="252" rx="5" fill="#f7eed3" stroke="#a63f36" stroke-width="1.8"/>
+    <rect x="0" y="0" width="356" height="28" rx="5" fill="#a63f36"/>
+    <text x="14" y="18" class="p-pill">SNAPSHOT PACKER · STRIDE 34 → 30 (-12%)</text>
+
+    <text x="16" y="48" class="p-title">O(1) State Maps &amp; F.flags Bit-Packing</text>
+    <text x="16" y="65" class="p-sub">4 unit state enums packed into F.flags (bits 8..16):</text>
+
+    <!-- Bitfield diagram -->
+    <g transform="translate(16, 76)">
+      <rect x="0" y="0" width="80" height="36" rx="3" fill="#3a3326"/>
+      <text x="40" y="15" text-anchor="middle" class="p-bit" fill="#c89b3c">bits 0..7</text>
+      <text x="40" y="29" text-anchor="middle" class="p-bit">8 bool flags</text>
+
+      <rect x="84" y="0" width="60" height="36" rx="3" fill="#6b7a3a"/>
+      <text x="114" y="15" text-anchor="middle" class="p-bit">8..9</text>
+      <text x="114" y="29" text-anchor="middle" class="p-bit">setup</text>
+
+      <rect x="148" y="0" width="60" height="36" rx="3" fill="#4b729f"/>
+      <text x="178" y="15" text-anchor="middle" class="p-bit">10..11</text>
+      <text x="178" y="29" text-anchor="middle" class="p-bit">morale</text>
+
+      <rect x="212" y="0" width="62" height="36" rx="3" fill="#a63f36"/>
+      <text x="243" y="15" text-anchor="middle" class="p-bit">12..14</text>
+      <text x="243" y="29" text-anchor="middle" class="p-bit">behavior</text>
+
+      <rect x="278" y="0" width="46" height="36" rx="3" fill="#8a6a2c"/>
+      <text x="301" y="15" text-anchor="middle" class="p-bit">15..16</text>
+      <text x="301" y="29" text-anchor="middle" class="p-bit">truck</text>
+    </g>
+
+    <!-- Animated Transferable ArrayBuffer Conduit -->
+    <g transform="translate(16, 128)">
+      <rect x="0" y="0" width="324" height="58" rx="4" fill="#1f1b16" stroke="#6e5d41" stroke-width="1.2"/>
+      <text x="12" y="18" class="p-pill" fill="#e2b857">20 HZ ZERO-COPY TRANSFERABLE ARRAYBUFFERS</text>
+      <line class="stream-line" x1="14" y1="38" x2="310" y2="38" stroke="#c89b3c" stroke-width="3" stroke-dasharray="10 8"/>
+      <circle r="5" fill="#e2b857">
+        <animateMotion dur="1.4s" repeatCount="indefinite" path="M 14 38 L 310 38"/>
+      </circle>
+      <circle r="5" fill="#a63f36">
+        <animateMotion dur="1.4s" begin="0.7s" repeatCount="indefinite" path="M 14 38 L 310 38"/>
+      </circle>
+    </g>
+
+    <text x="16" y="206" class="p-sub">• Eliminated 4 × Array.indexOf() scans per unit per tick</text>
+    <text x="16" y="223" class="p-sub">• Forwards full War Ledger timeline immediately on victory</text>
+    <text x="16" y="240" class="p-code" fill="#3a3326">Float32Array(n * 30) · 0 GC allocations in makeSnapshot</text>
+  </g>
+
+  <!-- Connector arrows between Stage 1 -> Stage 2 -> Stage 3 -->
+  <path d="M 398 176 L 418 176" stroke="#3a3326" stroke-width="3" marker-end="url(#arrow)"/>
+  <path d="M 780 176 L 800 176" stroke="#3a3326" stroke-width="3"/>
+
+  <!-- ================= STAGE 3: MAIN THREAD (60 FPS DIORAMA & AUDIO) ================= -->
+  <g transform="translate(804, 50)">
+    <rect x="0" y="0" width="368" height="252" rx="5" fill="#f7eed3" stroke="#6b7a3a" stroke-width="1.8"/>
+    <rect x="0" y="0" width="368" height="28" rx="5" fill="#4f5d28"/>
+    <text x="14" y="18" class="p-pill">MAIN THREAD · 60 FPS DIORAMA &amp; SYNTH AUDIO</text>
+
+    <!-- Subcard A: Lazy Spatial Mirror -->
+    <rect x="12" y="40" width="344" height="96" rx="4" fill="#efe3c2" stroke="#6e5d41" stroke-width="1.2"/>
+    <text x="22" y="59" class="p-title">Lazy Spatial Mirror (spatial.ts)</text>
+    <text x="22" y="76" class="p-sub">• applySnapshot marks SpatialHash dirty (0 rebuilds when idle)</text>
+    <text x="22" y="93" class="p-sub">• Rebuilds on-demand only when UI hover/box-select queries it</text>
+    <text x="22" y="110" class="p-sub">• Zero-Set dead-unit sweep via pre-zeroed mirror HP</text>
+    <text x="22" y="126" class="p-code" fill="#4f5d28">world.spatial.markDirty(units) → lazy rebuild()</text>
+
+    <!-- Subcard B: Instanced Diorama, Audio & UI Polish -->
+    <rect x="12" y="146" width="344" height="94" rx="4" fill="#efe3c2" stroke="#6e5d41" stroke-width="1.2"/>
+    <text x="22" y="165" class="p-title">Diorama, Synth Audio &amp; War-Room UI</text>
+    <text x="22" y="182" class="p-sub">• Procedural masonry &amp; timber collapse SFX (recipes.ts)</text>
+    <text x="22" y="199" class="p-sub">• Clickable dispatch log pans camera to battle coordinates</text>
+    <text x="22" y="216" class="p-sub">• Interactive canvas War Ledger on post-match results screen</text>
+    <text x="22" y="232" class="p-code" fill="#a63f36">C.Collapse (radius ≥ 8m HE) · 0 audio asset files</text>
+  </g>
+</svg>

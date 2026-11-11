@@ -170,12 +170,15 @@ export class FlowField {
       if (this.chunkTouched(d, c)) chunkOf[c] = used++;
       else chunkOf[c] = NO_CHUNK;
     }
-    const slab = new Int32Array(used << CHUNK_SHIFT).fill(FIELD_INF);
+    const slab = new Int32Array(used << CHUNK_SHIFT);
     for (let c = 0; c < chunkOf.length; c++) {
       const o = chunkOf[c];
       if (o === NO_CHUNK) continue;
       const at = c << CHUNK_SHIFT;
-      slab.set(d.subarray(at, Math.min(this.n, at + CHUNK)), o << CHUNK_SHIFT);
+      const end = Math.min(this.n, at + CHUNK);
+      const dst = o << CHUNK_SHIFT;
+      slab.set(d.subarray(at, end), dst);
+      if (end - at < CHUNK) slab.fill(FIELD_INF, dst + (end - at), dst + CHUNK);
     }
     this.slab = slab;
     this.dense = null;

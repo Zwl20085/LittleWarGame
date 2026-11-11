@@ -176,6 +176,20 @@ export function updateVisibility(world: World): void {
     }
     for (const [id, s] of seen) if (world.tick - s.tick > mem || !world.unitAlive(id)) seen.delete(id);
   }
+  // 2v2 Coalition mode: allied factions share live spotted enemies and recent intel.
+  if (world.config.teams === '2v2') {
+    for (const a of world.factions) {
+      if (!a.alive) continue;
+      for (const b of world.factions) {
+        if (!b.alive || a.id === b.id || world.isHostile(a.id, b.id)) continue;
+        for (const id of world.visibleTo[b.id]) world.visibleTo[a.id].add(id);
+        for (const [id, s] of world.lastSeen[b.id]) {
+          const cur = world.lastSeen[a.id].get(id);
+          if (!cur || s.tick > cur.tick) world.lastSeen[a.id].set(id, s);
+        }
+      }
+    }
+  }
 }
 
 function forecastNeeds(world: World, f: Faction): { p: number; m: number } {
@@ -236,6 +250,11 @@ function economySecond(match: Match): void {
       m *= Math.max(0.4, 0.55 + 0.45 * (f.alloc[1] / (def[1] || 1)));
       bonus = { p, m };
       cityShare = terr.capital_income_share;
+      // Late-war encirclement starvation: after 15 min, a pocketed capital holding zero towns/cities
+      // outside its perimeter suffers reduced base capital output (0.65×) so sieges can conclude.
+      if (world.time >= 900 && !world.objectives.some((o) => o.owner === f.id && !o.contested && (o.kind === 'town' || o.kind === 'city'))) {
+        cityShare *= 0.65;
+      }
     }
     // 2.2 economic buildings (econ.ts) add to the territory output.
     const econ = econIncome(world, f.id, (fi, p) => inSupply(match, fi, p));
@@ -339,9 +358,10 @@ function checkElimination(match: Match): void {
     for (const g of world.factions) world.note(g.id, 'log.eliminated', { f: f.id, reason: resolveOn && f.resolve <= 0 ? 'resolve' : 'hq' }, 'alert');
   }
   const alive = world.factions.filter((f) => f.alive);
-  if (!world.result && alive.length <= 1 && out.length > 0) {
-    world.result = alive.length === 1
-      ? { winners: [alive[0].id], reason: 'last_standing', tick: world.tick }
+  const noHostilesLeft = alive.every((a) => alive.every((b) => !world.isHostile(a.id, b.id)));
+  if (!world.result && noHostilesLeft && out.length > 0) {
+    world.result = alive.length >= 1
+      ? { winners: alive.map((f) => f.id), reason: 'last_standing', tick: world.tick }
       : { winners: out.map((f) => f.id), reason: 'mutual', tick: world.tick };
   }
 }

@@ -210,18 +210,20 @@ export class AudioEngine {
     this.music?.setAudible(!s.muted && s.volMaster > 0.001 && s.volMusic > 0.001);
   }
 
-  /** Subtle switch click for buttons and toggles. */
+  /** Subtle switch click for buttons and toggles, or heavy rubber-stamp thud on directive orders. */
   private onClick(e: Event): void {
     const m = this.mixer;
     const el = e.target as Element | null;
     if (!m || !el || typeof el.closest !== 'function') return;
-    if (!el.closest('button, .btn, [role="button"], input[type="checkbox"], select, summary')) return;
+    const btn = el.closest('button, .btn, [role="button"], input[type="checkbox"], select, summary');
+    if (!btn) return;
     const now = performance.now();
     if (now - this.lastClick < 40) return;
     this.lastClick = now;
+    const isStamp = !!btn.closest('.dir-btn, .hq-force, [data-dir]');
     const q = this.clickReq;
-    q.id = 'click';
-    q.gain = 0.22;
+    q.id = isStamp ? 'stamp' : 'click';
+    q.gain = isStamp ? 0.34 : 0.22;
     q.rate = 0.95 + Math.random() * 0.1;
     q.bus = 'ui';
     q.prio = PRIO.own;

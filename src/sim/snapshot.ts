@@ -1,5 +1,6 @@
 import type { SupplyNode } from './supply';
 import type { Match } from './sim';
+import type { MatchStats } from './stats';
 import type {
   Behavior, EconBuilding, Faction, Fort, FxEvent, LogEntry, ManualTask, MatchResult, MoraleState, Objective, Projectile, SetupState, Unit,
 } from './types';
@@ -20,14 +21,28 @@ const MORALE: MoraleState[] = ['normal', 'suppressed', 'pinned'];
 const BEHAVIOR: Behavior[] = ['rally', 'advance', 'hold', 'retreat', 'recover', 'routing', 'evacuate', 'garrison'];
 const TRUCK: Unit['truckState'][] = ['load', 'out', 'unload', 'return'];
 
-/** Field order of the packed unit record. */
+const SETUP_IDX: Readonly<Record<SetupState, number>> = { packed: 0, setting: 1, set: 2, packing: 3 };
+const MORALE_IDX: Readonly<Record<MoraleState, number>> = { normal: 0, suppressed: 1, pinned: 2 };
+const BEHAVIOR_IDX: Readonly<Record<Behavior, number>> = {
+  rally: 0, advance: 1, hold: 2, retreat: 3, recover: 4, routing: 5, evacuate: 6, garrison: 7,
+};
+const TRUCK_IDX: Readonly<Record<Unit['truckState'], number>> = { load: 0, out: 1, unload: 2, return: 3 };
+
+/**
+ * Field order of the packed unit record.
+ * `flags` bit-packs boolean flags (bits 0..7) plus small enums:
+ * - bits 8..9: setup (0..3)
+ * - bits 10..11: moraleState (0..2)
+ * - bits 12..14: behavior (0..7)
+ * - bits 15..16: truckState (0..3)
+ */
 const F = {
   id: 0, owner: 1, def: 2, x: 3, z: 4, px: 5, pz: 6, y: 7, heading: 8, turret: 9, hp: 10, morale: 11, supp: 12,
-  ammo: 13, supplyRatio: 14, setup: 15, flags: 16, moraleState: 17, behavior: 18, target: 19, front: 20, cargo: 21,
-  truck: 22, fort: 23, cover: 24, vseed: 25, lastDamaged: 26, lastFired: 27, status: 28, speed: 29, lastSupplied: 30,
-  setupTimer: 31, fixedFacing: 32, upg: 33,
+  ammo: 13, supplyRatio: 14, flags: 15, target: 16, front: 17, cargo: 18,
+  fort: 19, cover: 20, vseed: 21, lastDamaged: 22, lastFired: 23, status: 24, speed: 25, lastSupplied: 26,
+  setupTimer: 27, fixedFacing: 28, upg: 29,
 } as const;
-const STRIDE = 34;
+const STRIDE = 30;
 
 export interface Snapshot {
   readonly tick: number;
@@ -60,6 +75,7 @@ export interface Snapshot {
   /** Null on most snapshots (sent with the faction records; only the supply layer reads it). */
   readonly supplyNodes: SupplyNode[][] | null;
   readonly result: MatchResult | null;
+  readonly stats?: MatchStats | null;
   /** 3.0 roads and railways (transportsnap.ts): line state and trains every snapshot, geometry when it changed. */
   readonly transport: TransportSnap | null;
 }
@@ -112,12 +128,16 @@ export function makeSnapshot(match: Match, cur: SnapshotCursor, observer: number
   const fog = match.world.config.infoMode === 'fog';
   cur.sent++;
   const w = match.world;
-  const list = w.aliveUnits.filter((u) => u.hp > 0);
-  const buf = new Float64Array(list.length * STRIDE);
+  const raw = w.aliveUnits;
+  let alive = 0;
+  for (let i = 0; i < raw.length; i++) if (raw[i].hp > 0) alive++;
+  const buf = new Float64Array(alive * STRIDE);
   const defIndex = (cur.defIndex ??= new Map(w.data.unitOrder.map((id, i) => [id, i])));
   const manual: [number, ManualTask | null, number][] = [];
-  list.forEach((u, k) => {
-    const o = k * STRIDE;
+  let o = 0;
+  for (let i = 0; i < raw.length; i++) {
+    const u = raw[i];
+    if (u.hp <= 0) continue;
     let st = cur.statusIndex.get(u.status);
     if (st === undefined) {
       st = cur.statusIndex.size;
@@ -127,16 +147,19 @@ export function makeSnapshot(match: Match, cur: SnapshotCursor, observer: number
     buf[o + F.x] = u.pos.x; buf[o + F.z] = u.pos.z; buf[o + F.px] = u.prev.x; buf[o + F.pz] = u.prev.z; buf[o + F.y] = u.y;
     buf[o + F.heading] = u.heading; buf[o + F.turret] = u.turret; buf[o + F.hp] = u.hp; buf[o + F.morale] = u.morale;
     buf[o + F.supp] = u.suppression; buf[o + F.ammo] = u.ammo; buf[o + F.supplyRatio] = u.supplyRatio;
-    buf[o + F.setup] = SETUP.indexOf(u.setup);
-    buf[o + F.flags] = (u.moving ? 1 : 0) | (u.routing ? 2 : 0) | (u.wavering ? 4 : 0) | (u.supplied ? 8 : 0) | (u.fixed ? 16 : 0) | (u.pathFailed ? 32 : 0) | (u.mounted ? 64 : 0) | (u.rail?.stage === 'aboard' ? 128 : 0);
-    buf[o + F.moraleState] = MORALE.indexOf(u.moraleState); buf[o + F.behavior] = BEHAVIOR.indexOf(u.behavior);
+    buf[o + F.flags] =
+      (u.moving ? 1 : 0) | (u.routing ? 2 : 0) | (u.wavering ? 4 : 0) | (u.supplied ? 8 : 0) |
+      (u.fixed ? 16 : 0) | (u.pathFailed ? 32 : 0) | (u.mounted ? 64 : 0) | (u.rail?.stage === 'aboard' ? 128 : 0) |
+      ((SETUP_IDX[u.setup] & 3) << 8) | ((MORALE_IDX[u.moraleState] & 3) << 10) |
+      ((BEHAVIOR_IDX[u.behavior] & 7) << 12) | ((TRUCK_IDX[u.truckState] & 3) << 15);
     buf[o + F.target] = u.targetId ?? -1; buf[o + F.front] = u.frontId; buf[o + F.cargo] = u.cargo;
-    buf[o + F.truck] = TRUCK.indexOf(u.truckState); buf[o + F.fort] = u.fortId ?? -1; buf[o + F.cover] = u.cover;
+    buf[o + F.fort] = u.fortId ?? -1; buf[o + F.cover] = u.cover;
     buf[o + F.vseed] = u.vseed; buf[o + F.lastDamaged] = u.lastDamagedAt; buf[o + F.lastFired] = u.lastFiredAt;
     buf[o + F.status] = st; buf[o + F.speed] = u.speedNow; buf[o + F.lastSupplied] = u.lastSuppliedAt;
     buf[o + F.setupTimer] = u.setupTimer; buf[o + F.fixedFacing] = u.fixedFacing; buf[o + F.upg] = u.upg;
     if (u.manual || u.queue.length) manual.push([u.id, u.manual, u.queue.length]);
-  });
+    o += STRIDE;
+  }
   // The status table is tiny (a few dozen keys); send it whole.
   const statusTable: string[] = [];
   for (const [s, i] of cur.statusIndex) statusTable[i] = s;
@@ -154,6 +177,13 @@ export function makeSnapshot(match: Match, cur: SnapshotCursor, observer: number
   const sendForts = cur.sent % FORT_EVERY === 0 || w.forts.length !== (cur.fortCount ?? -1);
   if (sendForts) cur.fortCount = w.forts.length;
   const slow = cur.sent % FACTION_EVERY === 0;
+  const np = w.places.length;
+  const placeStock = new Float32Array(np);
+  const placeContestedSince = new Float32Array(np);
+  for (let i = 0; i < np; i++) {
+    placeStock[i] = w.places[i].stock;
+    placeContestedSince[i] = w.places[i].contestedSince;
+  }
   return {
     tick: w.tick,
     units: buf,
@@ -165,8 +195,8 @@ export function makeSnapshot(match: Match, cur: SnapshotCursor, observer: number
     objectives: packObjectives(w.objectives),
     projectiles: w.projectiles,
     forts: sendForts ? w.forts : null,
-    placeStock: Float32Array.from(w.places, (p) => p.stock),
-    placeContestedSince: Float32Array.from(w.places, (p) => p.contestedSince),
+    placeStock,
+    placeContestedSince,
     econ: w.econ,
     // Review HIGH 2: in fog the observer gets only the zones it knows (fogview.ts).
     econZones: fogFiltered(w, observer) ? knownZones(w, observer) : w.econZones,
@@ -179,6 +209,7 @@ export function makeSnapshot(match: Match, cur: SnapshotCursor, observer: number
     frontView,
     supplyNodes: slow || cur.sent === 1 ? match.supplyNodes : null,
     result: w.result,
+    stats: w.result || cur.sent % 20 === 0 ? w.stats : null,
     transport: packTransport(w, cur, observer),
   };
 }
@@ -189,16 +220,17 @@ export function applySnapshot(match: Match, snap: Snapshot, observer: number): v
   const statusTable = snap.statusTable;
   const buf = snap.units;
   const n = buf.length / STRIDE;
-  const seen = new Set<number>();
   const order = w.data.unitOrder;
+  // Mark existing mirror units dead first; every surviving unit in `buf` restores its positive `hp` below.
+  for (let i = 0; i < w.aliveUnits.length; i++) w.aliveUnits[i].hp = 0;
   for (let k = 0; k < n; k++) {
     const o = k * STRIDE;
     const id = buf[o + F.id];
-    seen.add(id);
+    const fl = buf[o + F.flags];
     let u = w.units.get(id);
     if (!u) {
       const def = w.data.units.get(order[buf[o + F.def]])!;
-      const fixed = (buf[o + F.flags] & 16) !== 0;
+      const fixed = (fl & 16) !== 0;
       u = w.spawnUnit(buf[o + F.owner], def.id, { x: buf[o + F.x], z: buf[o + F.z] }, buf[o + F.front], { fixed, mirrorId: id });
     }
     // 3.0 upgrades: the mirror swaps in the same variant def (unit card, render) before the hp is copied.
@@ -206,13 +238,12 @@ export function applySnapshot(match: Match, snap: Snapshot, observer: number): v
     u.pos.x = buf[o + F.x]; u.pos.z = buf[o + F.z]; u.prev.x = buf[o + F.px]; u.prev.z = buf[o + F.pz]; u.y = buf[o + F.y];
     u.heading = buf[o + F.heading]; u.turret = buf[o + F.turret]; u.hp = buf[o + F.hp]; u.morale = buf[o + F.morale];
     u.suppression = buf[o + F.supp]; u.ammo = buf[o + F.ammo]; u.supplyRatio = buf[o + F.supplyRatio];
-    u.setup = SETUP[buf[o + F.setup]] ?? 'packed';
-    const fl = buf[o + F.flags];
+    u.setup = SETUP[(fl >> 8) & 3] ?? 'packed';
     u.moving = (fl & 1) !== 0; u.routing = (fl & 2) !== 0; u.wavering = (fl & 4) !== 0; u.supplied = (fl & 8) !== 0; u.pathFailed = (fl & 32) !== 0; u.mounted = (fl & 64) !== 0;
     u.rail = (fl & 128) !== 0 ? (u.rail ?? mirrorRide(u)) : null;
-    u.moraleState = MORALE[buf[o + F.moraleState]] ?? 'normal'; u.behavior = BEHAVIOR[buf[o + F.behavior]] ?? 'advance';
+    u.moraleState = MORALE[(fl >> 10) & 3] ?? 'normal'; u.behavior = BEHAVIOR[(fl >> 12) & 7] ?? 'advance';
     u.targetId = buf[o + F.target] < 0 ? null : buf[o + F.target]; u.frontId = buf[o + F.front]; u.cargo = buf[o + F.cargo];
-    u.truckState = TRUCK[buf[o + F.truck]] ?? 'load'; u.fortId = buf[o + F.fort] < 0 ? null : buf[o + F.fort];
+    u.truckState = TRUCK[(fl >> 15) & 3] ?? 'load'; u.fortId = buf[o + F.fort] < 0 ? null : buf[o + F.fort];
     u.cover = buf[o + F.cover] as Unit['cover']; u.lastDamagedAt = buf[o + F.lastDamaged]; u.lastFiredAt = buf[o + F.lastFired];
     u.status = statusTable[buf[o + F.status]] ?? ''; u.speedNow = buf[o + F.speed]; u.lastSuppliedAt = buf[o + F.lastSupplied];
     u.setupTimer = buf[o + F.setupTimer];
@@ -226,7 +257,6 @@ export function applySnapshot(match: Match, snap: Snapshot, observer: number): v
       u.queue = new Array(q).fill(m);
     }
   }
-  for (const u of w.units.values()) if (!seen.has(u.id)) u.hp = 0;
   w.removeDead();
   w.tick = snap.tick;
   if (snap.factions) snap.factions.forEach((f, i) => Object.assign(w.factions[i], f));
@@ -277,8 +307,9 @@ export function applySnapshot(match: Match, snap: Snapshot, observer: number): v
   }
   if (snap.supplyNodes) match.supplyNodes = snap.supplyNodes;
   w.result = snap.result;
+  if (snap.stats) w.stats = snap.stats;
   if (snap.transport) applyTransport(w, snap.transport);
-  w.spatial.rebuild(w.aliveUnits);
+  w.spatial.markDirty(w.aliveUnits);
 }
 
 function replace<T>(target: T[], src: T[]): void {

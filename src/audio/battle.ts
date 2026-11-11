@@ -4,7 +4,7 @@ import { newReq, PRIO, type Mixer, type PlayReq } from './mixer';
 import type { SoundId } from './recipes';
 
 /** Sound categories. Each aggregates its events per frame and fires at most one voice per cooldown. */
-const C = { Rifle: 0, Mg: 1, Cannon: 2, At: 3, Mortar: 4, How: 5, ExpS: 6, ExpB: 7, ApHit: 8, Rico: 9, VDeath: 10, Whistle: 11, Distant: 12, Count: 13 } as const;
+const C = { Rifle: 0, Mg: 1, Cannon: 2, At: 3, Mortar: 4, How: 5, ExpS: 6, ExpB: 7, ApHit: 8, Rico: 9, VDeath: 10, Whistle: 11, Distant: 12, Collapse: 13, Train: 14, Count: 15 } as const;
 
 interface CatDef {
   readonly name: string;
@@ -34,6 +34,8 @@ const CATS: readonly CatDef[] = [
   { name: 'vehicleDeath', sound: 'vehicleDeath', cd: [0.2, 0.4], max: 2, base: 0.75, cull: 4, prio: PRIO.own, energy: 0.15, rate: 1 },
   { name: 'whistle', sound: 'whistle', cd: [0.9, 1.6], max: 1, base: 0.3, cull: 1.3, prio: PRIO.own, energy: 0, rate: 1 },
   { name: 'distant', sound: 'expBig', cd: [0.45, 0.9], max: 2, base: 0.22, cull: 99, prio: PRIO.distant, energy: 0, rate: 0.8 },
+  { name: 'collapse', sound: 'collapse', cd: [0.3, 0.6], max: 2, base: 0.65, cull: 3.5, prio: PRIO.near, energy: 0.08, rate: 1 },
+  { name: 'train', sound: 'train', cd: [0.42, 0.58], max: 1, base: 0.28, cull: 1.8, prio: PRIO.near, energy: 0, rate: 1 },
 ];
 
 const N = C.Count;
@@ -171,7 +173,7 @@ export class BattleListener {
           case 'explosion':
             if (e.kind === 'ap') this.add(C.ApHit, e.pos.x, e.pos.z, 1);
             else if (e.kind === 'shell') this.add(e.radius >= 8 ? C.ExpB : C.ExpS, e.pos.x, e.pos.z, 1);
-            else if (e.kind === 'he') this.add(e.radius >= 4 ? C.ExpB : C.ExpS, e.pos.x, e.pos.z, e.radius >= 4 ? 1 : 0.45);
+            else if (e.kind === 'he') this.add(e.radius >= 8 ? C.Collapse : e.radius >= 4 ? C.ExpB : C.ExpS, e.pos.x, e.pos.z, e.radius >= 4 ? 1 : 0.45);
             break;
           case 'death':
             if (e.vehicle) this.add(C.VDeath, e.pos.x, e.pos.z, 1);
@@ -181,7 +183,18 @@ export class BattleListener {
             break;
         }
       }
-      if (!paused) this.scanWhistles(w);
+      if (!paused) {
+        this.scanWhistles(w);
+        const trains = w.transport?.trains;
+        if (trains && this.zoomGain >= 0.4) {
+          for (let i = 0; i < trains.length; i++) {
+            const tr = trains[i];
+            if (Math.hypot(tr.pos.x - tr.prev.x, tr.pos.z - tr.prev.z) > 0.05) {
+              this.add(C.Train, tr.pos.x, tr.pos.z, 1);
+            }
+          }
+        }
+      }
     }
     this.fire(dt);
     this.updateIntensity(dt, paused);

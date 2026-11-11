@@ -254,6 +254,36 @@ const snareNoise: Recipe = (sr, v) => {
   return b;
 };
 
+/** Building collapse: low masonry rumble + crackling timber debris. */
+const buildingCollapse: Recipe = (sr, v) => {
+  const r = rng(2222 + v * 29);
+  const b = alloc(sr, 2.2);
+  sweep(b, sr, 0, 95, 34, 0.35, 0.9, 0.28);
+  rumble(b, sr, r, 0.02, 1.9, 0.55, 0.04);
+  debris(b, sr, r, 0.05, 1.4, 26, 0.22);
+  return finish(lowpass(b, sr, 2400), 0.85);
+};
+
+/** Heavy war-room rubber-stamp thud + crisp ink slap for Supreme HQ directives. */
+const uiStamp: Recipe = (sr, v) => {
+  const r = rng(2323 + v * 17);
+  const b = alloc(sr, 0.22);
+  sweep(b, sr, 0, 145, 48, 0.09, 0.65, 0.15);
+  noiseBurst(b, sr, r, 0.002, 0.45, 0.032, 0.002);
+  noiseBurst(b, sr, r, 0.038, 0.22, 0.06, 0.004);
+  return finish(lowpass(b, sr, 3200), 0.8);
+};
+
+/** Steam locomotive double-chug + rail joint click-clack. */
+const trainChug: Recipe = (sr, v) => {
+  const r = rng(2424 + v * 31);
+  const b = alloc(sr, 0.52);
+  noiseBurst(b, sr, r, 0.0, 0.48, 0.16, 0.01);
+  noiseBurst(b, sr, r, 0.22, 0.36, 0.19, 0.01);
+  sweep(b, sr, 0.01, 92, 58, 0.08, 0.22, 0.1);
+  return finish(lowpass(b, sr, 1800), 0.72);
+};
+
 export const RECIPES = {
   rifle: { make: rifleVolley, variants: 4 },
   mg: { make: mgBurst, variants: 3 },
@@ -267,8 +297,11 @@ export const RECIPES = {
   apHit: { make: apHit, variants: 2 },
   ricochet: { make: ricochet, variants: 3 },
   vehicleDeath: { make: vehicleDeath, variants: 2 },
+  collapse: { make: buildingCollapse, variants: 2 },
+  train: { make: trainChug, variants: 2 },
   rumble: { make: rumbleLoop, variants: 1 },
   click: { make: uiClick, variants: 2 },
+  stamp: { make: uiStamp, variants: 2 },
   chime: { make: bellChime, variants: 1 },
   toll: { make: bellToll, variants: 1 },
   alarm: { make: alarm, variants: 1 },

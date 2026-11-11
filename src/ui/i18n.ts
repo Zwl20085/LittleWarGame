@@ -139,7 +139,7 @@ const zh: Dict = {
   'set.volMaster': '总音量', 'set.volMusic': '音乐', 'set.volSfx': '音效', 'set.mute': '静音',
   'set.checkUpdates': '启动时检查更新', 'update.kicker': '新版本 {v} 已发布 · 当前 {cur}', 'update.download': '前往下载', 'update.version': '当前版本',
   'set.autoDownload': '自动下载更新', 'update.checking': '正在检查更新……', 'update.upToDate': '已是最新版本 {cur}', 'update.downloading': '正在下载 {v} · {p}%', 'update.ready': '{v} 已下载并校验', 'update.restart': '立即重启更新', 'update.installerDownloading': '{v} 需要新的安装包 · 正在下载 {p}%', 'update.installerReady': '{v} 安装包已下载到“下载”文件夹', 'update.openFolder': '打开文件夹', 'update.installerHint': '请退出游戏后手动运行安装包',
-  'setup.factions': '参战方', 'setup.mapSize': '地图尺寸', 'size.medium': '中型', 'size.large': '大型', 'setup.random': '随机',
+  'setup.factions': '参战方', 'setup.teams': '对战模式', 'teams.ffa': '各自为战', 'teams.2v2': '2v2 同盟（I·III 对 II·IV）', 'setup.mapSize': '地图尺寸', 'size.medium': '中型', 'size.large': '大型', 'setup.random': '随机',
   'map.generated': '随机生成', 'map.four_cities.short': '四城（测试）', 'map.greystone_pinecreek.short': '灰石—松溪（测试）',
   'err.start': '无法开始对局', 'err.reload': '重新载入',
   // unit tooltip
@@ -304,7 +304,7 @@ const en: Dict = {
   'set.volMaster': 'Master volume', 'set.volMusic': 'Music', 'set.volSfx': 'Effects', 'set.mute': 'Mute',
   'set.checkUpdates': 'Check for updates on start', 'update.kicker': 'New version {v} released · you have {cur}', 'update.download': 'Download', 'update.version': 'Current version',
   'set.autoDownload': 'Auto-download updates', 'update.checking': 'Checking for updates…', 'update.upToDate': 'Up to date · {cur}', 'update.downloading': 'Downloading {v} · {p}%', 'update.ready': '{v} downloaded and verified', 'update.restart': 'Restart now', 'update.installerDownloading': '{v} needs a new installer · downloading {p}%', 'update.installerReady': '{v} installer saved to Downloads', 'update.openFolder': 'Open folder', 'update.installerHint': 'Quit the game, then run the installer yourself',
-  'setup.factions': 'Factions', 'setup.mapSize': 'Map size', 'size.medium': 'Medium', 'size.large': 'Large', 'setup.random': 'Random',
+  'setup.factions': 'Factions', 'setup.teams': 'Mode', 'teams.ffa': 'Free-for-All', 'teams.2v2': '2v2 Coalition (I·III vs II·IV)', 'setup.mapSize': 'Map size', 'size.medium': 'Medium', 'size.large': 'Large', 'setup.random': 'Random',
   'map.generated': 'Generated', 'map.four_cities.short': 'Four Cities (test)', 'map.greystone_pinecreek.short': 'Greystone 1v1 (test)',
   'err.start': 'Failed to start match', 'err.reload': 'Reload',
   'tip.hp': 'Strength', 'tip.speed': 'Speed', 'tip.range': 'Range', 'tip.armor': 'Armour F/S/R', 'tip.pop': 'Pop', 'tip.build': 'Build',

@@ -22,6 +22,7 @@ interface SetupState {
   readonly mapId: MapChoice;
   readonly mapSize: MapSize;
   readonly factions: number;
+  readonly teams: 'ffa' | '2v2';
   readonly difficulty: Difficulty;
   readonly infoMode: InfoMode;
   readonly seed: number;
@@ -42,7 +43,7 @@ const DOCTRINES: Personality[] = ['balanced', 'infantry', 'armor', 'mechanized',
 const randomSeed = (): number => Math.floor(Math.random() * 1e6);
 
 function loadState(): SetupState {
-  const def: SetupState = { mapId: 'generated', mapSize: 'medium', factions: 4, difficulty: 'normal', infoMode: 'open', seed: randomSeed(), spectate: false, doctrine: 'balanced', aiDoctrines: ALL_RANDOM };
+  const def: SetupState = { mapId: 'generated', mapSize: 'medium', factions: 4, teams: 'ffa', difficulty: 'normal', infoMode: 'open', seed: randomSeed(), spectate: false, doctrine: 'balanced', aiDoctrines: ALL_RANDOM };
   try {
     const raw = localStorage.getItem(STORE_KEY);
     if (!raw) return def;
@@ -53,6 +54,7 @@ function loadState(): SetupState {
       mapId,
       mapSize: v.mapSize === 'large' ? 'large' : 'medium',
       factions: Math.min(4, Math.max(2, Number(v.factions) || 4)),
+      teams: v.teams === '2v2' ? '2v2' : 'ffa',
       difficulty: v.difficulty === 'easy' || v.difficulty === 'hard' ? v.difficulty : 'normal',
       infoMode: v.infoMode === 'fog' ? 'fog' : 'open',
       spectate: !!v.spectate,
@@ -80,7 +82,7 @@ function toConfig(s: SetupState): MatchConfig {
   const factions = Math.min(maxFactions(s.mapId), s.factions);
   // 3.0.1: the player's slot takes its pick (random = whatever the AI choices leave); the auto HQ and auto research follow it.
   const doctrines = Array.from({ length: factions }, (_, i): DoctrineChoice => s.aiDoctrines[i] ?? 'random');
-  return { mapId: s.mapId, mapSize: s.mapSize, factions, infoMode: s.infoMode, seed: s.seed, difficulty: s.difficulty, playerSlot: 0, spectate: s.spectate, personalities: s.spectate ? undefined : [s.doctrine], doctrines };
+  return { mapId: s.mapId, mapSize: s.mapSize, factions, teams: factions === 4 ? s.teams : 'ffa', infoMode: s.infoMode, seed: s.seed, difficulty: s.difficulty, playerSlot: 0, spectate: s.spectate, personalities: s.spectate ? undefined : [s.doctrine], doctrines };
 }
 
 /** One doctrine select for slot `i`, 'random' first. */
@@ -291,6 +293,8 @@ export function showTitle(root: HTMLElement, data: GameData, onStart: (cfg: Matc
         h('div', { class: 'seg-group' }, ...(['medium', 'large'] as MapSize[]).map((s) => opt(t(`size.${s}`), s, state.mapSize, (v) => ({ ...state, mapSize: v }))))) : null,
       h('div', { class: 'field' }, h('span', { class: 'lbl' }, t('setup.factions')),
         h('div', { class: 'seg-group' }, ...[2, 3, 4].filter((n) => n <= maxF).map((n) => opt(String(n), n, factions, (v) => ({ ...state, factions: v }))))),
+      factions === 4 ? h('div', { class: 'field' }, h('span', { class: 'lbl' }, t('setup.teams')),
+        h('div', { class: 'seg-group' }, ...(['ffa', '2v2'] as const).map((tm) => opt(t(`teams.${tm}`), tm, state.teams, (v) => ({ ...state, teams: v }))))) : null,
       h('div', { class: 'field' }, h('span', { class: 'lbl' }, t('setup.difficulty')),
         h('div', { class: 'seg-group' }, ...(['easy', 'normal', 'hard'] as Difficulty[]).map((d) => opt(t(`diff.${d}`), d, state.difficulty, (v) => ({ ...state, difficulty: v }))))),
       h('div', { class: 'field' }, h('span', { class: 'lbl' }, t('setup.doctrine')),

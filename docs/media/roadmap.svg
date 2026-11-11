@@ -1,140 +1,197 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 500" width="960" height="500" role="img" aria-labelledby="t d">
-  <title id="t">LITTLE WAR roadmap</title>
-  <desc id="d">A war-map road from version 0.4 through 0.5, 1.0, 1.1, 2.0, 2.1 and 2.2 to 3.0 (this release), then a dashed planned stop 3.x. Planned items are plans, not promises.</desc>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 320" role="img" aria-label="Little War roadmap from 0.4 through 3.0 to planned 3.x milestones">
   <defs>
-    <filter id="paper" x="0" y="0" width="100%" height="100%">
-      <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="3" seed="7" result="n"/>
-      <feColorMatrix in="n" type="matrix" values="0 0 0 0 0.42  0 0 0 0 0.36  0 0 0 0 0.24  0 0 0 0.10 0" result="grain"/>
-      <feComposite in="grain" in2="SourceGraphic" operator="in" result="g2"/>
-      <feBlend in="SourceGraphic" in2="g2" mode="multiply"/>
-    </filter>
-    <filter id="rough" x="-5%" y="-5%" width="110%" height="110%">
-      <feTurbulence type="fractalNoise" baseFrequency="0.035" numOctaves="2" seed="3" result="w"/>
-      <feDisplacementMap in="SourceGraphic" in2="w" scale="3.2"/>
-    </filter>
-    <radialGradient id="vig" cx="50%" cy="48%" r="70%">
-      <stop offset="62%" stop-color="#000" stop-opacity="0"/>
-      <stop offset="100%" stop-color="#3a2a12" stop-opacity="0.28"/>
+    <linearGradient id="paper" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#efe5c8"/>
+      <stop offset="55%" stop-color="#e4d6b3"/>
+      <stop offset="100%" stop-color="#d8c79e"/>
+    </linearGradient>
+    <radialGradient id="vignette" cx="50%" cy="50%" r="65%">
+      <stop offset="70%" stop-color="#000" stop-opacity="0"/>
+      <stop offset="100%" stop-color="#2b2114" stop-opacity="0.28"/>
     </radialGradient>
     <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
-      <path d="M40 0H0V40" fill="none" stroke="#8a6a2c" stroke-opacity="0.13" stroke-width="1"/>
+      <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#6e5d41" stroke-width="0.6" stroke-opacity="0.22"/>
     </pattern>
-    <g id="star"><path d="M0-11 3.2-3.5 11-3.4 4.8 1.6 7 9.5 0 4.9-7 9.5-4.8 1.6-11-3.4-3.2-3.5Z"/></g>
+    <filter id="grain" x="0" y="0" width="100%" height="100%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.8" numOctaves="2" stitchTiles="stitch" result="n"/>
+      <feColorMatrix type="matrix" values="0 0 0 0 0.22  0 0 0 0 0.17  0 0 0 0 0.10  0 0 0 0.06 0"/>
+      <feComposite in2="SourceGraphic" operator="in"/>
+    </filter>
+    <style>
+      .t-head { font: 700 13px 'Courier New', monospace; letter-spacing: 2.5px; fill: #4a3d28; }
+      .t-ver  { font: 700 15px 'Georgia', serif; fill: #f7f0dc; }
+      .t-ver-now { font: 700 16px 'Georgia', serif; fill: #fff8e6; }
+      .t-ver-plan { font: 700 14px 'Georgia', serif; fill: #3a3326; }
+      .t-title { font: 700 13px 'Georgia', serif; fill: #2b2318; }
+      .t-sub  { font: 11.5px 'Georgia', serif; fill: #4d402c; }
+      .t-tag  { font: 700 9.5px 'Courier New', monospace; letter-spacing: 1.2px; }
+      @keyframes marchRoad {
+        to { stroke-dashoffset: -40; }
+      }
+      @keyframes pulseBeacon {
+        0%, 100% { r: 28px; stroke-opacity: 0.75; }
+        50% { r: 35px; stroke-opacity: 0.15; }
+      }
+      .planned-road {
+        animation: marchRoad 2.4s linear infinite;
+      }
+      .beacon-ring {
+        animation: pulseBeacon 2.2s ease-in-out infinite;
+      }
+    </style>
   </defs>
 
-  <!-- paper sheet (opaque, so it reads the same on light and dark GitHub themes) -->
-  <rect x="6" y="6" width="948" height="488" rx="10" fill="#1f1b14"/>
-  <rect x="12" y="12" width="936" height="476" rx="6" fill="#e8dcbc" filter="url(#paper)"/>
-  <rect x="12" y="12" width="936" height="476" rx="6" fill="url(#grid)"/>
-  <rect x="12" y="12" width="936" height="476" rx="6" fill="url(#vig)"/>
-  <rect x="22" y="22" width="916" height="456" rx="3" fill="none" stroke="#3a3326" stroke-width="1.4" stroke-dasharray="1 0" opacity="0.55"/>
+  <!-- Paper base -->
+  <rect width="1200" height="320" rx="6" fill="url(#paper)"/>
+  <rect width="1200" height="320" rx="6" fill="url(#grid)"/>
 
-  <!-- map dressing: contour lines and a river -->
-  <g fill="none" stroke="#8a6a2c" stroke-opacity="0.28" stroke-width="1.2" filter="url(#rough)">
-    <path d="M610 60c40 20 90 16 130 6s80 4 110 26"/>
-    <path d="M620 80c38 16 84 14 122 6s76 6 104 24"/>
-    <path d="M60 420c50-14 96-6 140 8"/>
-    <path d="M70 440c46-10 88-4 128 8"/>
-  </g>
-  <path d="M520 488c10-40 -16-70 6-110s52-46 40-90-28-70 6-110" fill="none" stroke="#5f7f8c" stroke-opacity="0.45" stroke-width="7" stroke-linecap="round" filter="url(#rough)"/>
-
-  <!-- title block -->
-  <g font-family="'Stencil','Black Ops One','Impact','Arial Black',sans-serif" fill="#2b261c">
-    <text x="44" y="68" font-size="34" letter-spacing="6">ROADMAP</text>
-    <text x="268" y="68" font-size="22" letter-spacing="3" fill="#a63f36">作战路线图</text>
-  </g>
-  <text x="46" y="92" font-family="'Courier New',Courier,monospace" font-size="13.5" fill="#4a4232">Shipped milestones and the planned 3.x stop. Planned stops are plans, not promises.</text>
-
-  <!-- legend -->
-  <g font-family="'Courier New',Courier,monospace" font-size="12.5" fill="#3a3326">
-    <circle cx="690" cy="52" r="7" fill="#3a3326"/><text x="704" y="56">shipped 已发布</text>
-    <circle cx="690" cy="76" r="7" fill="#a63f36"/><text x="704" y="80">this release 本版</text>
-    <circle cx="830" cy="52" r="7" fill="#e8dcbc" stroke="#3a3326" stroke-width="2" stroke-dasharray="3 2"/><text x="844" y="56">planned 计划</text>
+  <!-- Topographic contour lines -->
+  <g fill="none" stroke="#8a7553" stroke-opacity="0.22" stroke-width="1">
+    <path d="M -20 60 Q 140 20, 290 75 T 620 55 T 960 80 T 1220 45"/>
+    <path d="M -20 82 Q 150 42, 300 95 T 630 75 T 970 100 T 1220 65"/>
+    <path d="M -20 260 Q 220 295, 440 245 T 880 270 T 1220 240"/>
+    <path d="M -20 278 Q 220 312, 445 265 T 885 288 T 1220 258"/>
   </g>
 
-  <!-- the road: inked where travelled, dashed where planned -->
-  <path d="M60 300 C130 300 150 250 210 250 S300 310 360 300 S450 240 520 250 C560 262 590 296 620 300 S680 318 705 312 C735 306 770 262 800 262" fill="none" stroke="#3a3326" stroke-opacity="0.18" stroke-width="22" stroke-linecap="round"/>
-  <path d="M60 300 C130 300 150 250 210 250 S300 310 360 300 S450 240 520 250 C560 262 590 296 620 300 S680 318 705 312 C735 306 770 262 800 262" fill="none" stroke="#3a3326" stroke-width="6" stroke-linecap="round" filter="url(#rough)"/>
-  <path d="M800 262 C830 262 858 288 880 290 L906 294" fill="none" stroke="#3a3326" stroke-width="3.5" stroke-linecap="round" stroke-dasharray="10 9" filter="url(#rough)"/>
-  <!-- arrowhead at the far end -->
-  <path d="M908 285 926 295 908 305" fill="none" stroke="#3a3326" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- River -->
+  <path d="M 480 -10 C 460 70, 520 120, 495 190 C 470 255, 520 290, 505 330" fill="none" stroke="#7fa0a6" stroke-width="10" stroke-opacity="0.35"/>
+  <path d="M 480 -10 C 460 70, 520 120, 495 190 C 470 255, 520 290, 505 330" fill="none" stroke="#4f6d73" stroke-width="1.2" stroke-opacity="0.45" stroke-dasharray="6 4"/>
 
-  <!-- shipped milestones -->
-  <g font-family="'Stencil','Black Ops One','Impact','Arial Black',sans-serif" text-anchor="middle">
-    <g transform="translate(70 300)"><circle r="15" fill="#3a3326"/><text y="5.5" font-size="14" fill="#e8dcbc">0.4</text></g>
-    <g transform="translate(210 250)"><circle r="15" fill="#3a3326"/><text y="5.5" font-size="14" fill="#e8dcbc">0.5</text></g>
-    <g transform="translate(360 300)"><circle r="15" fill="#3a3326"/><text y="5.5" font-size="14" fill="#e8dcbc">1.0</text></g>
-    <g transform="translate(450 268)"><circle r="15" fill="#3a3326"/><text y="5.5" font-size="14" fill="#e8dcbc">1.1</text></g>
-    <g transform="translate(520 250)"><circle r="15" fill="#3a3326"/><text y="5.5" font-size="14" fill="#e8dcbc">2.0</text></g>
-    <g transform="translate(620 300)"><circle r="15" fill="#3a3326"/><text y="5.5" font-size="14" fill="#e8dcbc">2.1</text></g>
-    <g transform="translate(705 312)"><circle r="15" fill="#3a3326"/><text y="5.5" font-size="14" fill="#e8dcbc">2.2</text></g>
-  </g>
-  <!-- 3.0: this release, a star stamp on a staff up to its caption plate -->
-  <g transform="translate(800 262)">
-    <circle r="27" fill="#a63f36" opacity="0.18"/>
-    <circle r="21" fill="#a63f36"/>
-    <use href="#star" fill="#e8dcbc" transform="scale(1.15)"/>
-    <path d="M0-21V-86" stroke="#2b261c" stroke-width="2.5"/>
+  <rect width="1200" height="320" rx="6" fill="url(#vignette)"/>
+  <rect x="8" y="8" width="1184" height="304" rx="4" fill="none" stroke="#4a3d28" stroke-width="1.5" stroke-opacity="0.55"/>
+  <rect x="12" y="12" width="1176" height="296" rx="2" fill="none" stroke="#4a3d28" stroke-width="0.6" stroke-opacity="0.4"/>
+
+  <!-- Header -->
+  <text x="28" y="34" class="t-head">CAMPAIGN ROAD · 0.4 → 3.0.3 → 3.x</text>
+  <g transform="translate(880, 22)">
+    <circle cx="0" cy="6" r="5" fill="#3a3326"/>
+    <text x="10" y="10" class="t-tag" fill="#3a3326">SHIPPED</text>
+    <circle cx="82" cy="6" r="6" fill="#a63f36" stroke="#f7f0dc" stroke-width="1.5"/>
+    <text x="94" y="10" class="t-tag" fill="#a63f36">THIS RELEASE</text>
+    <circle cx="198" cy="6" r="5" fill="#efe5c8" stroke="#6b7a3a" stroke-width="2" stroke-dasharray="3 2"/>
+    <text x="210" y="10" class="t-tag" fill="#4f5d28">PLANNED</text>
   </g>
 
-  <!-- planned stops -->
-  <g font-family="'Stencil','Black Ops One','Impact','Arial Black',sans-serif" text-anchor="middle" font-size="13" fill="#3a3326">
-    <g transform="translate(880 290)"><circle r="14" fill="#e8dcbc" stroke="#3a3326" stroke-width="2.4" stroke-dasharray="4 3"/><text y="5">3.x</text></g>
+  <!-- The road: shipped solid ink, planned dashed -->
+  <path id="shippedRoad" d="M 65 170 C 125 140, 145 140, 185 165 S 265 195, 305 170 S 385 135, 425 160 S 505 195, 545 170 S 625 135, 665 160 S 745 195, 785 168 S 865 140, 910 165"
+        fill="none" stroke="#2b2318" stroke-width="9" stroke-linecap="round" stroke-opacity="0.18"/>
+  <path d="M 65 168 C 125 138, 145 138, 185 163 S 265 193, 305 168 S 385 133, 425 158 S 505 193, 545 168 S 625 133, 665 158 S 745 193, 785 166 S 865 138, 910 163"
+        fill="none" stroke="#3a3326" stroke-width="4" stroke-linecap="round"/>
+
+  <!-- Animated supply convoy / staff courier moving along the shipped road -->
+  <circle r="4" fill="#a63f36" stroke="#fff8e6" stroke-width="1.2">
+    <animateMotion dur="9s" repeatCount="indefinite" path="M 65 168 C 125 138, 145 138, 185 163 S 265 193, 305 168 S 385 133, 425 158 S 505 193, 545 168 S 625 133, 665 158 S 745 193, 785 166 S 865 138, 910 163"/>
+  </circle>
+
+  <path class="planned-road" d="M 910 163 C 965 188, 1005 188, 1045 163 S 1110 140, 1145 163"
+        fill="none" stroke="#6b7a3a" stroke-width="3.2" stroke-dasharray="7 6" stroke-linecap="round"/>
+  <!-- Arrow head at end -->
+  <path d="M 1140 156 L 1154 163 L 1140 170" fill="none" stroke="#6b7a3a" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- ===== Shipped stops ===== -->
+  <!-- 0.4 (below) -->
+  <g transform="translate(65, 168)">
+    <line x1="0" y1="16" x2="0" y2="44" stroke="#3a3326" stroke-width="1.2"/>
+    <circle r="15" fill="#3a3326" stroke="#f7f0dc" stroke-width="2"/>
+    <text y="5" text-anchor="middle" class="t-ver">0.4</text>
+    <text y="60" text-anchor="middle" class="t-title">First diorama</text>
+    <text y="76" text-anchor="middle" class="t-sub">20 Hz sim · convoys</text>
+    <text y="90" text-anchor="middle" class="t-sub">territory economy</text>
   </g>
 
-  <!-- shipped captions (alternating above / below the road) -->
-  <g font-family="'Courier New',Courier,monospace" fill="#2b261c" font-size="12.5">
-    <g transform="translate(70 340)" text-anchor="middle">
-      <text font-weight="bold" font-size="13.5">FIRST DIORAMA</text>
-      <text y="17">desktop app ·</text><text y="32">generated maps</text></g>
-    <g transform="translate(210 186)" text-anchor="middle">
-      <text font-weight="bold" font-size="13.5">BATTLE PLANS</text>
-      <text y="17">sieges · field works</text><text y="32">doctrines</text></g>
-    <g transform="translate(330 340)" text-anchor="middle">
-      <text font-weight="bold" font-size="13.5">SOLDIERS, NOT TOKENS</text>
-      <text y="17">terrain fights ·</text><text y="32">orchestral score</text></g>
-    <g transform="translate(430 186)" text-anchor="middle">
-      <text font-weight="bold" font-size="13.5">ARTILLERY &amp;</text>
-      <text y="16" font-weight="bold" font-size="13.5">HOME DEFENCE</text>
-      <text y="32">capital-only victory</text></g>
-    <g transform="translate(520 340)" text-anchor="middle">
-      <text font-weight="bold" font-size="13.5">SUPREME HQ</text>
-      <text y="17">front commanders ·</text><text y="32">pillboxes · armour</text></g>
-    <g transform="translate(622 150)" text-anchor="middle">
-      <text font-weight="bold" font-size="13.5">FORTRESS WAR</text>
-      <text y="17">permanent zones ·</text><text y="32">binding orders</text>
-      <path d="M0 42V132" stroke="#3a3326" stroke-width="1.2"/></g>
-  </g>
-  <!-- 2.2 caption -->
-  <g font-family="'Courier New',Courier,monospace" fill="#2b261c" font-size="12.5" text-anchor="middle" transform="translate(700 352)">
-    <text font-weight="bold" font-size="13.5">ECONOMIC WAR</text>
-    <text y="17">one directive ·</text><text y="32">supply · factories</text></g>
-  <!-- 3.0 caption plate -->
-  <g transform="translate(800 104)">
-    <rect x="-98" y="0" width="196" height="72" rx="3" fill="#2b261c"/>
-    <rect x="-94" y="4" width="188" height="64" rx="2" fill="none" stroke="#e8dcbc" stroke-opacity="0.5"/>
-    <g font-family="'Courier New',Courier,monospace" fill="#e8dcbc" text-anchor="middle" font-size="12">
-      <text y="22" font-family="'Stencil','Black Ops One','Impact','Arial Black',sans-serif" font-size="14" letter-spacing="1.5">3.0 DOCTRINE WAR</text>
-      <text y="40">AI doctrines · rail ·</text>
-      <text y="55">zones · works · upgrades</text>
-    </g>
-  </g>
-  <g transform="translate(842 322) rotate(-4)">
-    <rect x="-58" y="-13" width="116" height="24" rx="3" fill="#e8dcbc" stroke="#a63f36" stroke-width="2.4"/>
-    <text y="4" font-family="'Stencil','Black Ops One','Impact','Arial Black',sans-serif" font-size="13" letter-spacing="2" fill="#a63f36" text-anchor="middle">THIS RELEASE</text>
+  <!-- 0.5 (above) -->
+  <g transform="translate(185, 163)">
+    <line x1="0" y1="-16" x2="0" y2="-44" stroke="#3a3326" stroke-width="1.2"/>
+    <circle r="15" fill="#3a3326" stroke="#f7f0dc" stroke-width="2"/>
+    <text y="5" text-anchor="middle" class="t-ver">0.5</text>
+    <text y="-82" text-anchor="middle" class="t-title">Operations</text>
+    <text y="-66" text-anchor="middle" class="t-sub">fieldworks · trucks</text>
+    <text y="-52" text-anchor="middle" class="t-sub">doctrines</text>
   </g>
 
-  <!-- planned captions -->
-  <g font-family="'Courier New',Courier,monospace" fill="#4a4232" font-size="12" text-anchor="middle">
-    <g transform="translate(868 356)" font-size="11.5">
-      <text font-weight="bold" font-size="13" fill="#2b261c">CAMPAIGN</text>
-      <text y="16">war pace ·</text><text y="30">river assaults ·</text><text y="44">save · replay ·</text><text y="58">linked maps · mods</text></g>
+  <!-- 1.0 (below) -->
+  <g transform="translate(305, 168)">
+    <line x1="0" y1="16" x2="0" y2="44" stroke="#3a3326" stroke-width="1.2"/>
+    <circle r="15" fill="#3a3326" stroke="#f7f0dc" stroke-width="2"/>
+    <text y="5" text-anchor="middle" class="t-ver">1.0</text>
+    <text y="60" text-anchor="middle" class="t-title">Living battlefield</text>
+    <text y="76" text-anchor="middle" class="t-sub">soldier motion · cover</text>
+    <text y="90" text-anchor="middle" class="t-sub">orchestral score</text>
   </g>
 
-  <!-- footer stamp -->
-  <text x="44" y="466" font-family="'Courier New',Courier,monospace" font-size="11.5" fill="#5a5040">LITTLE WAR · 小小战争 — order of stops may change; dashed = not yet built</text>
-  <g transform="translate(866 448) rotate(-8)" opacity="0.8">
-    <rect x="-56" y="-16" width="112" height="30" rx="4" fill="none" stroke="#6b7a3a" stroke-width="2.2"/>
-    <text y="5" font-family="'Stencil','Black Ops One','Impact','Arial Black',sans-serif" font-size="14" letter-spacing="2.5" fill="#6b7a3a" text-anchor="middle">PLAN 计划</text>
+  <!-- 1.1 (above) -->
+  <g transform="translate(425, 158)">
+    <line x1="0" y1="-16" x2="0" y2="-44" stroke="#3a3326" stroke-width="1.2"/>
+    <circle r="15" fill="#3a3326" stroke="#f7f0dc" stroke-width="2"/>
+    <text y="5" text-anchor="middle" class="t-ver">1.1</text>
+    <text y="-82" text-anchor="middle" class="t-title">Artillery &amp; sieges</text>
+    <text y="-66" text-anchor="middle" class="t-sub">capital defence</text>
+    <text y="-52" text-anchor="middle" class="t-sub">capitals-only win</text>
+  </g>
+
+  <!-- 2.0 (below) -->
+  <g transform="translate(545, 168)">
+    <line x1="0" y1="16" x2="0" y2="44" stroke="#3a3326" stroke-width="1.2"/>
+    <circle r="15" fill="#3a3326" stroke="#f7f0dc" stroke-width="2"/>
+    <text y="5" text-anchor="middle" class="t-ver">2.0</text>
+    <text y="60" text-anchor="middle" class="t-title">High Command</text>
+    <text y="76" text-anchor="middle" class="t-sub">commanders · bunkers</text>
+    <text y="90" text-anchor="middle" class="t-sub">spearheads · labs</text>
+  </g>
+
+  <!-- 2.1 (above) -->
+  <g transform="translate(665, 158)">
+    <line x1="0" y1="-16" x2="0" y2="-44" stroke="#3a3326" stroke-width="1.2"/>
+    <circle r="15" fill="#3a3326" stroke="#f7f0dc" stroke-width="2"/>
+    <text y="5" text-anchor="middle" class="t-ver">2.1</text>
+    <text y="-82" text-anchor="middle" class="t-title">Fortress warfare</text>
+    <text y="-66" text-anchor="middle" class="t-sub">fortified lines · 8 fronts</text>
+    <text y="-52" text-anchor="middle" class="t-sub">town streets &amp; models</text>
+  </g>
+
+  <!-- 2.2 (below) -->
+  <g transform="translate(785, 166)">
+    <line x1="0" y1="16" x2="0" y2="44" stroke="#3a3326" stroke-width="1.2"/>
+    <circle r="15" fill="#3a3326" stroke="#f7f0dc" stroke-width="2"/>
+    <text y="5" text-anchor="middle" class="t-ver">2.2</text>
+    <text y="60" text-anchor="middle" class="t-title">Economic warfare</text>
+    <text y="76" text-anchor="middle" class="t-sub">one directive · town depots</text>
+    <text y="90" text-anchor="middle" class="t-sub">factories &amp; raids · 60 fps</text>
+  </g>
+
+  <!-- ===== Current release: 3.0 / 3.0.3 (above, highlighted) ===== -->
+  <g transform="translate(910, 163)">
+    <line x1="0" y1="-25" x2="0" y2="-44" stroke="#a63f36" stroke-width="2"/>
+    <circle class="beacon-ring" r="28" fill="none" stroke="#a63f36" stroke-width="1.5" stroke-dasharray="3 3"/>
+    <circle r="22" fill="#a63f36" stroke="#fff8e6" stroke-width="2.5"/>
+    <!-- small star above -->
+    <polygon points="0,-36 2.5,-30 9,-30 4,-26 6,-20 0,-24 -6,-20 -4,-26 -9,-30 -2.5,-30" fill="#a63f36"/>
+    <text y="5" text-anchor="middle" class="t-ver-now">3.0</text>
+    <rect x="-82" y="-122" width="164" height="74" rx="4" fill="#f7eed3" stroke="#a63f36" stroke-width="1.6"/>
+    <text y="-103" text-anchor="middle" class="t-title" fill="#a63f36">3.0 · Clash of Doctrines</text>
+    <text y="-87" text-anchor="middle" class="t-sub">4 AI doctrines · front echelons</text>
+    <text y="-73" text-anchor="middle" class="t-sub">roads &amp; rail · zones · fortresses</text>
+    <text y="-59" text-anchor="middle" class="t-sub">3.0.3 war ledger &amp; fast sim</text>
+  </g>
+
+  <!-- ===== Planned stops ===== -->
+  <!-- 3.x (below) -->
+  <g transform="translate(1045, 163)">
+    <line x1="0" y1="16" x2="0" y2="44" stroke="#6b7a3a" stroke-width="1.2" stroke-dasharray="3 2"/>
+    <circle r="15" fill="#efe5c8" stroke="#6b7a3a" stroke-width="2.2" stroke-dasharray="4 2"/>
+    <text y="5" text-anchor="middle" class="t-ver-plan">3.x</text>
+    <text y="60" text-anchor="middle" class="t-title">Next fronts</text>
+    <text y="76" text-anchor="middle" class="t-sub">war pace · river assaults</text>
+    <text y="90" text-anchor="middle" class="t-sub">harder AI · save &amp; replay</text>
+  </g>
+
+  <!-- 3.x+ (above) -->
+  <g transform="translate(1145, 163)">
+    <line x1="0" y1="-16" x2="0" y2="-44" stroke="#6b7a3a" stroke-width="1.2" stroke-dasharray="3 2"/>
+    <circle r="15" fill="#efe5c8" stroke="#6b7a3a" stroke-width="2.2" stroke-dasharray="4 2"/>
+    <text y="5" text-anchor="middle" class="t-ver-plan">···</text>
+    <text y="-82" text-anchor="middle" class="t-title">Beyond</text>
+    <text y="-66" text-anchor="middle" class="t-sub">multi-map campaigns</text>
+    <text y="-52" text-anchor="middle" class="t-sub">achievements · modding</text>
   </g>
 </svg>

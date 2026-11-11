@@ -1,0 +1,156 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 330" role="img" aria-label="Animated war-room showcase of 2v2 Coalition War, dynamic engineer bridges and train steam, crew loader and digging animations, and Orchestra 2.0 stereo Haas seating">
+  <defs>
+    <linearGradient id="do-paper" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#efe5c8"/>
+      <stop offset="55%" stop-color="#e4d6b3"/>
+      <stop offset="100%" stop-color="#d8c79e"/>
+    </linearGradient>
+    <radialGradient id="do-vignette" cx="50%" cy="50%" r="68%">
+      <stop offset="70%" stop-color="#000" stop-opacity="0"/>
+      <stop offset="100%" stop-color="#2b2114" stop-opacity="0.26"/>
+    </radialGradient>
+    <pattern id="do-grid" width="36" height="36" patternUnits="userSpaceOnUse">
+      <path d="M 36 0 L 0 0 0 36" fill="none" stroke="#6e5d41" stroke-width="0.55" stroke-opacity="0.2"/>
+    </pattern>
+    <style>
+      .d-head { font: 700 12.5px 'Courier New', monospace; letter-spacing: 2.2px; fill: #4a3d28; }
+      .d-title { font: 700 14px 'Georgia', serif; fill: #2b2318; }
+      .d-sub { font: 11.5px 'Georgia', serif; fill: #4d402c; }
+      .d-code { font: 700 10.5px 'Courier New', monospace; fill: #3a3326; }
+      .d-pill { font: 700 10px 'Courier New', monospace; letter-spacing: 1px; fill: #fff8e6; }
+
+      @keyframes puffRise {
+        0% { transform: translate(0, 0) scale(0.6); opacity: 0.85; }
+        100% { transform: translate(-22px, -24px) scale(2.1); opacity: 0; }
+      }
+      @keyframes haasWaveL {
+        0% { r: 6px; stroke-opacity: 0.85; }
+        100% { r: 34px; stroke-opacity: 0; }
+      }
+      @keyframes allyLink {
+        to { stroke-dashoffset: -24; }
+      }
+      .puff-1 { animation: puffRise 2.1s ease-out infinite; }
+      .puff-2 { animation: puffRise 2.1s ease-out 0.7s infinite; }
+      .puff-3 { animation: puffRise 2.1s ease-out 1.4s infinite; }
+      .haas-ring { animation: haasWaveL 2.4s ease-out infinite; }
+      .haas-ring-2 { animation: haasWaveL 2.4s ease-out 1.2s infinite; }
+      .ally-line { animation: allyLink 1.6s linear infinite; }
+    </style>
+  </defs>
+
+  <!-- Parchment base -->
+  <rect width="1200" height="330" rx="6" fill="url(#do-paper)"/>
+  <rect width="1200" height="330" rx="6" fill="url(#do-grid)"/>
+  <rect width="1200" height="330" rx="6" fill="url(#do-vignette)"/>
+  <rect x="8" y="8" width="1184" height="314" rx="4" fill="none" stroke="#4a3d28" stroke-width="1.5" stroke-opacity="0.55"/>
+  <rect x="12" y="12" width="1176" height="306" rx="2" fill="none" stroke="#4a3d28" stroke-width="0.6" stroke-opacity="0.4"/>
+
+  <text x="28" y="34" class="d-head">3.0.3 DIORAMA LIFE · ORCHESTRA 2.0 · TACTICAL DEPTH &amp; 2V2 COALITION WAR</text>
+
+  <!-- ================= PANEL 1: DIORAMA & ANIMATION LIFE ================= -->
+  <g transform="translate(28, 50)">
+    <rect x="0" y="0" width="368" height="252" rx="5" fill="#f7eed3" stroke="#3a3326" stroke-width="1.8"/>
+    <rect x="0" y="0" width="368" height="28" rx="5" fill="#3a3326"/>
+    <text x="14" y="18" class="d-pill">I. DIORAMA BRIDGES, STEAM &amp; CREW MOTION</text>
+
+    <!-- Animated Bridge + Steam Train Scene -->
+    <g transform="translate(14, 38)">
+      <rect x="0" y="0" width="340" height="84" rx="4" fill="#23291f" stroke="#6e5d41" stroke-width="1.2"/>
+      <!-- River -->
+      <path d="M 135 0 L 115 84 L 195 84 L 215 0 Z" fill="#4f6d73" fill-opacity="0.65"/>
+      <!-- Timber / Steel Girder Bridge -->
+      <rect x="20" y="46" width="300" height="10" fill="#6e5438" stroke="#4b3a2a" stroke-width="1.2"/>
+      <line x1="95" y1="40" x2="230" y2="40" stroke="#9a9a96" stroke-width="2" stroke-dasharray="6 3"/>
+      <!-- Animated Train & Steam Puffs -->
+      <g>
+        <animateTransform attributeName="transform" type="translate" values="60,34; 245,34; 60,34" dur="7s" repeatCount="indefinite"/>
+        <rect x="-26" y="0" width="52" height="11" rx="2" fill="#5b8bd4" stroke="#f7f0dc" stroke-width="1"/>
+        <rect x="14" y="-6" width="6" height="6" fill="#2b2318"/>
+        <circle class="puff-1" cx="17" cy="-8" r="4.5" fill="#efe5c8"/>
+        <circle class="puff-2" cx="17" cy="-8" r="4.5" fill="#efe5c8"/>
+        <circle class="puff-3" cx="17" cy="-8" r="4.5" fill="#efe5c8"/>
+      </g>
+      <text x="10" y="18" class="d-pill" fill="#e2b857">RAIL GIRDERS · TIMBER BRIDGES · STEAM SFX</text>
+    </g>
+
+    <text x="16" y="144" class="d-title">Mechanical &amp; Soldier Micro-Animation</text>
+    <text x="16" y="162" class="d-sub">• Engineer roads crossing rivers build timber decks &amp; railings</text>
+    <text x="16" y="179" class="d-sub">• Moving troop trains emit steam puffs &amp; double-chug SFX</text>
+    <text x="16" y="196" class="d-sub">• Gun crew #1 steps to the breech to ram shells on recoil</text>
+    <text x="16" y="213" class="d-sub">• Tank hulls rock on firing; engineers swing shovels at sites</text>
+    <text x="16" y="234" class="d-code" fill="#6b7a3a">railField.ts · unitViews.ts · recipes.ts (train/stamp)</text>
+  </g>
+
+  <!-- ================= PANEL 2: ORCHESTRA 2.0 ================= -->
+  <g transform="translate(416, 50)">
+    <rect x="0" y="0" width="368" height="252" rx="5" fill="#f7eed3" stroke="#8a6a2c" stroke-width="1.8"/>
+    <rect x="0" y="0" width="368" height="28" rx="5" fill="#8a6a2c"/>
+    <text x="14" y="18" class="d-pill">II. ORCHESTRA 2.0 · STEREO HAAS &amp; LEGATO</text>
+
+    <!-- Animated Concert Stage Diagram -->
+    <g transform="translate(14, 38)">
+      <rect x="0" y="0" width="340" height="84" rx="4" fill="#1f1b16" stroke="#6e5d41" stroke-width="1.2"/>
+      <!-- Stage Semicircle -->
+      <path d="M 50 76 A 120 62 0 0 1 290 76" fill="none" stroke="#6e5d41" stroke-width="1.5" stroke-dasharray="4 3"/>
+      <!-- Left: Strings / Horns + Opposite Haas Reflection -->
+      <circle cx="96" cy="52" r="6" fill="#c89b3c"/>
+      <circle class="haas-ring" cx="96" cy="52" r="8" fill="none" stroke="#c89b3c" stroke-width="1.4"/>
+      <text x="96" y="70" text-anchor="middle" class="d-pill" fill="#e2d5b5">STRINGS L</text>
+
+      <!-- Center: Winds / Solo Lead -->
+      <circle cx="170" cy="34" r="6" fill="#6da862"/>
+      <text x="170" y="20" text-anchor="middle" class="d-pill" fill="#88b87a">LEGATO GLIDE (32ms)</text>
+
+      <!-- Right: Brass / Low Brass + Opposite Haas Reflection -->
+      <circle cx="244" cy="52" r="6" fill="#cf5c50"/>
+      <circle class="haas-ring-2" cx="244" cy="52" r="8" fill="none" stroke="#cf5c50" stroke-width="1.4"/>
+      <text x="244" y="70" text-anchor="middle" class="d-pill" fill="#e2d5b5">BRASS R (HAAS)</text>
+    </g>
+
+    <text x="16" y="144" class="d-title">Wide Hall Seating &amp; Modal Modulation</text>
+    <text x="16" y="162" class="d-sub">• Opposite-panned 4.5–9.5 ms Haas early reflections per bus</text>
+    <text x="16" y="179" class="d-sub">• Legato portamento (32 ms pitch glide + bowed body start)</text>
+    <text x="16" y="196" class="d-sub">• Marcato brass lip-attack scoop &amp; transient punch on stabs</text>
+    <text x="16" y="213" class="d-sub">• Cycle-of-fifths tonal shifts (Dm → Gm → Cm → Fm → Am)</text>
+    <text x="16" y="234" class="d-code" fill="#8a6a2c">music.ts: TONAL_CYCLE + haasDelay + isLegato / isMarcato</text>
+  </g>
+
+  <!-- ================= PANEL 3: TACTICAL DEPTH & 2V2 COALITION ================= -->
+  <g transform="translate(804, 50)">
+    <rect x="0" y="0" width="368" height="252" rx="5" fill="#f7eed3" stroke="#a63f36" stroke-width="1.8"/>
+    <rect x="0" y="0" width="368" height="28" rx="5" fill="#a63f36"/>
+    <text x="14" y="18" class="d-pill">III. 2V2 COALITION WAR &amp; SIEGE BREAKERS</text>
+
+    <!-- Animated 2v2 Coalition Map Diagram -->
+    <g transform="translate(14, 38)">
+      <rect x="0" y="0" width="340" height="84" rx="4" fill="#23291f" stroke="#6e5d41" stroke-width="1.2"/>
+      <!-- Coalition 1: I (Blue) + III (Purple) -->
+      <circle cx="52" cy="24" r="9" fill="#3D78A8" stroke="#fff8e6" stroke-width="1.5"/>
+      <text x="52" y="28" text-anchor="middle" class="d-pill">I</text>
+      <circle cx="52" cy="62" r="9" fill="#856DA8" stroke="#fff8e6" stroke-width="1.5"/>
+      <text x="52" y="66" text-anchor="middle" class="d-pill">III</text>
+      <line class="ally-line" x1="52" y1="34" x2="52" y2="52" stroke="#8fb8f5" stroke-width="2.2" stroke-dasharray="4 3"/>
+
+      <!-- Coalition 2: II (Gold) + IV (Teal) -->
+      <circle cx="288" cy="24" r="9" fill="#BA7D34" stroke="#fff8e6" stroke-width="1.5"/>
+      <text x="288" y="28" text-anchor="middle" class="d-pill">II</text>
+      <circle cx="288" cy="62" r="9" fill="#3F8B83" stroke="#fff8e6" stroke-width="1.5"/>
+      <text x="288" y="66" text-anchor="middle" class="d-pill">IV</text>
+      <line class="ally-line" x1="288" y1="34" x2="288" y2="52" stroke="#e2b857" stroke-width="2.2" stroke-dasharray="4 3"/>
+
+      <!-- Center Clash & Captured Bunker -->
+      <rect x="142" y="28" width="56" height="28" rx="3" fill="#3a3326" stroke="#e2b857" stroke-width="1.4"/>
+      <text x="170" y="46" text-anchor="middle" class="d-pill" fill="#e2b857">2v2 ALLIES</text>
+      <path d="M 66 26 L 136 38 M 66 60 L 136 46" stroke="#5b8bd4" stroke-width="2"/>
+      <path d="M 274 26 L 204 38 M 274 60 L 204 46" stroke="#cf5c50" stroke-width="2"/>
+    </g>
+
+    <text x="16" y="144" class="d-title">Allied Doctrines, Captured Works &amp; Sieges</text>
+    <text x="16" y="162" class="d-sub">• 2v2 Coalition mode: Slots I &amp; III vs. II &amp; IV share intel &amp; win</text>
+    <text x="16" y="179" class="d-sub">• Infantry capture &amp; garrison abandoned enemy pillboxes/bunkers</text>
+    <text x="16" y="196" class="d-sub">• Pocketed capitals (0 towns held at 15m+) suffer 0.65× output</text>
+    <text x="16" y="213" class="d-sub">• Rubber-stamp audio (`stamp`) when issuing HQ directives</text>
+    <text x="16" y="234" class="d-code" fill="#a63f36">world.ts (teams: '2v2') · structures.ts · sim.ts</text>
+  </g>
+</svg>

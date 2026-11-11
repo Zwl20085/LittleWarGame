@@ -263,7 +263,11 @@ export function updateStructureGarrison(world: World, u: Unit): void {
   // Builders keep building (an engineer at a finished pillbox next door must not move in).
   if (u.moving || u.mounted || jobOf(world, u) !== null) return;
   for (const fort of structuresOf(world)) {
-    if (fort.owner !== u.owner || fort.progress < 1 || dist(fort.pos, u.pos) > gr.enter_radius_m) continue;
+    if (fort.progress < 1 || dist(fort.pos, u.pos) > gr.enter_radius_m) continue;
+    if (fort.owner !== u.owner) {
+      if (fort.permanent || prune(world, fort).length > 0) continue;
+      fort.owner = u.owner;
+    }
     const def = structureDef(world, fort.kind as StructureKind);
     if (accepts(def, u) && hasRoom(world, fort, def, u)) {
       enter(world, u, fort, def);

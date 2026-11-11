@@ -1,210 +1,18 @@
 import { TERRAIN_MOVE } from './config';
-import { EdgeTable, FIELD_INF, FlowField, type FieldHost } from './flowfield';
+import { EdgeTable, FIELD_INF, FlowField } from './flowfield';
+import {
+  FieldPool, fieldPool, NAV_CELL, navBase, sampleBase, searchScratch, setFieldBudgetBytes,
+  type NavBase, type SearchScratch,
+} from './navPool';
 import { Ground, type Terrain } from './terrain';
 import { clamp, dist2, type V2 } from './vec';
 
+export { setFieldBudgetBytes };
+
 /** Flow-field goals snap to this lattice (fewer distinct fields to build and cache). */
 const GOAL_LATTICE_M = 128;
-/**
- * Flow-field cache budget shared by every movement class of one terrain (WP-M2), in bytes of field
- * storage. Least recently used fields are evicted across classes. A cold field keeps only the
- * chunks its search touched (flowfield.ts), 0.1-0.5 MB on a large map; HOT_FIELDS fields stay
- * dense while they expand. Before: 128 dense fields per class, ~0.9 GB of array buffers on the
- * large map at 30 min with 44 % of builds re-creating an evicted field. The cache never changes a
- * result: a field's values depend only on the grid and the goal (see flowfield.ts).
- */
-const FIELD_BUDGET_BYTES = 192 * 1024 * 1024;
-let fieldBudgetBytes = FIELD_BUDGET_BYTES;
-/** Dense (expanding) fields kept per terrain; the least recently used one is cooled for another. */
-const HOT_FIELDS = 6;
-
-/** Test hook: set the shared flow-field budget (bytes); returns the previous one. */
-export function setFieldBudgetBytes(bytes: number): number {
-  const prev = fieldBudgetBytes;
-  fieldBudgetBytes = bytes;
-  return prev;
-}
-
-/** Shared flow-field cache of one terrain's nav grids. */
-class FieldPool implements FieldHost {
-  bytes = 0;
-  clock = 0;
-  readonly grids: NavGrid[] = [];
-  /** Hot fields (dense form). */
-  private readonly hot: FlowField[] = [];
-  /** Dense buffers and chunk tables of evicted / cooled fields, for reuse (counted in `bytes`). */
-  private spareDense: Int32Array | null = null;
-  private spareChunks: Uint16Array | null = null;
-  /** Times a cold field had to be made dense again (diagnostics). */
-  static warms = 0;
-
-  /** A new (hot) field of `n` cells toward `goal`. */
-  create(edges: EdgeTable, n: number, goal: number): FlowField {
-    const dense = this.takeDense(null);
-    const chunkOf = this.spareChunks ?? undefined;
-    if (chunkOf) {
-      this.bytes -= chunkOf.byteLength;
-      this.spareChunks = null;
-    }
-    const f = new FlowField(edges, n, goal, { dense: dense ?? undefined, chunkOf, host: this });
-    this.hot.push(f);
-    this.bytes += f.bytes;
-    return f;
-  }
-
-  heat(f: FlowField): void {
-    FieldPool.warms++;
-    const before = f.bytes;
-    f.warm(this.takeDense(f) ?? new Int32Array(f.n));
-    this.hot.push(f);
-    this.bytes += f.bytes - before;
-    this.trim(f);
-  }
-
-  /** A dense buffer: the spare one, or one freed by cooling the oldest hot field when HOT_FIELDS are hot. */
-  private takeDense(keep: FlowField | null): Int32Array | null {
-    let buf: Int32Array | null = null;
-    if (this.hot.length >= HOT_FIELDS) {
-      let oldest = -1;
-      for (let i = 0; i < this.hot.length; i++) if (this.hot[i] !== keep && (oldest < 0 || this.hot[i].used < this.hot[oldest].used)) oldest = i;
-      if (oldest >= 0) {
-        const f = this.hot[oldest];
-        this.hot.splice(oldest, 1);
-        const before = f.bytes;
-        buf = f.cool();
-        this.bytes += f.bytes - before + buf.byteLength;
-        this.spareDense ??= buf;
-        if (this.spareDense !== buf) this.bytes -= buf.byteLength;
-      }
-    }
-    const d = this.spareDense;
-    if (d) {
-      this.bytes -= d.byteLength;
-      this.spareDense = null;
-    }
-    return d;
-  }
-
-  /** A field left the cache (evicted or dropped): keep its buffers for reuse. */
-  dropped(f: FlowField): void {
-    this.bytes -= f.bytes;
-    const i = this.hot.indexOf(f);
-    if (i >= 0) {
-      this.hot.splice(i, 1);
-      if (!this.spareDense && f.dense) {
-        this.spareDense = f.dense;
-        this.bytes += f.dense.byteLength;
-      }
-    }
-    if (!this.spareChunks) {
-      this.spareChunks = f.chunkOf;
-      this.bytes += f.chunkOf.byteLength;
-    }
-  }
-
-  /** Evict least recently used fields (any movement class) until the budget holds. */
-  trim(keep: FlowField): void {
-    while (this.bytes > fieldBudgetBytes) {
-      let grid: NavGrid | null = null;
-      let k = -1;
-      let used = Infinity;
-      for (const g of this.grids) {
-        const o = g.oldestField(keep);
-        if (o && o.used < used) { used = o.used; k = o.k; grid = g; }
-      }
-      if (!grid) return;
-      grid.evictField(k);
-    }
-  }
-}
-
-const fieldPools = new WeakMap<Terrain, FieldPool>();
-
-/**
- * A* scratch arrays (cost so far, parent, generation stamps). One set per terrain, shared by every
- * movement class (WP-M2, 16 bytes per cell per class before): a search runs to completion before
- * the next starts, and the shared generation counter keeps stamps of different grids apart.
- */
-interface SearchScratch {
-  readonly g: Float32Array;
-  readonly from: Int32Array;
-  readonly stamp: Uint32Array;
-  readonly closedAt: Uint32Array;
-  gen: number;
-}
-
-const searchScratches = new WeakMap<Terrain, SearchScratch>();
-
-function searchScratch(terrain: Terrain, n: number): SearchScratch {
-  let s = searchScratches.get(terrain);
-  if (!s) {
-    s = { g: new Float32Array(n), from: new Int32Array(n), stamp: new Uint32Array(n), closedAt: new Uint32Array(n), gen: 1 };
-    searchScratches.set(terrain, s);
-  }
-  return s;
-}
-
-function fieldPool(terrain: Terrain): FieldPool {
-  let p = fieldPools.get(terrain);
-  if (!p) {
-    p = new FieldPool();
-    fieldPools.set(terrain, p);
-  }
-  return p;
-}
 /** Passable regions of at most this many cells are closed (pathing traps, see pruneIslands). */
 const ISLAND_MAX_CELLS = 6;
-/** Nav cell size (m); every movement class uses the same lattice. */
-const NAV_CELL = 8;
-
-/**
- * Class-independent terrain samples per nav cell, shared by every movement class's grid (3.0
- * perf round). A grid is built lazily the first time a unit of its class needs one (the heavy
- * tank class minutes into a war), and sampling ground, slope and the building raster for all
- * 0.35 M cells of a large map stalled that tick for ~0.3 s per class. The samples are pure
- * reads of the terrain, kept current by `refreshArea` (the only path for runtime terrain
- * changes), so a grid built from them is identical to one built from the terrain directly.
- */
-interface NavBase {
-  readonly nx: number;
-  readonly nz: number;
-  readonly ground: Uint8Array;
-  /** slopeAt, clamped to 10° on roads, fords and ford banks (the effective nav slope). */
-  readonly slope: Float64Array;
-  /** buildingCover(x, z, 0.75 cell) on town / open ground, else 0. */
-  readonly built: Float64Array;
-  /** 1 where buildingH > 0 at the cell centre. */
-  readonly house: Uint8Array;
-}
-
-const BASES = new WeakMap<Terrain, NavBase>();
-
-function sampleBase(base: NavBase, terrain: Terrain, i: number, j: number): void {
-  const x = Math.min(i * NAV_CELL, terrain.width);
-  const z = Math.min(j * NAV_CELL, terrain.depth);
-  const k = j * base.nx + i;
-  const g = terrain.groundAt(x, z);
-  base.ground[k] = g;
-  if (g === Ground.Water) return;
-  // Roads (graded, incl. bridge causeways) and fords with their banks ignore the slope limit:
-  // slopeAt samples ±4 m and would otherwise "see" the carved channel beside a bridge or ford.
-  const crossing = g === Ground.Road || g === Ground.Ford || nearFord(terrain, x, z);
-  base.slope[k] = crossing ? Math.min(terrain.slopeAt(x, z), 10) : terrain.slopeAt(x, z);
-  base.built[k] = g === Ground.Town || g === Ground.Open ? terrain.buildingCover(x, z, NAV_CELL * 0.75) : 0;
-  base.house[k] = terrain.buildingH(x, z) > 0 ? 1 : 0;
-}
-
-function navBase(terrain: Terrain): NavBase {
-  let base = BASES.get(terrain);
-  if (base) return base;
-  const nx = Math.floor(terrain.width / NAV_CELL) + 1;
-  const nz = Math.floor(terrain.depth / NAV_CELL) + 1;
-  const n = nx * nz;
-  base = { nx, nz, ground: new Uint8Array(n), slope: new Float64Array(n), built: new Float64Array(n), house: new Uint8Array(n) };
-  for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) sampleBase(base, terrain, i, j);
-  BASES.set(terrain, base);
-  return base;
-}
 
 export interface NavClass {
   readonly vehicle: boolean;
@@ -223,55 +31,6 @@ const groundKey = (g: Ground): keyof typeof TERRAIN_MOVE =>
 /** Movement multiplier from ground type (BALANCE_SPEC §7). */
 export function groundSpeedMul(g: Ground, vehicle: boolean): number {
   return TERRAIN_MOVE[groundKey(g)][vehicle ? 1 : 0];
-}
-
-/** Binary min-heap keyed by f-score. */
-class Heap {
-  private ids: number[] = [];
-  private keys: number[] = [];
-  get size(): number {
-    return this.ids.length;
-  }
-  push(id: number, key: number): void {
-    const ids = this.ids;
-    const keys = this.keys;
-    let i = ids.length;
-    ids.push(id);
-    keys.push(key);
-    while (i > 0) {
-      const p = (i - 1) >> 1;
-      if (keys[p] <= key) break;
-      ids[i] = ids[p];
-      keys[i] = keys[p];
-      i = p;
-    }
-    ids[i] = id;
-    keys[i] = key;
-  }
-  pop(): number {
-    const ids = this.ids;
-    const keys = this.keys;
-    const top = ids[0];
-    const lastId = ids.pop()!;
-    const lastKey = keys.pop()!;
-    const n = ids.length;
-    if (n > 0) {
-      let i = 0;
-      for (;;) {
-        const l = 2 * i + 1;
-        if (l >= n) break;
-        const r = l + 1;
-        const c = r < n && keys[r] < keys[l] ? r : l;
-        if (keys[c] >= lastKey) break;
-        ids[i] = ids[c];
-        keys[i] = keys[c];
-        i = c;
-      }
-      ids[i] = lastId;
-      keys[i] = lastKey;
-    }
-    return top;
-  }
 }
 
 /**
@@ -798,7 +557,8 @@ export class NavGrid {
     const nx = this.nx;
     const gx = gi % nx;
     const gz = (gi / nx) | 0;
-    const heap = new Heap();
+    const heap = sc.heap;
+    heap.clear();
     const hMul = this.cls.hMul ?? 0.74;
     gArr[si] = 0;
     stamp[si] = gen;
@@ -872,11 +632,4 @@ export class NavGrid {
     NavGrid.expanded += field.settle(k);
     return field.value(k) !== FIELD_INF;
   }
-}
-
-/** Within one terrain cell of a ford (its banks). */
-function nearFord(terrain: Terrain, x: number, z: number): boolean {
-  const e = terrain.cell * 1.5;
-  return terrain.groundAt(x + e, z) === Ground.Ford || terrain.groundAt(x - e, z) === Ground.Ford
-    || terrain.groundAt(x, z + e) === Ground.Ford || terrain.groundAt(x, z - e) === Ground.Ford;
 }
