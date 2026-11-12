@@ -1,0 +1,222 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 350" role="img" aria-label="Animated war-room figure showing 4.0 massive rolling frontlines (2,500+ units), smarter supply convoy routing, and 4.2x faster simulation with 8x time-sliced interpolation">
+  <defs>
+    <linearGradient id="f40-paper" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#efe5c8"/>
+      <stop offset="55%" stop-color="#e4d6b3"/>
+      <stop offset="100%" stop-color="#d8c79e"/>
+    </linearGradient>
+    <pattern id="f40-grid" width="32" height="32" patternUnits="userSpaceOnUse">
+      <path d="M 32 0 L 0 0 0 32" fill="none" stroke="#6e5d41" stroke-width="0.55" stroke-opacity="0.22"/>
+    </pattern>
+    <style>
+      .h-mono { font: 700 12.5px 'Courier New', monospace; letter-spacing: 2px; fill: #4a3d28; }
+      .sub-mono { font: 700 10.5px 'Courier New', monospace; letter-spacing: 0.9px; fill: #5a4b32; }
+      .card-title { font: 700 13.5px 'Georgia', serif; fill: #2b2318; }
+      .dark-txt { font: 11px 'Courier New', monospace; fill: #ede4d0; }
+      .gold-txt { font: 700 11px 'Courier New', monospace; fill: #e2b857; }
+      .green-txt { font: 700 11px 'Courier New', monospace; fill: #8fd175; }
+      .muted-txt { font: 10px 'Courier New', monospace; fill: #b5a78e; }
+
+      @keyframes pushFront {
+        0%, 10% { transform: translateX(0px); }
+        70%, 90% { transform: translateX(88px); }
+        100% { transform: translateX(0px); }
+      }
+      @keyframes enemyRetreat {
+        0%, 12% { transform: translateX(0px); opacity: 0.95; }
+        70%, 90% { transform: translateX(68px); opacity: 0.55; }
+        100% { transform: translateX(0px); opacity: 0.95; }
+      }
+      @keyframes shellArc {
+        0% { stroke-dashoffset: 180; opacity: 0; }
+        15% { opacity: 0.95; }
+        65% { stroke-dashoffset: 0; opacity: 0.95; }
+        80%, 100% { stroke-dashoffset: 0; opacity: 0; }
+      }
+      @keyframes truckDrive1 {
+        0% { transform: translate(0px, 0px); }
+        45% { transform: translate(118px, -34px); }
+        75% { transform: translate(185px, -52px); }
+        100% { transform: translate(0px, 0px); }
+      }
+      @keyframes truckDrive2 {
+        0% { transform: translate(0px, 0px); }
+        50% { transform: translate(185px, 22px); }
+        85% { transform: translate(185px, 22px); }
+        100% { transform: translate(0px, 0px); }
+      }
+      @keyframes pulseRing {
+        0%, 100% { r: 16px; stroke-opacity: 0.75; }
+        50% { r: 23px; stroke-opacity: 0.25; }
+      }
+      .push-group { animation: pushFront 6.5s ease-in-out infinite; }
+      .enemy-group { animation: enemyRetreat 6.5s ease-in-out infinite; }
+      .shell-1 { stroke-dasharray: 180; animation: shellArc 2.2s ease-out infinite; }
+      .shell-2 { stroke-dasharray: 180; animation: shellArc 2.2s ease-out 0.7s infinite; }
+      .truck-1 { animation: truckDrive1 5.5s ease-in-out infinite; }
+      .truck-2 { animation: truckDrive2 5.5s ease-in-out 1.4s infinite; }
+      .supply-ring { animation: pulseRing 2.4s ease-in-out infinite; }
+    </style>
+  </defs>
+
+  <!-- Background parchment & grid -->
+  <rect width="1200" height="350" rx="10" fill="url(#f40-paper)" stroke="#6e5a3a" stroke-width="2"/>
+  <rect width="1200" height="350" rx="10" fill="url(#f40-grid)"/>
+
+  <!-- Header Banner -->
+  <rect x="18" y="12" width="1164" height="28" rx="4" fill="#2c2418"/>
+  <text x="32" y="30" class="gold-txt" style="letter-spacing:2.2px;">OPERATIONS ROOM · VERSION 4.0 — MASSIVE ARMY-GROUP SCALE (2,564 UNITS) &amp; 8× TIME-SLICED ENGINE</text>
+  <text x="1168" y="30" text-anchor="end" class="green-txt">ARMY_SCALE = 60 · 60 FPS @ 8×</text>
+
+  <!-- ==================== PANEL 1: MASSIVE ROLLING FRONTLINE ==================== -->
+  <g transform="translate(18, 48)">
+    <rect width="420" height="286" rx="6" fill="#231e16" stroke="#7c6643" stroke-width="1.5"/>
+    <text x="14" y="22" class="gold-txt">I. ROLLING FRONTLINE PUSH (600–750+ UNITS / FACTION)</text>
+    <text x="14" y="37" class="muted-txt">75%+ line deployment · 0.62× spacing · 32-wide armour wedge · Push mode</text>
+
+    <!-- Battlefield map viewport -->
+    <rect x="12" y="46" width="396" height="196" rx="4" fill="#2f3627" stroke="#534632"/>
+    <!-- Terrain contours & road -->
+    <path d="M 12 145 Q 150 130, 408 155" fill="none" stroke="#6c5f46" stroke-width="6" stroke-opacity="0.55"/>
+    <path d="M 12 145 Q 150 130, 408 155" fill="none" stroke="#9b8967" stroke-width="2" stroke-dasharray="6 4"/>
+
+    <!-- Advancing Blue Frontline & Army Group -->
+    <g class="push-group">
+      <!-- Territory shading behind blue front -->
+      <path d="M 12 46 L 165 46 Q 182 144, 162 242 L 12 242 Z" fill="#3b6ea5" fill-opacity="0.24"/>
+      <!-- Frontline ink contour -->
+      <path d="M 165 50 Q 184 144, 162 238" fill="none" stroke="#63a4ff" stroke-width="3"/>
+      <!-- Rear artillery battery (4 howitzers) + ballistic shell arcs -->
+      <g fill="#7ab3ff" stroke="#182638" stroke-width="1">
+        <rect x="48" y="84" width="9" height="9" rx="1"/>
+        <rect x="48" y="122" width="9" height="9" rx="1"/>
+        <rect x="48" y="160" width="9" height="9" rx="1"/>
+        <rect x="48" y="198" width="9" height="9" rx="1"/>
+      </g>
+      <path class="shell-1" d="M 57 88 Q 145 50, 225 102" fill="none" stroke="#ffcc55" stroke-width="1.8"/>
+      <path class="shell-2" d="M 57 164 Q 145 120, 232 178" fill="none" stroke="#ffcc55" stroke-width="1.8"/>
+
+      <!-- 2nd Echelon Support & Reserves (14 squads) -->
+      <g fill="#4f89c6" stroke="#162433" stroke-width="0.8">
+        <rect x="96" y="58" width="8" height="6"/><rect x="96" y="71" width="8" height="6"/>
+        <rect x="96" y="84" width="8" height="6"/><rect x="96" y="97" width="8" height="6"/>
+        <rect x="96" y="110" width="8" height="6"/><rect x="96" y="123" width="8" height="6"/>
+        <rect x="96" y="136" width="8" height="6"/><rect x="96" y="149" width="8" height="6"/>
+        <rect x="96" y="162" width="8" height="6"/><rect x="96" y="175" width="8" height="6"/>
+        <rect x="96" y="188" width="8" height="6"/><rect x="96" y="201" width="8" height="6"/>
+        <rect x="96" y="214" width="8" height="6"/><rect x="96" y="227" width="8" height="6"/>
+      </g>
+
+      <!-- 1st Echelon Dense Continuous Infantry Line (18 squads) -->
+      <g fill="#6eb0ff" stroke="#101c29" stroke-width="0.8">
+        <rect x="132" y="54" width="9" height="6"/><rect x="134" y="64" width="9" height="6"/>
+        <rect x="136" y="74" width="9" height="6"/><rect x="138" y="84" width="9" height="6"/>
+        <rect x="140" y="94" width="9" height="6"/><rect x="141" y="104" width="9" height="6"/>
+        <rect x="142" y="114" width="9" height="6"/><rect x="143" y="124" width="9" height="6"/>
+        <rect x="144" y="134" width="9" height="6"/><rect x="144" y="144" width="9" height="6"/>
+        <rect x="143" y="154" width="9" height="6"/><rect x="142" y="164" width="9" height="6"/>
+        <rect x="141" y="174" width="9" height="6"/><rect x="140" y="184" width="9" height="6"/>
+        <rect x="138" y="194" width="9" height="6"/><rect x="136" y="204" width="9" height="6"/>
+        <rect x="134" y="214" width="9" height="6"/><rect x="132" y="224" width="9" height="6"/>
+      </g>
+
+      <!-- Armoured Spearhead Wedge Ahead of the Line (8 tanks) -->
+      <g fill="#9ed0ff" stroke="#0e1b29" stroke-width="1">
+        <polygon points="160,112 172,116 160,120"/>
+        <polygon points="164,124 176,128 164,132"/>
+        <polygon points="168,136 180,140 168,144"/>
+        <polygon points="168,148 180,152 168,156"/>
+        <polygon points="164,160 176,164 164,168"/>
+        <polygon points="160,172 172,176 160,180"/>
+      </g>
+
+      <!-- Push Arrows -->
+      <path d="M 112 92 L 154 92 M 148 87 L 155 92 L 148 97" fill="none" stroke="#e2b857" stroke-width="2"/>
+      <path d="M 112 144 L 188 144 M 181 138 L 190 144 L 181 150" fill="none" stroke="#e2b857" stroke-width="2.5"/>
+      <path d="M 112 196 L 154 196 M 148 191 L 155 196 L 148 201" fill="none" stroke="#e2b857" stroke-width="2"/>
+    </g>
+
+    <!-- Retreating Red Line -->
+    <g class="enemy-group">
+      <g fill="#d65a4a" stroke="#2b110e" stroke-width="0.8">
+        <rect x="228" y="68" width="9" height="6"/><rect x="232" y="88" width="9" height="6"/>
+        <rect x="235" y="108" width="9" height="6"/><rect x="236" y="128" width="9" height="6"/>
+        <rect x="236" y="148" width="9" height="6"/><rect x="234" y="168" width="9" height="6"/>
+        <rect x="231" y="188" width="9" height="6"/><rect x="228" y="208" width="9" height="6"/>
+      </g>
+    </g>
+
+    <!-- Bottom Caption Strip -->
+    <text x="14" y="261" class="dark-txt">• 6–10 Army Groups / side · Continuous multi-row battle lines</text>
+    <text x="14" y="277" class="gold-txt">• Active Push mode (pushCut 0.25, holdRatio 1.15) sweeps the map</text>
+  </g>
+
+  <!-- ==================== PANEL 2: SMARTER SUPPLY CONVOYS ==================== -->
+  <g transform="translate(450, 48)">
+    <rect width="356" height="286" rx="6" fill="#231e16" stroke="#7c6643" stroke-width="1.5"/>
+    <text x="14" y="22" class="gold-txt">II. SMARTER SUPPLY CONVOYS (4.0)</text>
+    <text x="14" y="37" class="muted-txt">Ring parking · Lateral staging · Continuous forward delivery</text>
+
+    <rect x="12" y="46" width="332" height="196" rx="4" fill="#2b3024" stroke="#534632"/>
+
+    <!-- Depot with clear exit & ring parking -->
+    <circle cx="62" cy="144" r="32" fill="none" stroke="#c89b3c" stroke-width="1.2" stroke-dasharray="4 3"/>
+    <circle cx="62" cy="144" r="14" fill="#3d4a35" stroke="#8fd175" stroke-width="1.5"/>
+    <text x="62" y="148" text-anchor="middle" class="green-txt" style="font-size:9px;">EXIT</text>
+    <text x="62" y="192" text-anchor="middle" class="muted-txt">Depot Ring (52–84m)</text>
+
+    <!-- Roads to Lateral Supply Points -->
+    <path d="M 62 144 L 180 110 L 248 92" fill="none" stroke="#8c7a5b" stroke-width="3" stroke-dasharray="5 3"/>
+    <path d="M 62 144 L 248 166" fill="none" stroke="#8c7a5b" stroke-width="3" stroke-dasharray="5 3"/>
+
+    <!-- Mid-route passer-by stop & resume -->
+    <circle cx="180" cy="110" r="12" fill="#c89b3c" fill-opacity="0.18" stroke="#c89b3c" stroke-width="1"/>
+    <text x="180" y="88" text-anchor="middle" class="gold-txt" style="font-size:9.5px;">Passer-by Rearmed</text>
+    <text x="180" y="134" text-anchor="middle" class="green-txt" style="font-size:9px;">≥35% Cargo → Continue!</text>
+
+    <!-- Lateral Supply Points behind the Front -->
+    <circle class="supply-ring" cx="248" cy="92" r="18" fill="#5aa9e6" fill-opacity="0.15" stroke="#6eb0ff" stroke-width="1.5"/>
+    <circle class="supply-ring" cx="248" cy="166" r="18" fill="#5aa9e6" fill-opacity="0.15" stroke="#6eb0ff" stroke-width="1.5"/>
+    <text x="248" y="68" text-anchor="middle" class="dark-txt" style="font-size:9.5px;">Wing Supply A</text>
+    <text x="248" y="198" text-anchor="middle" class="dark-txt" style="font-size:9.5px;">Wing Supply B</text>
+
+    <!-- Animated Trucks -->
+    <g class="truck-1" transform="translate(62, 144)">
+      <rect x="-8" y="-5" width="16" height="10" rx="2" fill="#e2b857" stroke="#1d1810" stroke-width="1.2"/>
+    </g>
+    <g class="truck-2" transform="translate(62, 144)">
+      <rect x="-8" y="-5" width="16" height="10" rx="2" fill="#8fd175" stroke="#1d1810" stroke-width="1.2"/>
+    </g>
+
+    <!-- Bottom Caption Strip -->
+    <text x="14" y="261" class="dark-txt">• No more returning 90% full after 1 unit or freezing under fire</text>
+    <text x="14" y="277" class="gold-txt">• 2.7× higher truck capacity &amp; lateral spread along the front</text>
+  </g>
+
+  <!-- ==================== PANEL 3: 4.2x SIM SPEEDUP & 8x SMOOTHNESS ==================== -->
+  <g transform="translate(818, 48)">
+    <rect width="364" height="286" rx="6" fill="#231e16" stroke="#7c6643" stroke-width="1.5"/>
+    <text x="14" y="22" class="gold-txt">III. 4.2× SIM SPEEDUP &amp; 8× SMOOTHNESS</text>
+    <text x="14" y="37" class="muted-txt">Per-unit cost: 14.55 μs → 3.50 μs · 20 ms worker slice</text>
+
+    <!-- Benchmark Bars -->
+    <rect x="14" y="50" width="336" height="90" rx="4" fill="#1b1711" stroke="#4a3d28"/>
+    <text x="24" y="68" class="dark-txt">v3.0.3 (369 units):  14.55 μs / unit</text>
+    <rect x="24" y="74" width="290" height="12" rx="2" fill="#a64b3b"/>
+
+    <text x="24" y="106" class="green-txt">v4.0.0 (2,564 units): 3.50 μs / unit (-76%)</text>
+    <rect x="24" y="112" width="70" height="12" rx="2" fill="#68b85e"/>
+    <text x="104" y="122" class="gold-txt">4.2× faster per unit · 7× army size!</text>
+
+    <!-- Key Optimizations Box -->
+    <rect x="14" y="148" width="336" height="94" rx="4" fill="#1b1711" stroke="#4a3d28"/>
+    <text x="24" y="167" class="gold-txt">HOT-PATH &amp; 8× RENDERING ARCHITECTURE</text>
+    <text x="24" y="185" class="dark-txt">1. NavGrid.connected: FlowField → O(1) regionAt</text>
+    <text x="24" y="202" class="dark-txt">2. World.byOwner: per-faction unit buckets (15 modules)</text>
+    <text x="24" y="219" class="dark-txt">3. Worker 20 ms slice + multi-tick lerp @ 8× (60 FPS)</text>
+    <text x="24" y="235" class="dark-txt">4. Zero-alloc FrontlineField typed-array stamp</text>
+
+    <text x="14" y="261" class="dark-txt">• Mean tick @ 2,564 units: 7.8 ms (p50 = 7.0 ms)</text>
+    <text x="14" y="277" class="green-txt">• 50–60 Hz snapshots even at 8× speed (160 ticks/s)</text>
+  </g>
+</svg>

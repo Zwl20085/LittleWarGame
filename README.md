@@ -143,6 +143,12 @@
 ## Features
 
 <div align="center">
+<img src="docs/media/frontline-40-anim.svg" width="100%" alt="Animated 4.0 war-room diagram: on the left, a 600+ unit army group advances in Push mode with multi-row infantry battle lines, a 32-wide armoured spearhead wedge and rear howitzer salvos; in the centre, supply convoys park in a depot ring, rearm a passer-by and continue to lateral front supply points; on the right, 4.0 benchmark bars show 4.2x faster per-unit simulation (3.50 us/unit at 2,564 units) and 8x 20 ms time-sliced smoothness" />
+<br/><sub><b>4.0 army-group scale (2 500+ units), rolling frontlines, smarter convoys and 8× smoothness.</b> With <code>army_scale = 60</code>, each faction fields 600–750+ units across 6–10 full Army Groups. Tightened line spacing (<code>0.62×</code>), 32-wide armoured spearhead wedges and lower push thresholds let entire battle lines sweep forward across the map, backed by lateral supply points and a 4.2× faster per-unit simulation engine (<code>3.5 μs/unit</code>) with 20 ms worker time-slicing at 8× speed.</sub>
+</div>
+<br/>
+
+<div align="center">
 <img src="docs/media/doctrines.gif" width="100%" alt="War-room HUD early in a war: the pointer moves along the enemy faction cards in the top bar, each labelled with its doctrine, and the tooltips read Builder, economy and land first; Maneuver, seek the decisive battle; Attrition, hold, preserve, interdict. Then a blitz army's tanks and trucks push between apartment blocks into an enemy city, and an attrition raiding party in loose file crosses the fields toward an enemy village" />
 <br/><sub><b>Four doctrines, four kinds of war.</b> Every AI supreme HQ fights with a doctrine: Builder, Blitz, Attrition or Maneuver. Once you have fought an enemy, its doctrine stands on its card in the top bar, and hovering the card names it in full. Below, two of them at work: a blitz army drives into an enemy city, and an attrition raiding party sets off for an enemy village behind the lines.</sub>
 </div>
@@ -455,6 +461,16 @@ flowchart LR
 | Flow-field hot cache & A* heap (`navPool.ts`) | 6 hot fields, full-slab `.fill()` on cool, `new Heap()` per path | **16 hot fields, zero-fill slab cool, reusable `heap.clear()`** |
 | Largest source file in `src/` | 895 lines (`fronts.ts`, `homeguard.ts`, `nav.ts`) | **≤ 754 lines** (extracted `navPool.ts`, `frontSpear.ts`, `homeguardUnit.ts`) |
 
+| 4.0.0 massive-scale simulation & 8× rendering (`scripts/perf.ts generated 300 7`) | v3.0.3 (`army_scale = 10`) | **v4.0.0 (`army_scale = 60`)** |
+|---|---|---|
+| Live units in 4-way war | ~369 units (~92 / faction) | **2 564 units (~641 / faction, 7.0×)** |
+| Per-unit simulation cost | `14.55 μs / unit` | **`3.00–4.03 μs / unit` (4.2× faster)** |
+| Tick time at 2 564 units | — (`max = 95.8 ms` at 369 units) | **mean `7.8 ms`, `p50 = 7.0 ms`, `p90 = 13.9 ms`, `max = 87.1 ms`** |
+| `NavGrid.connected(a, b)` reachability | Full-map `FlowField.settle` (25–45 ms spikes) | **O(1) precomputed `regionAt(a) === regionAt(b)`** |
+| Faction unit iteration (15 modules) | Full-world `world.units.values()` scan | **Per-faction bucket array `world.unitsOf(owner)`** |
+| `FrontlineField.update` & `stamp` | Per-second `new Map()` + inner-loop `dx*dx + dz*dz` branch | **Zero-alloc typed-array buckets + branch-free `dxMax = √rem`** |
+| 8× speed (`160 ticks/s`) worker & interpolation | Unbounded multi-tick batch + single-tick `16 ms` snap | **`20 ms` worker batch slice + `unranTicks` refund + full-span lerp** |
+
 - **Render budget.** Settlement markers are drawn as 4 instanced meshes instead of about 600, and larger vegetation and settlement tiles bring the scene down to about 500 objects. Impact effects are pooled. Map labels come from cached sprites. Each soldier is a few floats in a flat array, stepped every frame, with no per-soldier objects. Quality tiers set the shadow map, pixel ratio, scatter and effect detail.
 - **Numbers you can inspect.** Balance and AI changes are tested in headless wars before they ship:
   - `scripts/balance.ts` prints a ledger for each unit type, a kill matrix and an economy timeline.
@@ -544,7 +560,8 @@ It also prints an attacker × victim kill matrix, damage shares by attacker for 
     <tr><td>2.1</td><td>Fortress war: permanent fortified zones, binding orders, stronger and cheaper works, capital pillboxes, grounded units and detailed towns</td><td><img src="https://img.shields.io/badge/shipped-3a3326?style=flat-square" alt="shipped" /></td></tr>
     <tr><td>2.2</td><td>Economic war: one supreme-HQ directive answered by every front, supply stocks in every town with gradual rearm, per-town production, factories, recruiting offices and depots with raids, roadside farms as cover, armour groups, a weaker AT gun, fog-of-war Quick Battle, update check, a smoother renderer</td><td><img src="https://img.shields.io/badge/shipped-3a3326?style=flat-square" alt="shipped" /></td></tr>
     <tr><td><b>3.0</b></td><td><b>Doctrine war: four clashing AI doctrines, unlimited fronts with Corps / Army / Army Group tiers, front commanders who may decline an order (and a Force switch), roads and railways, engineer-built economic zones, fortresses, AT emplacements, minefields and a capital defence perimeter, 12 unit upgrades, zone of control and infiltrator hunts, camera modes and time of day, signed automatic updates, a debug lab, doctrine themes in the score</b></td><td><img src="https://img.shields.io/badge/shipped-3a3326?style=flat-square" alt="shipped" /></td></tr>
-    <tr><td><b>3.0.1–3.0.3</b></td><td><b>Hands-off staff automation (Auto HQ / research / engineering), tougher &amp; deeper-mag armoured spearheads, upgraded motorised rifles in spearheads, clickable war-room dispatch log, post-match War Ledger timeline charts, building collapse audio, 30-float bit-packed snapshots &amp; lazy spatial mirror</b></td><td><img src="https://img.shields.io/badge/this_release-a63f36?style=flat-square" alt="this release" /></td></tr>
+    <tr><td>3.0.1–3.0.3</td><td>Hands-off staff automation (Auto HQ / research / engineering), tougher &amp; deeper-mag armoured spearheads, upgraded motorised rifles in spearheads, 2v2 Coalition War, clickable war-room dispatch log, post-match War Ledger timeline charts, Orchestra 2.0, 30-float bit-packed snapshots &amp; lazy spatial mirror</td><td><img src="https://img.shields.io/badge/shipped-3a3326?style=flat-square" alt="shipped" /></td></tr>
+    <tr><td><b>4.0.0</b></td><td><b>Massive army-group scale (<code>army_scale = 60</code>, 2 500+ live units, 6–10 Army Groups per side), dense rolling frontline pushes, multi-bay parallel production, smarter supply convoys, 4.2× faster per-unit simulation (<code>O(1) NavGrid.connected</code>, <code>World.byOwner</code>, zero-alloc frontline field), and 20 ms worker time-slicing with full-span interpolation for 60 FPS at 8× speed</b></td><td><img src="https://img.shields.io/badge/this_release-a63f36?style=flat-square" alt="this release" /></td></tr>
     <tr><td>3.0.x</td><td>War pace: with zones, works and the perimeter on, four-way AI wars end about half as often as in 2.2 (0.9 eliminations an hour against 1.3–1.8); a tuning pass on the perimeter, works tiers and zone output</td><td><img src="https://img.shields.io/badge/in_progress-8a6a2c?style=flat-square" alt="in progress" /></td></tr>
     <tr><td>3.0.x</td><td>Performance round on large maps with every 3.0 system on</td><td><img src="https://img.shields.io/badge/in_progress-8a6a2c?style=flat-square" alt="in progress" /></td></tr>
     <tr><td>3.x</td><td>Harder AI difficulties</td><td><img src="https://img.shields.io/badge/planned-6b7a3a?style=flat-square" alt="planned" /></td></tr>
@@ -656,7 +673,7 @@ Design docs: [docs/README.md](docs/README.md). Implementation-time decisions are
 
 ## Status
 
-**v3.0.** Balance and AI are tuned from headless AI-vs-AI wars, the 3.0 labs and the challenge lab, not yet from much human play. The 3.0 systems are new and each passed its own lab, but together they make wars slower to end: with economic zones, tiered works and the capital perimeter on, four AI sides eliminate about 0.9 factions an hour against 1.3–1.8 in 2.2, and 1v1 duels rarely end inside an hour. A tuning pass on the perimeter, works tiers and zone output comes next ([roadmap](#roadmap)).
+**v4.0.** Default battles now run at full army-group scale (`army_scale = 60`, 2 500+ units across four sides) with continuous rolling frontlines and 60 FPS at 8× speed. Balance and AI are tuned from headless AI-vs-AI wars, the 3.0/4.0 labs and the challenge lab.
 
 **Known limitations:** the orchestra is synthesized, not recorded, and sounds like it. Single player only: there is no multiplayer. The Windows build is not code-signed.
 
