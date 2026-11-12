@@ -96,7 +96,7 @@ function threatOf(t: Unit, me: Unit): number {
 /** Pick a target with the weighted score + 20 % switch margin + 2 s hold. */
 export function selectTarget(world: World, u: Unit, objective: V2 | null): void {
   const w = weaponOf(u);
-  if (!w) {
+  if (!w || u.routing || w.range <= 0 || u.ammo + 1e-9 < w.ammoCost) {
     u.targetId = null;
     return;
   }
@@ -107,20 +107,25 @@ export function selectTarget(world: World, u: Unit, objective: V2 | null): void 
   let best: Unit | null = null;
   let bestScore = -1;
   let curScore = -1;
+  const indirect = isIndirect(w);
   // 3.0: the batteries of a tiered front concentrate on its barrage point (frontTiers.ts).
-  const focus = isIndirect(w) ? barrageFocus(world, u) : null;
+  const focus = indirect ? barrageFocus(world, u) : null;
   for (const t of cands) {
     // Review MEDIUM 4: riders aboard a train are hidden (the train is the target, not its passengers).
     if (t.hp <= 0 || t.rail?.stage === 'aboard' || !world.isHostile(u.owner, t.owner)) continue;
     const suit = suitability(w, t);
     if (suit <= 0) continue;
-    const block = canEngage(world, u, w, t);
-    if (block !== null && block !== 'NOT_SET' && block !== 'MOVING') continue;
     const d = dist(u.pos, t.pos);
+    if (d > radius || d < w.minRange) continue;
     const objRel = objective ? Math.max(0, 1 - dist(t.pos, objective) / 300) : 0.5;
     const convoyBonus = t.def.id === 'supply_truck' ? 0.15 : 0;
     let score = convoyBonus + 0.3 * threatOf(t, u) + 0.25 * suit + 0.2 * objRel + 0.15 * (1 - d / radius) + (t.id === u.targetId ? 0.1 : 0);
-    if (isIndirect(w)) {
+    if (!indirect) {
+      if (t.id !== u.targetId && score <= bestScore) continue;
+      const block = canEngage(world, u, w, t);
+      if (block !== null && block !== 'NOT_SET' && block !== 'MOVING') continue;
+    } else {
+      if (!world.knows(u.owner, t) && !recentlySeen(world, u.owner, t.id)) continue;
       const cluster = clusterBonus(world, t);
       const housed = housedIn(world, t) >= 0;
       // 2.2 wave 2: a shell must be worth it — supply is short, so guns hold fire on a lone squad
@@ -130,6 +135,9 @@ export function selectTarget(world: World, u: Unit, objective: V2 | null): void 
       score += cluster * 0.2 - friendlyRisk(world, u, t.pos, w) * 2 + counterBatteryBonus(world, u.owner, t) + barrageBonus(world, focus, t);
       // 2.2: guns prefer exposed targets over squads sheltering inside intact buildings (shelter.ts).
       if (housed) score -= SHELTER.artyInsidePenalty;
+      if (t.id !== u.targetId && score <= bestScore) continue;
+      const block = canEngage(world, u, w, t);
+      if (block !== null && block !== 'NOT_SET' && block !== 'MOVING') continue;
     }
     if (t.id === u.targetId) curScore = score;
     if (score > bestScore) {

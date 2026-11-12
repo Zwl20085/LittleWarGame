@@ -96,8 +96,8 @@ export function enemyConvoyTargets(world: World, f: number, near: V2, radius: nu
 export function ownConvoyRoute(world: World, f: Faction): V2[] {
   const depot = world.cityOf(f.id).exit;
   const pts: V2[] = [];
-  for (const t of world.units.values()) {
-    if (t.owner !== f.id || t.def.id !== 'supply_truck' || t.hp <= 0 || !t.truckDest) continue;
+  for (const t of world.unitsOf(f.id)) {
+    if (t.def.id !== 'supply_truck' || t.hp <= 0 || !t.truckDest) continue;
     const d = t.truckDest;
     for (const k of [0.35, 0.6, 0.85]) pts.push({ x: depot.x + (d.x - depot.x) * k, z: depot.z + (d.z - depot.z) * k });
   }
@@ -141,7 +141,7 @@ const isGuard = (u: Unit): boolean => u.def.id === 'infantry' || u.def.id === 'm
  */
 export function planOperations(world: World, f: Faction): void {
   const mine: Unit[] = [];
-  for (const u of world.units.values()) if (u.owner === f.id && u.hp > 0 && !u.fixed && u.def.id !== 'supply_truck' && u.def.id !== 'commander') mine.push(u);
+  for (const u of world.unitsOf(f.id)) if (u.hp > 0 && !u.fixed && u.def.id !== 'supply_truck' && u.def.id !== 'commander') mine.push(u);
   if (mine.length < 20) return;
   const contact = (world.frontInfo[f.id]?.cells.length ?? 0) > 0;
   // Rear guard: posts along our own convoy routes, filled from units far from the front.

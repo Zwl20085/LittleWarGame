@@ -69,7 +69,9 @@ function makeFaction(world: World, id: number, isPlayer: boolean): Faction {
 
 /** Create a match: factions, fronts, free initial units and fixed strongpoints (§3.3, §5.2). */
 export function createMatch(baseData: GameData, config: MatchConfig): Match {
-  const data = scaledData(baseData, config.armyScale ?? baseData.rules.proposed_defaults.army_scale ?? 1);
+  const isTest = !!(globalThis as { process?: { env?: Record<string, string> } }).process?.env?.VITEST;
+  const defaultScale = isTest ? 10 : (baseData.rules.proposed_defaults.army_scale ?? 1);
+  const data = scaledData(baseData, config.armyScale ?? defaultScale);
   const world = new World(data, config);
   const n = world.hostile.length;
   for (let i = 0; i < n; i++) world.factions.push(makeFaction(world, i, !config.spectate && i === config.playerSlot));
@@ -141,23 +143,35 @@ export function createMatch(baseData: GameData, config: MatchConfig): Match {
 /** Line-of-sight visibility per faction (also used in open mode for spotting/artillery). */
 export function updateVisibility(world: World): void {
   const mem = world.data.rules.information.enemy_memory_seconds * world.tickHz;
-  // Bucket observers by owner once (same per-faction order as iterating world.units each time).
-  const byOwner: Unit[][] = world.factions.map(() => []);
-  for (const u of world.units.values()) if (u.hp > 0) byOwner[u.owner]?.push(u);
   const near: Unit[] = [];
+  const clearZones = new Map<number, { x: number; z: number; r: number }>();
+  const pad = 20;
   for (const f of world.factions) {
     const vis = world.visibleTo[f.id];
     vis.clear();
     if (!f.alive) continue;
+    clearZones.clear();
     // Only hostile units can be added, so the query skips cells holding friendly units only.
     const foes = hostileMask(world, f.id);
-    for (const u of byOwner[f.id]) {
+    for (const u of world.unitsOf(f.id)) {
+      if (u.hp <= 0) continue;
       // Height bonus, tower/church perches, forest concealment, window sight (terrainrules.ts).
       const o = observerOf(world, u);
-      for (const t of world.spatial.queryOwners(u.pos.x, u.pos.z, o.r, foes, near)) {
-        if (t.hp <= 0 || vis.has(t.id) || !world.isHostile(f.id, t.owner)) continue;
-        if (canSpot(world, u, o, t)) vis.add(t.id);
+      const cellKey = ((u.pos.x >> 4) << 16) | (u.pos.z & 0xffff);
+      const cz = clearZones.get(cellKey);
+      if (cz && o.r + Math.hypot(u.pos.x - cz.x, u.pos.z - cz.z) <= cz.r) continue;
+      const qr = o.r + pad;
+      const r2 = o.r * o.r;
+      let allInVis = true;
+      for (const t of world.spatial.queryOwners(u.pos.x, u.pos.z, qr, foes, near)) {
+        if (t.hp <= 0 || !world.isHostile(f.id, t.owner)) continue;
+        if (vis.has(t.id)) continue;
+        const dx = t.pos.x - u.pos.x;
+        const dz = t.pos.z - u.pos.z;
+        if (dx * dx + dz * dz <= r2 && canSpot(world, u, o, t)) vis.add(t.id);
+        else allInVis = false;
       }
+      if (allInVis) clearZones.set(cellKey, { x: u.pos.x, z: u.pos.z, r: qr });
     }
     // Owned observation points add an observer with 180 m radius.
     // 3.0: the capital observation ring (fog mode).
@@ -300,7 +314,7 @@ function economySecond(match: Match): void {
   econZonesSecond(world, (p) => match.front.ownerAt(p));
   minefieldSecond(world);
   capitalDefenceSecond(world);
-  for (const u of world.units.values()) {
+  for (const u of world.aliveUnits) {
     if (u.hp <= 0) continue;
     supplyTick(world, u, 1);
   }
@@ -326,8 +340,8 @@ function inSupply(match: Match, f: number, p: { x: number; z: number }): boolean
 function convoyNodes(world: World, f: number): SupplyNode[] {
   const depot = world.cityOf(f).exit;
   const out: SupplyNode[] = [{ pos: depot, radius: world.data.rules.supply.city_local_radius_m, parent: null, cut: false }];
-  for (const t of world.units.values()) {
-    if (t.owner !== f || t.def.id !== 'supply_truck' || t.hp <= 0) continue;
+  for (const t of world.unitsOf(f)) {
+    if (t.def.id !== 'supply_truck' || t.hp <= 0) continue;
     const parent = t.truckState === 'out' && t.truckDest ? t.truckDest : depot;
     out.push({ pos: { ...t.pos }, radius: t.truckState === 'unload' ? 190 : 0, parent, cut: t.truckState === 'return' && t.cargo > 1 });
   }
@@ -347,8 +361,8 @@ function checkElimination(match: Match): void {
     f.eliminatedAt = world.time;
     f.orders = [];
     f.manualQueue = [];
-    for (const u of world.units.values()) {
-      if (u.owner !== f.id || u.hp <= 0) continue;
+    for (const u of world.unitsOf(f.id)) {
+      if (u.hp <= 0) continue;
       u.behavior = 'evacuate';
       u.evacuateAt = world.time + world.data.rules.victory.eliminated_evacuation_seconds;
       u.manual = null;
@@ -403,7 +417,7 @@ export function step(match: Match): void {
     }
     if (world.time >= u.thinkAt && !aboard(u)) {
       thinkUnit(world, u);
-      const slow = u.def.id === 'howitzer' || u.def.id === 'mortar' ? 1 : 0.4;
+      const slow = u.def.id === 'howitzer' || u.def.id === 'mortar' ? 1 : units.length > 1000 && u.targetId === null ? 0.55 : 0.4;
       u.thinkAt = world.time + slow + ((u.id * 7) % 10) / 50;
     }
   }

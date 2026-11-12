@@ -658,7 +658,7 @@ export class UnitViews {
     this.blobs.begin();
     this.blobs.visible = this.showBlobs;
     const fogOn = fog && w.factions[playerId]?.alive !== false;
-    for (const u of w.units.values()) {
+    for (const u of w.aliveUnits) {
       if (u.hp <= 0) continue;
       let v = this.views.get(u.id);
       if (!v) v = this.create(u);

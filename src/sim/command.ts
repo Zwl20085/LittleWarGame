@@ -104,16 +104,22 @@ function assessMood(world: World, f: Faction): void {
   let line = 0;
   let idle = 0;
   const known = new Map<number, number>();
-  for (const u of world.units.values()) {
+  for (const u of world.unitsOf(f.id)) {
     if (u.hp <= 0 || u.fixed || u.def.id === 'supply_truck' || isCommander(u.def)) continue;
-    const v = u.def.costP + u.def.costM;
-    if (u.owner === f.id) {
-      army += v;
-      if (u.opRole === 'line') {
-        line++;
-        if (world.time - u.lastFiredAt > EAGER.idleS) idle++;
-      }
-    } else if (world.isHostile(f.id, u.owner) && world.knows(f.id, u)) known.set(u.owner, (known.get(u.owner) ?? 0) + v);
+    army += u.def.costP + u.def.costM;
+    if (u.opRole === 'line') {
+      line++;
+      if (world.time - u.lastFiredAt > EAGER.idleS) idle++;
+    }
+  }
+  for (const e of world.factions) {
+    if (!e.alive || e.id === f.id || !world.isHostile(f.id, e.id)) continue;
+    let kVal = 0;
+    for (const u of world.unitsOf(e.id)) {
+      if (u.hp <= 0 || u.fixed || u.def.id === 'supply_truck' || isCommander(u.def)) continue;
+      if (world.knows(f.id, u)) kVal += u.def.costP + u.def.costM;
+    }
+    if (kVal > 0) known.set(e.id, kVal);
   }
   // Neighbour = the hostile faction with the nearest capital.
   const hq = world.hqPos(f.id);
@@ -219,7 +225,7 @@ export function thinkHighCommand(world: World, f: Faction): void {
   // 3.0: a front that accepted the directive moves when its delay is over, not at the next HQ think (compliance.ts).
   if (f.alive && world.time < f.command.nextAt && complianceDue(world, f)) applyDirectiveNow(world, f);
   if (!f.alive || world.time < f.command.nextAt) return;
-  f.command.nextAt = world.time + HQ.everySeconds;
+  f.command.nextAt = world.time + HQ.everySeconds + (world.time === 0 ? f.id * 1.1 + 0.15 : 0);
   const hc = f.command;
   if (eagerOn()) assessMood(world, f);
   thinkHomeDefence(world, f);
@@ -288,7 +294,7 @@ function attackersOf(world: World, f: Faction, obj: string): Unit[] {
   const secs = new Set(f.fronts.filter((s) => s.targetObjective === obj).map((s) => s.id));
   if (secs.size === 0) return [];
   const out: Unit[] = [];
-  for (const u of world.units.values()) if (u.owner === f.id && u.hp > 0 && !u.fixed && secs.has(u.frontId)) out.push(u);
+  for (const u of world.unitsOf(f.id)) if (u.hp > 0 && !u.fixed && secs.has(u.frontId)) out.push(u);
   return out;
 }
 
@@ -308,8 +314,8 @@ function assignGarrisons(world: World, f: Faction, defend: Directive[]): void {
   const mine: Unit[] = [];
   let army = 0;
   let tied = 0;
-  for (const u of world.units.values()) {
-    if (u.owner !== f.id || u.hp <= 0 || u.fixed || u.def.id === 'supply_truck' || isCommander(u.def)) continue;
+  for (const u of world.unitsOf(f.id)) {
+    if (u.hp <= 0 || u.fixed || u.def.id === 'supply_truck' || isCommander(u.def)) continue;
     mine.push(u);
     army += valueOf(u);
     if (u.opRole === 'garrison') tied += valueOf(u);
@@ -372,8 +378,8 @@ function assignGarrisons(world: World, f: Faction, defend: Directive[]): void {
 function assignOccupations(world: World, f: Faction, occupy: Directive[]): void {
   // Round 7 (lead decision, wars must end): a finisher sends no occupation detachments; those out return to the line (and the storm).
   if (f.command.finisher) {
-    for (const u of world.units.values()) {
-      if (u.owner !== f.id || u.hp <= 0 || u.opRole !== 'occupy') continue;
+    for (const u of world.unitsOf(f.id)) {
+      if (u.hp <= 0 || u.opRole !== 'occupy') continue;
       u.opRole = 'line';
       u.opObjective = null;
       u.opTarget = null;
@@ -385,8 +391,8 @@ function assignOccupations(world: World, f: Faction, occupy: Directive[]): void 
   const pool: Unit[] = [];
   // 2.1: no detachments from a front under a binding (player) order.
   const bound = new Set(f.fronts.filter(boundOrder).map((s) => s.id));
-  for (const u of world.units.values()) {
-    if (u.owner !== f.id || u.hp <= 0 || u.fixed) continue;
+  for (const u of world.unitsOf(f.id)) {
+    if (u.hp <= 0 || u.fixed) continue;
     if (u.opRole === 'occupy' && u.opObjective) active.set(u.opObjective, (active.get(u.opObjective) ?? 0) + 1);
     else if (freeLine(u) && OCCUPY_TYPES.has(u.def.id) && !bound.has(u.frontId)) pool.push(u);
   }

@@ -18,11 +18,26 @@
 ![Simulation](https://img.shields.io/badge/sim-deterministic%2020%20Hz-6b7a3a)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
-[What's new](#whats-new-in-30) · [Features](#features) · [Download](#download-and-play) · [How a war plays](#how-a-war-plays) · [Controls](#controls) · [Under the hood](#under-the-hood) · [Roadmap](#roadmap) · [Build from source](#build-from-source)
+[What's new](#whats-new-in-40) · [Features](#features) · [Download](#download-and-play) · [How a war plays](#how-a-war-plays) · [Controls](#controls) · [Under the hood](#under-the-hood) · [Roadmap](#roadmap) · [Build from source](#build-from-source)
 
 </div>
 
 ---
+
+## What's new in 4.0
+
+**4.0.0 — massive army-group scale (2 500+ units), rolling frontlines, smarter supply convoys & rock-solid 60 FPS at 8×.**
+- **6×–7× army scale & continuous rolling frontlines:** Default `army_scale` rises from `10` to `60` with dynamic territory population ceilings (`pop_cap_max_multiplier = 2.0`), fielding **600–750+ units per faction** (**2 500+ live units** across a 4-way war) organized into 6–10 full Army Groups per side. Line slot spacing is tightened (`0.62×`), armoured spearhead formations widen up to 32 units across, and front commanders transition decisively from holding to rolling **Push** advances (`pushCut = 0.25`, `holdRatio = 1.15`) so entire battle lines visibly sweep across the map.
+- **Multi-bay production & congestion-free rollout:** Every settlement facility can start up to `⌈army_scale / 10⌉` orders per second in parallel with scaled rollout rings, eliminating production bottlenecks for large armies.
+- **4.2× faster per-unit simulation (`3.0–4.0 μs/unit`):**
+  - `NavGrid.connected` replaces full-map flow-field settlements with O(1) precomputed region lookups (`regionAt`).
+  - `World.byOwner` maintains per-faction live unit lists across 15 simulation modules, eliminating full-world `units.values()` scans.
+  - `moveTo` caches raw destinations to bypass redundant path/rail/terrain checks when goals have not shifted; `separate`, `updateHeight`, `updateGarrison` and `updateWorksCover` use squared-distance and bounding-box prefilters; `FrontlineField` uses zero-allocation typed-array buckets and branch-free circle stamping; Supreme HQ thinks are staggered across factions.
+- **Butter-smooth 8× speed (worker time-slicing & multi-tick interpolation):** The simulation worker caps each `advance` batch at `20 ms` and refunds unran ticks to `SimHost`, keeping snapshots flowing at 50–60 Hz even at `8×` (`160 ticks/s`). Multi-tick snapshots interpolate continuously from the previous rendered position across the full batch span, while crowd-aware LOD (`> 1 200` units) and faction-batched minimap rendering hold 60 FPS without stutter.
+- **Smarter supply convoys (`convoy.ts`, `settlements.ts`):** Fixed threatened trucks freezing between `out` and `unload` states, fixed trucks returning to depots still 90 % full after supplying a single passer-by, stabilized front supply points with lateral truck staging, prevented loading trucks from abandoning depots mid-load or blocking capital exits, and scaled per-truck capacity and unload rate at `4.0` scale.
+
+<details>
+<summary><b>What was new in 3.0</b></summary>
 
 ## What's new in 3.0
 
@@ -50,6 +65,8 @@
 - **Automatic updates.** The desktop app downloads each new release as an Ed25519-signed game bundle in the background, checks its signature, size and hash, and plays it from the next start (or at once with **Restart now**). A release that needs a newer shell downloads the installer to your Downloads folder instead and never runs it. **Auto-download updates** in Settings turns it off. 2.2.x has only the update notice, so 2.2 players install 3.0 once by hand; from 3.0 on, updates arrive by themselves ([UPDATER](docs/UPDATER.md)).
 - **A score for each doctrine.** Each doctrine has its own theme (pastoral strings for the builder, trumpet anapests over a driving ostinato for the blitz, a low march of trombones and timpani for attrition, galloping horns for maneuver). New cues mark an offensive you launch, your capital falling and a quiet spell, and the strings now move in four-part voice leading in a new hall ([MUSIC](docs/MUSIC.md)).
 - **A wider challenge lab.** New scripted opponents attack the AI: an armour raid, a shadow strike (a detachment routed outside every defender's sight), a backdoor raid, a feint, an economic war, a siege and one per doctrine. Each match is scored with player-experience metrics: one-sidedness, a cheap-win index, warning time before a capital falls and pacing ([CHALLENGE_LAB](docs/CHALLENGE_LAB.md#30-diversity-suite-and-player-experience-metrics-wp-i)).
+
+</details>
 
 <details>
 <summary><b>What was new in 2.2</b></summary>

@@ -622,14 +622,15 @@ export class NavGrid {
     return found ? { ok: true, points: out, partial: false } : { ok: true, points: out, partial: true, bestEffort: true };
   }
 
-  /** Can `a` reach `b` on this grid (shares the cached flow field of `b`)? */
+  /** Can `a` reach `b` on this grid (O(1) via precomputed connected regions)? */
   connected(a: V2, b: V2): boolean {
-    const field = this.flowField(b);
-    if (!field) return false;
+    const q = GOAL_LATTICE_M;
+    const snapped = { x: Math.round(b.x / q) * q, z: Math.round(b.z / q) * q };
+    const g0 = this.nearestPassable(snapped, q * 0.75) ?? this.nearestPassable(b, 48);
+    if (!g0) return false;
     const s0 = this.nearestPassable(a, 24);
     if (!s0) return false;
-    const k = this.idx(s0);
-    NavGrid.expanded += field.settle(k);
-    return field.value(k) !== FIELD_INF;
+    const ra = this.regionAt(s0);
+    return ra !== 0 && ra === this.regionAt(g0);
   }
 }

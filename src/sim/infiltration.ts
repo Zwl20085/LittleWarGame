@@ -428,8 +428,8 @@ function updateReports(world: World, f: Faction, r: InfiltrationRules, units: re
 function responseBudget(world: World, f: Faction, r: InfiltrationRules): number {
   let combat = 0;
   let busy = 0;
-  for (const u of world.aliveUnits) {
-    if (u.owner !== f.id || u.hp <= 0 || u.fixed || u.def.id === 'supply_truck' || isCommander(u.def)) continue;
+  for (const u of world.unitsOf(f.id)) {
+    if (u.hp <= 0 || u.fixed || u.def.id === 'supply_truck' || isCommander(u.def)) continue;
     combat++;
     if (u.opRole === 'hunt' || u.opRole === 'screen') busy++;
   }

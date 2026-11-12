@@ -234,7 +234,7 @@ function forecast(world: World, f: Faction, groups: Map<number, GroupInfo>): num
   const aimedByOwner = new Map<number, number>();
   const tracks = approachOf(f);
   const acc = new Map<number, { dv: number; v: number }>();
-  for (const u of world.units.values()) {
+  for (const u of world.aliveUnits) {
     if (u.hp <= 0 || u.def.id === 'supply_truck' || isCommander(u.def)) continue;
     const d = dist(u.pos, hq);
     if (u.owner === f.id) {
@@ -421,8 +421,8 @@ function assignHolders(world: World, f: Faction, guards: Unit[]): void {
 /** Known value of faction `e`'s mobile army as seen by `f` (O(units); only while the alarm is on). */
 function knownArmy(world: World, f: number, e: number): number {
   let v = 0;
-  for (const u of world.units.values()) {
-    if (u.owner !== e || u.hp <= 0 || u.fixed || u.def.id === 'supply_truck' || isCommander(u.def) || !world.knows(f, u)) continue;
+  for (const u of world.unitsOf(e)) {
+    if (u.hp <= 0 || u.fixed || u.def.id === 'supply_truck' || isCommander(u.def) || !world.knows(f, u)) continue;
     v += valueOf(u);
   }
   return v;
@@ -440,8 +440,8 @@ function convergeOnPoint(world: World, f: Faction, guards: Unit[]): void {
   const key = hqKey(f.id);
   const ht = f.command.homeThreat;
   const recalled = new Set(ht.hopeless ? [] : ht.recall);
-  for (const u of world.units.values()) {
-    if (u.owner !== f.id || u.hp <= 0 || u.fixed || u.manual || u.routing || isCommander(u.def)) continue;
+  for (const u of world.unitsOf(f.id)) {
+    if (u.hp <= 0 || u.fixed || u.manual || u.routing || isCommander(u.def)) continue;
     if (u.def.kind === 'crew' || u.def.id === 'supply_truck' || (u.opRole === 'garrison' && u.opObjective === key)) continue;
     const d = dist(u.pos, hq);
     if (d > HQ_POINT.convergeM && !(recalled.has(u.frontId) && d <= HQ_POINT.recalledM)) continue;
@@ -474,7 +474,7 @@ function ownNear(groups: Map<number, GroupInfo>, world: World, f: Faction): numb
 function homeGuards(world: World, f: number): Unit[] {
   const key = hqKey(f);
   const out: Unit[] = [];
-  for (const u of world.units.values()) if (u.owner === f && u.hp > 0 && u.opRole === 'garrison' && u.opObjective === key) out.push(u);
+  for (const u of world.unitsOf(f)) if (u.hp > 0 && u.opRole === 'garrison' && u.opObjective === key) out.push(u);
   return out;
 }
 
@@ -497,8 +497,8 @@ function guardPool(world: World, f: Faction, engineersOnly: boolean, minD: numbe
   // The standing garrison (anyFront) is drawn from any front, ordered or busy: the capital is never empty.
   const busy = new Set(anyFront ? [] : f.fronts.filter((s) => (s.op !== 'frontal' && s.opPhase !== '') || s.manualTarget).map((s) => s.id));
   const tiered: { u: Unit; tier: number; d: number }[] = [];
-  for (const u of world.units.values()) {
-    if (u.owner !== f.id || u.hp <= 0 || u.fixed || u.manual || u.routing || u.spearhead) continue;
+  for (const u of world.unitsOf(f.id)) {
+    if (u.hp <= 0 || u.fixed || u.manual || u.routing || u.spearhead) continue;
     if (u.behavior !== 'advance' && u.behavior !== 'rally') continue;
     if (u.def.id === 'supply_truck' || u.def.id === 'howitzer' || u.def.id === 'mortar' || u.def.id === 'recon' || isCommander(u.def)) continue;
     if (engineersOnly && u.def.id !== 'engineer') continue;

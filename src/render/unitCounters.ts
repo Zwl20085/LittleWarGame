@@ -74,7 +74,7 @@ export class UnitCounters {
     const priority: [Unit, number, number][] = [];
     const commanders: [Unit, number, number][] = [];
     const cmdId = w.data.rules.command.commander_unit;
-    for (const u of w.units.values()) {
+    for (const u of w.aliveUnits) {
       if (u.hp <= 0) continue;
       const v = this.views.views.get(u.id);
       if (!v || !v.visible || !v.onScreen) continue;

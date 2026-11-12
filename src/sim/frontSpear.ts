@@ -60,12 +60,16 @@ export function eagerPush(world: World, f: Faction, s: Front, units: Unit[], anc
     return false;
   }
   const ordered = boundOrder(s) && s.order.kind === 'attack';
+  const scale40 = Math.max(1, (world.data.rules.proposed_defaults.army_scale ?? 10) / 10);
+  const patience = scale40 > 1 ? EAGER.holdPatienceS * 0.4 : EAGER.holdPatienceS;
+  const holdRatio = scale40 > 1 ? 1.15 : EAGER.holdPushRatio;
   let push = ordered || pushing || (now < st.pushUntil && ratio >= 0.8);
-  if (!push && f.command.aggression > 0 && groupRatio >= EAGER.holdPushRatio && now - st.holdSince > EAGER.holdPatienceS) push = true;
+  if (!push && f.command.aggression > 0 && groupRatio >= holdRatio && now - st.holdSince > patience) push = true;
   if (!push) st.massSince = -1;
   if (push && s.op === 'frontal' && s.posture !== 'assault' && s.mode !== 'push') {
     if (st.massSince < 0) st.massSince = now;
-    const share = EAGER.massShare + EAGER.massShareAggr * f.command.aggression;
+    const rawShare = EAGER.massShare + EAGER.massShareAggr * f.command.aggression;
+    const share = scale40 > 1 ? rawShare * 0.45 : rawShare;
     let liners = 0;
     let near = 0;
     for (const u of units) {
@@ -75,7 +79,8 @@ export function eagerPush(world: World, f: Faction, s: Front, units: Unit[], anc
     }
     st.massed = near;
     st.massNeed = Math.ceil(liners * EAGER.frontalMassShare);
-    if (near < st.massNeed && now - st.massSince < (ordered ? Math.min(EAGER.massWaitS, BOUND_MASS_WAIT_S) : EAGER.massWaitS)) push = false;
+    const maxWait = scale40 > 1 ? Math.min(20, EAGER.massWaitS) : EAGER.massWaitS;
+    if (near < st.massNeed && now - st.massSince < (ordered ? Math.min(maxWait, BOUND_MASS_WAIT_S) : maxWait)) push = false;
   }
   if (push) {
     if (s.mode !== 'push') st.pushUntil = Math.max(st.pushUntil, now + EAGER.holdPatienceS * 0.5);

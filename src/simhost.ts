@@ -15,6 +15,7 @@ export class SimHost {
   /** performance.now() when the latest snapshot arrived (for interpolation). */
   lastSnapAt = 0;
   lastBatch = 1;
+  unranTicks = 0;
   onCommandResult: ((env: CommandEnvelope, out: CommandOutcome) => void) | null = null;
   onError: ((message: string) => void) | null = null;
   private ffResolve: (() => void) | null = null;
@@ -30,7 +31,7 @@ export class SimHost {
     this.worker.postMessage(msg);
   }
 
-  private onMessage(msg: { t: string; snap?: Snapshot; ran?: number; ff?: boolean; env?: CommandEnvelope; out?: CommandOutcome; message?: string }): void {
+  private onMessage(msg: { t: string; snap?: Snapshot; ran?: number; req?: number; ff?: boolean; env?: CommandEnvelope; out?: CommandOutcome; message?: string }): void {
     switch (msg.t) {
       case 'ready':
         this.ready = true;
@@ -39,6 +40,9 @@ export class SimHost {
         applySnapshot(this.match, msg.snap!, this.observer);
         this.lastSnapAt = performance.now();
         this.lastBatch = Math.max(1, msg.ran ?? 1);
+        if (!msg.ff && msg.req !== undefined && msg.ran !== undefined && msg.req > msg.ran) {
+          this.unranTicks += msg.req - msg.ran;
+        }
         // A fast-forward resolves on its own reply only: an earlier advance batch (or the
         // initial snapshot) can still be in the queue when the fast-forward is posted, and
         // resolving on it returned while the worker was still busy fast-forwarding.

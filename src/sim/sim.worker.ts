@@ -24,14 +24,14 @@ const post = (msg: unknown, transfer: Transferable[] = []): void => (self as unk
 
 bus.onResult = (env, out) => post({ t: 'cmdResult', env, out });
 
-function send(ran: number, ff = false): void {
+function send(ran: number, ff = false, req = ran): void {
   if (!match) return;
   const snap = makeSnapshot(match, cursor, observer);
   const o = snap.objectives;
   const transfer: Transferable[] = [snap.units.buffer, o.owner.buffer, o.contested.buffer, o.activeAt.buffer, o.leader.buffer, o.progress.buffer];
   if (snap.front) transfer.push(snap.front.owner.buffer);
   if (snap.frontView) transfer.push(snap.frontView.owner.buffer);
-  post({ t: 'snap', snap, ran, ff }, transfer);
+  post({ t: 'snap', snap, ran, req, ff }, transfer);
 }
 
 self.onmessage = (e: MessageEvent<ToWorker>): void => {
@@ -49,12 +49,14 @@ self.onmessage = (e: MessageEvent<ToWorker>): void => {
         break;
       case 'advance': {
         if (!match) return;
+        const t0 = performance.now();
         let n = 0;
-        for (; n < msg.ticks && !match.world.result; n++) {
+        for (; n < msg.ticks && !match.world.result && (n === 0 || performance.now() - t0 < 20); n++) {
           bus.flush(match);
           step(match);
         }
-        send(n);
+        if (match.world.fx.length > 350) match.world.fx.splice(0, match.world.fx.length - 350);
+        send(n, false, msg.ticks);
         break;
       }
       case 'ff': {

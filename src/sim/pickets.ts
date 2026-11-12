@@ -126,16 +126,23 @@ export function picketSlots(world: World, f: Faction, s: Front, liners: readonly
 function placePickets(world: World, r: InfiltrationRules, s: Front, liners: readonly Unit[], out: Record<number, V2>, line: readonly V2[], home: V2, doctrineMul: number): void {
   const gap = picketGap(r, s.tier, doctrineMul);
   const half = gap / 2;
+  const half2 = half * half;
   const points = picketPoints(line, gap);
   // Coverage counts the slots of these units only (the reaction group leaves its line slots).
   const slotList: V2[] = [];
   for (const u of liners) if (out[u.id]) slotList.push(out[u.id]);
-  const covered = (p: V2): boolean => slotList.some((q) => dist(p, q) <= half);
+  const withinHalf = (a: V2, b: V2): boolean => (a.x - b.x) * (a.x - b.x) + (a.z - b.z) * (a.z - b.z) <= half2;
+  const covered = (p: V2): boolean => slotList.some((q) => withinHalf(p, q));
   const cands = liners.filter((u) => PICKET_KINDS.has(u.def.id) && out[u.id] !== undefined);
   const budget = Math.floor(cands.length * r.picket_max_share);
   if (budget <= 0) return;
   // Redundancy: other slots within half a gap of the candidate's slot (it can leave without opening a gap).
-  const red = cands.map((u) => slotList.reduce((n, q) => n + (q !== out[u.id] && dist(q, out[u.id]) <= half ? 1 : 0), 0));
+  const red = cands.map((u) => {
+    const pos = out[u.id];
+    let n = 0;
+    for (let j = 0; j < slotList.length; j++) if (slotList[j] !== pos && withinHalf(slotList[j], pos)) n++;
+    return n;
+  });
   const used = new Set<number>();
   let placed = 0;
   for (const p of points) {
@@ -149,7 +156,7 @@ function placePickets(world: World, r: InfiltrationRules, s: Front, liners: read
     if (best < 0) return;
     const u = cands[best];
     const old = out[u.id];
-    for (let i = 0; i < cands.length; i++) if (i !== best && dist(out[cands[i].id], old) <= half) red[i]--;
+    for (let i = 0; i < cands.length; i++) if (i !== best && withinHalf(out[cands[i].id], old)) red[i]--;
     const want = towardHome(p, home, r.picket_lean_m);
     const at = world.navFor(u).nearestPassable(want, 40) ?? want;
     out[u.id] = at;

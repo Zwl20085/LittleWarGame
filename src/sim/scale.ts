@@ -7,17 +7,26 @@ import type { GameData, Rules } from '../data/types';
  * build times) stays exactly as in BALANCE_SPEC while armies are k times larger.
  */
 export function scaleRules(rules: Rules, k: number): Rules {
-  if (k === 1) return rules;
+  if (k === 1) {
+    return rules.proposed_defaults.army_scale === 1
+      ? rules
+      : { ...rules, proposed_defaults: { ...rules.proposed_defaults, army_scale: 1 } };
+  }
   const e = rules.economy;
   const ks = k * (rules.proposed_defaults.army_scale_stock_factor ?? 1);
   const kr = k * (rules.proposed_defaults.army_scale_resolve_factor ?? 1);
   const ki = k * (rules.proposed_defaults.army_scale_income_factor ?? 1);
+  const truckCountMul = k > 10 ? 10 * Math.pow(k / 10, 0.45) : k;
+  const truckCapMul = k > 10 ? k / truckCountMul : 1;
   const mulRec = (r: Record<string, number>): Record<string, number> =>
-    Object.fromEntries(Object.entries(r).map(([key, v]) => [key, Math.round(v * k)]));
+    Object.fromEntries(
+      Object.entries(r).map(([key, v]) => [key, Math.round(v * (key === 'supply_truck' ? truckCountMul : k))]),
+    );
   return {
     ...rules,
     proposed_defaults: {
       ...rules.proposed_defaults,
+      army_scale: k,
       production_unit_caps: mulRec(rules.proposed_defaults.production_unit_caps),
     },
     economy: {
@@ -41,6 +50,15 @@ export function scaleRules(rules: Rules, k: number): Rules {
       node_m_bonus_cap: e.node_m_bonus_cap * k,
       initial_units: mulRec(e.initial_units),
     },
+    logistics:
+      k > 10 && rules.logistics
+        ? {
+            ...rules.logistics,
+            crowd_free: Math.round(rules.logistics.crowd_free * Math.sqrt(k / 10)),
+            truck_capacity: Math.round((rules.logistics.truck_capacity ?? 25) * truckCapMul),
+            truck_unload_per_second: +((rules.logistics.truck_unload_per_second ?? 4) * truckCapMul).toFixed(2),
+          }
+        : rules.logistics,
     victory: {
       ...rules.victory,
       initial_resolve: rules.victory.initial_resolve * kr,

@@ -110,7 +110,7 @@ export function inMass(u: Unit, share: number): boolean {
 
 /** Compact block on `centre` facing `facing`, spaced so the crowding shell penalty doesn't trigger. */
 export function massSlot(centre: V2, facing: number, i: number, n: number, rank: number, spacing: number): V2 {
-  const perRow = Math.max(4, Math.min(16, Math.ceil(Math.sqrt(n * 4))));
+  const perRow = Math.max(4, Math.min(n > 20 ? 32 : 16, Math.ceil(Math.sqrt(n * (n > 20 ? 6 : 4)))));
   const row = Math.floor(i / perRow);
   const cols = Math.min(perRow, n - row * perRow);
   const col = (i % perRow) - (cols - 1) / 2 + (row % 2 === 1 ? 0.5 : 0);

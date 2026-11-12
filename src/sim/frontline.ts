@@ -17,6 +17,10 @@ export class FrontlineField {
   private readonly raw: Float32Array[];
   /** Per-column Gaussian factors of the current stamp (scratch, sized for the widest kernel). */
   private readonly kernelX: Float64Array;
+  private readonly bucketW: Float32Array;
+  private readonly bucketWX: Float32Array;
+  private readonly bucketWZ: Float32Array;
+  private readonly dirtyBuckets: Int32Array;
   version = 0;
 
   constructor(private readonly world: World, private readonly observer: number | null) {
@@ -30,6 +34,11 @@ export class FrontlineField {
     this.pending = new Int8Array(n).fill(NEUTRAL);
     this.pendingSince = new Float32Array(n);
     this.kernelX = new Float64Array(this.nx + 1);
+    const nb = nf * n;
+    this.bucketW = new Float32Array(nb);
+    this.bucketWX = new Float32Array(nb);
+    this.bucketWZ = new Float32Array(nb);
+    this.dirtyBuckets = new Int32Array(nb);
   }
 
   ownerAt(p: V2): number {
@@ -40,27 +49,31 @@ export class FrontlineField {
 
   private stamp(f: number, x: number, z: number, weight: number, radius: number): void {
     const r2 = radius * 1.6;
-    const i0 = Math.max(0, Math.floor((x - r2) / this.cell));
-    const i1 = Math.min(this.nx - 1, Math.floor((x + r2) / this.cell));
-    const j0 = Math.max(0, Math.floor((z - r2) / this.cell));
-    const j1 = Math.min(this.nz - 1, Math.floor((z + r2) / this.cell));
+    const cell = this.cell;
+    const i0 = Math.max(0, Math.floor((x - r2) / cell));
+    const i1 = Math.min(this.nx - 1, Math.floor((x + r2) / cell));
+    const j0 = Math.max(0, Math.floor((z - r2) / cell));
+    const j1 = Math.min(this.nz - 1, Math.floor((z + r2) / cell));
     const raw = this.raw[f];
     const inv = 1 / (radius * radius);
     // The Gaussian is separable: exp(-(cx²+cz²)/r²) = exp(-cx²/r²)·exp(-cz²/r²), so one exp per
     // column and per row instead of one per cell (~30× fewer exp calls; equal up to rounding).
     const ex = this.kernelX;
     for (let i = i0; i <= i1; i++) {
-      const cx = (i + 0.5) * this.cell - x;
+      const cx = (i + 0.5) * cell - x;
       ex[i - i0] = Math.exp(-cx * cx * inv);
     }
     const lim = r2 * r2;
     for (let j = j0; j <= j1; j++) {
-      const cz = (j + 0.5) * this.cell - z;
+      const cz = (j + 0.5) * cell - z;
+      const rem = lim - cz * cz;
+      if (rem < 0) continue;
+      const dxMax = Math.sqrt(rem);
+      const iMin = Math.max(i0, Math.ceil((x - dxMax) / cell - 0.5));
+      const iMax = Math.min(i1, Math.floor((x + dxMax) / cell - 0.5));
       const wz = weight * Math.exp(-cz * cz * inv);
       const row = j * this.nx;
-      for (let i = i0; i <= i1; i++) {
-        const cx = (i + 0.5) * this.cell - x;
-        if (cx * cx + cz * cz > lim) continue;
+      for (let i = iMin; i <= iMax; i++) {
         raw[row + i] += wz * ex[i - i0];
       }
     }
@@ -75,16 +88,40 @@ export class FrontlineField {
       this.stamp(f.id, c.hq.x, c.hq.z, FRONTLINE.cityWeight, FRONTLINE.radiusCity);
     }
     for (const o of w.objectives) if (o.owner >= 0 && w.factions[o.owner].alive) this.stamp(o.owner, o.pos.x, o.pos.z, FRONTLINE.pointWeight, FRONTLINE.radiusPoint);
-    for (const u of w.units.values()) {
+    const cell = this.cell;
+    const nx = this.nx;
+    const nz = this.nz;
+    const n = nx * nz;
+    const bw = this.bucketW;
+    const bwx = this.bucketWX;
+    const bwz = this.bucketWZ;
+    const dirty = this.dirtyBuckets;
+    let nd = 0;
+    for (const u of w.aliveUnits) {
       if (u.hp <= 0 || u.fixed || !w.factions[u.owner].alive) continue;
       if (this.observer !== null && u.owner !== this.observer && !w.visibleTo[this.observer].has(u.id)) continue;
       const base = FRONTLINE.weights[u.def.id] ?? 0;
       if (base <= 0) continue;
       const morale = u.routing ? 0.2 : u.moraleState === 'pinned' ? 0.6 : 1;
-      this.stamp(u.owner, u.pos.x, u.pos.z, base * Math.sqrt(u.hp / u.def.maxHp) * morale, FRONTLINE.radiusGround);
+      const wt = base * Math.sqrt(u.hp / u.def.maxHp) * morale;
+      const si = Math.min(nx - 1, Math.max(0, Math.floor(u.pos.x / cell)));
+      const sj = Math.min(nz - 1, Math.max(0, Math.floor(u.pos.z / cell)));
+      const idx = u.owner * n + sj * nx + si;
+      if (bw[idx] === 0) dirty[nd++] = idx;
+      bw[idx] += wt;
+      bwx[idx] += u.pos.x * wt;
+      bwz[idx] += u.pos.z * wt;
+    }
+    for (let d = 0; d < nd; d++) {
+      const idx = dirty[d];
+      const f = Math.floor(idx / n);
+      const wt = bw[idx];
+      this.stamp(f, bwx[idx] / wt, bwz[idx] / wt, wt, FRONTLINE.radiusGround);
+      bw[idx] = 0;
+      bwx[idx] = 0;
+      bwz[idx] = 0;
     }
     const alpha = 1 - Math.exp(-seconds / FRONTLINE.smoothingSeconds);
-    const n = this.owner.length;
     const nf = w.factions.length;
     const smooth = this.smooth;
     const raw = this.raw;

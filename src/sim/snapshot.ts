@@ -221,6 +221,7 @@ export function applySnapshot(match: Match, snap: Snapshot, observer: number): v
   const buf = snap.units;
   const n = buf.length / STRIDE;
   const order = w.data.unitOrder;
+  const multi = snap.tick - w.tick > 1 && snap.tick - w.tick <= 20;
   // Mark existing mirror units dead first; every surviving unit in `buf` restores its positive `hp` below.
   for (let i = 0; i < w.aliveUnits.length; i++) w.aliveUnits[i].hp = 0;
   for (let k = 0; k < n; k++) {
@@ -228,6 +229,7 @@ export function applySnapshot(match: Match, snap: Snapshot, observer: number): v
     const id = buf[o + F.id];
     const fl = buf[o + F.flags];
     let u = w.units.get(id);
+    const had = !!u;
     if (!u) {
       const def = w.data.units.get(order[buf[o + F.def]])!;
       const fixed = (fl & 16) !== 0;
@@ -235,7 +237,15 @@ export function applySnapshot(match: Match, snap: Snapshot, observer: number): v
     }
     // 3.0 upgrades: the mirror swaps in the same variant def (unit card, render) before the hp is copied.
     if (u.upg !== buf[o + F.upg]) refit(w, u, buf[o + F.upg]);
-    u.pos.x = buf[o + F.x]; u.pos.z = buf[o + F.z]; u.prev.x = buf[o + F.px]; u.prev.z = buf[o + F.pz]; u.y = buf[o + F.y];
+    const oldX = u.pos.x;
+    const oldZ = u.pos.z;
+    u.pos.x = buf[o + F.x]; u.pos.z = buf[o + F.z];
+    if (multi && had && Math.abs(u.pos.x - oldX) < 35 && Math.abs(u.pos.z - oldZ) < 35) {
+      u.prev.x = oldX; u.prev.z = oldZ;
+    } else {
+      u.prev.x = buf[o + F.px]; u.prev.z = buf[o + F.pz];
+    }
+    u.y = buf[o + F.y];
     u.heading = buf[o + F.heading]; u.turret = buf[o + F.turret]; u.hp = buf[o + F.hp]; u.morale = buf[o + F.morale];
     u.suppression = buf[o + F.supp]; u.ammo = buf[o + F.ammo]; u.supplyRatio = buf[o + F.supplyRatio];
     u.setup = SETUP[(fl >> 8) & 3] ?? 'packed';
@@ -248,7 +258,7 @@ export function applySnapshot(match: Match, snap: Snapshot, observer: number): v
     u.status = statusTable[buf[o + F.status]] ?? ''; u.speedNow = buf[o + F.speed]; u.lastSuppliedAt = buf[o + F.lastSupplied];
     u.setupTimer = buf[o + F.setupTimer];
     u.manual = null;
-    u.queue = [];
+    if (u.queue.length > 0) u.queue.length = 0;
   }
   for (const [id, m, q] of snap.manual) {
     const u = w.units.get(id);

@@ -5,7 +5,7 @@ import { frontAnchor, safeRear } from './frontai';
 import { ADAPT, adaptive, EAGER, eagerOn } from './strategyai';
 import { deadCapital, maneuvering, planPincer, resetOperation, runOperation, siegeRing } from './doctrine';
 import { bridgeSiteFor } from './engineering';
-import { frontSegments, OPS, spreadAlong, planOperations } from './operations';
+import { frontSegments, OPS, planOperations } from './operations';
 import { defendingHome, homeOn, isRecalled, releaseRecall, restoreOrders, ROUND7_AB, saveOrders } from './homeguard';
 import { capitalSiege, stormRing } from './storm';
 import type { Faction, Objective, Front, Unit, Zone } from './types';
@@ -400,7 +400,7 @@ function setGoalReason(s: Front): void {
 
 export function frontUnits(world: World, f: number, frontId: number): Unit[] {
   const out: Unit[] = [];
-  for (const u of world.units.values()) if (u.owner === f && u.frontId === frontId && u.hp > 0 && !u.fixed) out.push(u);
+  for (const u of world.unitsOf(f)) if (u.frontId === frontId && u.hp > 0 && !u.fixed) out.push(u);
   return out;
 }
 
@@ -466,7 +466,7 @@ export const finishNow = (f: Faction, s: Front): boolean =>
 /** Living, mobile units of every front, by front id (one pass over the units). */
 export function frontGroups(world: World, f: Faction): Map<number, Unit[]> {
   const out = new Map<number, Unit[]>(f.fronts.map((s) => [s.id, []]));
-  for (const u of world.units.values()) if (u.owner === f.id && u.hp > 0 && !u.fixed) out.get(u.frontId)?.push(u);
+  for (const u of world.unitsOf(f.id)) if (u.hp > 0 && !u.fixed) out.get(u.frontId)?.push(u);
   return out;
 }
 
@@ -554,10 +554,11 @@ export function thinkFronts(world: World, f: Faction, chunk?: number): void {
     if (gatherAtRally.length > 0 && s.gatheredSince < 0) s.gatheredSince = world.time;
     const waited = s.gatheredSince >= 0 && world.time - s.gatheredSince > AI.rallyMaxWait;
     const scale = world.data.rules.proposed_defaults.army_scale ?? 1;
-    const needInf = Math.max(AI.rallyMinInfantry, Math.round(AI.rallyMinInfantry * scale * 0.6));
-    const release = ((inf >= needInf || waited) && !outmatched && s.posture !== 'withdraw') || boundLine(s);
+    const needInf = Math.max(AI.rallyMinInfantry, Math.min(8, Math.round(AI.rallyMinInfantry * Math.min(10, scale) * 0.6)));
+    const activeInf = units.filter((u) => u.behavior === 'advance' && u.def.kind === 'infantry').length;
+    const release = ((inf >= needInf || activeInf >= needInf || waited) && !outmatched && s.posture !== 'withdraw') || boundLine(s);
     if (release) {
-      for (const u of gatherAtRally) u.behavior = 'advance';
+      for (const u of units) if (u.behavior === 'rally') u.behavior = 'advance';
       s.gatheredSince = -1;
     } else if (gatherAtRally.length > 0) {
       s.reason = outmatched ? 'reason.outmatched' : 'reason.waitGroup';
@@ -613,7 +614,9 @@ function planFront(world: World, f: Faction, s: Front, units: Unit[], defensive:
     const toTarget = headingTo(anchor, s.targetPos);
     const wantsPush = !defensive && s.posture !== 'hold' && s.posture !== 'fortify';
     const aggr = eagerOn() ? f.command.aggression : 0;
-    let pushing = wantsPush && ratio > (s.posture === 'assault' ? 1.0 : adaptive() ? ADAPT.pushRatio - EAGER.pushAggressionCut * aggr : 1.4);
+    const scale40 = Math.max(1, (world.data.rules.proposed_defaults.army_scale ?? 10) / 10);
+    const pushCut = scale40 > 1 ? 0.25 : 0;
+    let pushing = wantsPush && ratio > (s.posture === 'assault' ? 1.0 - pushCut * 0.4 : adaptive() ? ADAPT.pushRatio - EAGER.pushAggressionCut * aggr - pushCut : 1.4 - pushCut);
     if (eagerOn()) pushing = eagerPush(world, f, s, units, anchor, ratio, (strengthOf(units) + 1) / (theirs + 1), wantsPush, pushing);
     // Round 4: a capital storm pushes whatever the local ratio at the anchor (the defenders mass
     // there; the storm was launched on the mass at the capital vs its forecast defence, storm.ts).
@@ -732,18 +735,21 @@ function planFront(world: World, f: Faction, s: Front, units: Unit[], defensive:
     : attackLine && s.line ? lineThrough(s.line, s.front)
       : eagerOn() && contact ? activeSegment(world, f.id, s.segment) : s.segment;
   const home = world.hqPos(f.id);
-  // Spacing doctrine: spread wider once enemy shells land among the group.
-  const spacing = world.time - s.shelledAt < OPS.shelledMemorySeconds ? OPS.shelledSpacing : OPS.minSpacing;
+  const scale40 = Math.max(1, (world.data.rules.proposed_defaults.army_scale ?? 10) / 10);
+  // Spacing doctrine: spread wider once enemy shells land among the group; tighter in 4.0 so large armies form dense multi-rank lines.
+  const baseSpacing = world.time - s.shelledAt < OPS.shelledMemorySeconds ? OPS.shelledSpacing : OPS.minSpacing;
+  const spacing = scale40 > 1 ? Math.max(14, Math.round(baseSpacing * 0.62)) : baseSpacing;
   const segLen = seg.length * FRONTLINE.cell;
   const sieging = s.op === 'siege' && (s.opPhase === 'form' || s.opPhase === 'dig') && !defendingHome(s);
   // Round 4: in the storm of a capital the whole line closes on the HQ (it crept with the front, 0.75–0.9 km out).
   const storming = capitalSiege(s) && s.op === 'siege' && s.opPhase === 'assault' && !defendingHome(s);
-  const ringN = Math.max(5, Math.min(24, Math.ceil(liners.length / 2)));
+  const ringN = Math.max(5, Math.min(scale40 > 1 ? 48 : 24, Math.ceil(liners.length / 2)));
   const siegeSlots = sieging ? siegeRing(world, f.id, s, ringN) : storming ? stormRing(world, f.id, s, ringN) : null;
   // Round 2 Schwerpunkt: in contact, a share of the line masses on the axis toward the target
   // (the rest screens the segment) instead of the whole group thinning out along the front.
-  const massShare = (eagerOn() && contact || attackLine) && !ordered && !siegeSlots && seg.length > 0 && !defendingHome(s)
+  const rawMassShare = (eagerOn() && contact || attackLine) && !ordered && !siegeSlots && seg.length > 0 && !defendingHome(s)
     ? EAGER.massShare + EAGER.massShareAggr * f.command.aggression : 0;
+  const massShare = scale40 > 1 ? rawMassShare * 0.45 : rawMassShare;
   for (const [rank, all] of byRank) {
     let arr = all;
     if (massShare > 0) {
@@ -770,7 +776,8 @@ function planFront(world: World, f: Faction, s: Front, units: Unit[], defensive:
       } else if (seg.length > 0 && !defendingHome(s)) {
         const row = Math.floor(i / perRow);
         const inRow = Math.min(perRow, arr.length - row * perRow);
-        const base = spreadAlong(seg, inRow)[i % perRow] ?? seg[0];
+        const k = i % perRow;
+        const base = (inRow <= 1 ? seg[Math.floor(seg.length / 2)] : seg[Math.min(seg.length - 1, Math.round((k * (seg.length - 1)) / (inRow - 1)))]) ?? seg[0];
         // Pull back from the contact line (holding) or lean forward (pushing); extra rows further back.
         // An ordered line was snapped to terrain (terrainLine): stand on it, just behind the crest.
         const lean = ordered ? -LINE_ORDER.leanM : s.mode === 'push' ? 25 : eagerOn() ? -35 + EAGER.holdLeanAggr * f.command.aggression : -35;

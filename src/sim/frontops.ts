@@ -58,8 +58,8 @@ function transferUnits(world: World, f: Faction, s: Front, at: V2, want: number,
   if (want <= 0) return;
   const free = new Map<number, number>();
   const pool: Unit[] = [];
-  for (const u of world.units.values()) {
-    if (u.owner !== f.id || u.frontId === s.id || !transferable(u) || dist(u.pos, at) > withinM) continue;
+  for (const u of world.unitsOf(f.id)) {
+    if (u.frontId === s.id || !transferable(u) || dist(u.pos, at) > withinM) continue;
     free.set(u.frontId, (free.get(u.frontId) ?? 0) + 1);
     pool.push(u);
   }
@@ -158,15 +158,15 @@ export function frontForOrder(world: World, f: Faction, p: V2): Front | undefine
   }
   if (!obj) return near;
   let free = 0;
-  for (const u of world.units.values()) if (u.owner === f.id && transferable(u)) free++;
+  for (const u of world.unitsOf(f.id)) if (transferable(u)) free++;
   return createFront(world, f, obj, Math.floor(free / (f.fronts.length + 1))) ?? near;
 }
 
 /** Units whose front no longer exists (dissolved; a production order for it) join the nearest front. */
 export function reassignStale(world: World, f: Faction): void {
   if (f.fronts.length === 0) return;
-  for (const u of world.units.values()) {
-    if (u.owner !== f.id || u.hp <= 0 || frontById(f, u.frontId)) continue;
+  for (const u of world.unitsOf(f.id)) {
+    if (u.hp <= 0 || frontById(f, u.frontId)) continue;
     if (isCommander(u.def)) {
       u.behavior = 'evacuate';
       u.evacuateAt = world.time;
@@ -194,7 +194,7 @@ export function createFrontAt(world: World, f: Faction, p: V2): Front | null {
   }
   if (!obj) return null;
   let near = 0;
-  for (const u of world.units.values()) if (u.owner === f.id && transferable(u) && dist(u.pos, p) < NEW_FRONT_ADOPT_M) near++;
+  for (const u of world.unitsOf(f.id)) if (transferable(u) && dist(u.pos, p) < NEW_FRONT_ADOPT_M) near++;
   // (The caller gives the order: pre-setting the same manual order here made it a "repeat" that kept the 'cautious' posture.)
   const s = createFront(world, f, obj, near, p, NEW_FRONT_ADOPT_M);
   if (s) {

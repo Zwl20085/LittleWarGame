@@ -54,6 +54,8 @@ export class World {
    * Spawned units are appended; `removeDead()` compacts it. May contain hp ≤ 0 units until then.
    */
   readonly aliveUnits: Unit[] = [];
+  /** Per-owner flat unit arrays (maintained alongside `aliveUnits` to avoid full-world scans). */
+  readonly byOwner: Unit[][] = [];
   readonly factions: Faction[] = [];
   readonly objectives: Objective[] = [];
   readonly projectiles: Projectile[] = [];
@@ -114,6 +116,7 @@ export class World {
     const n = Math.min(config.factions, this.map.cities.length);
     const coalition = config.teams === '2v2' && n === 4;
     for (let a = 0; a < n; a++) {
+      this.byOwner.push([]);
       this.hostile.push(Array.from({ length: n }, (_, b) => (coalition ? a % 2 !== b % 2 : a !== b)));
       this.visibleTo.push(new Set());
       this.lastSeen.push(new Map());
@@ -321,15 +324,34 @@ export class World {
     if (!opts.fixed) refitOnSpawn(this, u);
     this.units.set(u.id, u);
     this.aliveUnits.push(u);
+    (this.byOwner[owner] ?? (this.byOwner[owner] = [])).push(u);
     return u;
   }
 
+  /** Flat array of units owned by `owner` (may include hp ≤ 0 until `removeDead()`, same as `aliveUnits`). */
+  unitsOf(owner: number): readonly Unit[] {
+    return this.byOwner[owner] ?? [];
+  }
+
   removeDead(): void {
-    for (const [id, u] of this.units) if (u.hp <= 0) this.units.delete(id);
     const list = this.aliveUnits;
     let n = 0;
-    for (let i = 0; i < list.length; i++) if (list[i].hp > 0) list[n++] = list[i];
+    for (let i = 0; i < list.length; i++) {
+      const u = list[i];
+      if (u.hp > 0) list[n++] = u;
+      else this.units.delete(u.id);
+    }
     list.length = n;
+    if (this.units.size !== n) {
+      for (const [id, u] of this.units) if (u.hp <= 0) this.units.delete(id);
+    }
+    for (let f = 0; f < this.byOwner.length; f++) {
+      const own = this.byOwner[f];
+      if (!own) continue;
+      let m = 0;
+      for (let i = 0; i < own.length; i++) if (own[i].hp > 0 && this.units.has(own[i].id)) own[m++] = own[i];
+      own.length = m;
+    }
   }
 
   /** Point of a faction's city HQ. */

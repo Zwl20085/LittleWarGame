@@ -67,8 +67,8 @@ export function rebuildSupply(world: World, f: number, owner: (p: V2) => number)
   const nodes: SupplyNode[] = [{ pos: hq, radius: s.city_local_radius_m, parent: null, cut: false }];
   const trucks: Unit[] = [];
   const mine: Unit[] = [];
-  for (const u of world.units.values()) {
-    if (u.owner !== f || u.hp <= 0) continue;
+  for (const u of world.unitsOf(f)) {
+    if (u.hp <= 0) continue;
     if (u.def.id === 'supply_truck') trucks.push(u);
     if (!u.fixed) mine.push(u);
   }

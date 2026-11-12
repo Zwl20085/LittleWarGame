@@ -119,6 +119,7 @@ export function updateWorksCover(world: World, u: Unit): void {
   if (u.def.kind === 'vehicle' || u.moving) return;
   for (const f of world.forts) {
     if (f.owner !== u.owner || f.hp <= 0 || f.progress < 1 || (f.kind !== 'trench' && f.kind !== 'sandbag')) continue;
+    if (Math.abs(f.pos.x - u.pos.x) > 35 || Math.abs(f.pos.z - u.pos.z) > 35) continue;
     // 3.0: a fortified trench (tier 1) shelters a wider band (worksTiers.ts).
     if (segDist(u.pos, f.start ?? f.pos, f.end ?? f.pos) <= trenchCoverM(world, f, WORKS[f.kind].coverRadiusM)) {
       u.worksFacing = f.facing;

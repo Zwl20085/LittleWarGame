@@ -81,7 +81,7 @@ export function pickPlace(world: World, f: Faction, facility: string, frontId: n
 
 export function unitCount(world: World, f: Faction, unitId: string): number {
   let n = 0;
-  for (const u of world.units.values()) if (u.owner === f.id && u.def.id === unitId && u.hp > 0 && !u.fixed) n++;
+  for (const u of world.unitsOf(f.id)) if (u.def.id === unitId && u.hp > 0 && !u.fixed) n++;
   for (const o of f.orders) if (o.unitId === unitId) n++;
   return n;
 }
@@ -90,7 +90,7 @@ export function populationOf(world: World, f: Faction): { present: number; reser
   let present = 0;
   // Buildings cost no population; the squads manning them keep theirs (lead decision 2.0: taking
   // garrisons off the count let a heavily fortified side over-produce).
-  for (const u of world.units.values()) if (u.owner === f.id && u.hp > 0 && !u.fixed) present += u.def.population;
+  for (const u of world.unitsOf(f.id)) if (u.hp > 0 && !u.fixed) present += u.def.population;
   let reserved = 0;
   for (const o of f.orders) reserved += world.data.units.get(o.unitId)!.population;
   return { present, reserved };
@@ -102,6 +102,9 @@ function unlocked(world: World, def: UnitDef): boolean {
 
 /** Normalised spending weights over unlocked, enabled, under-cap units (§2.4). */
 export function normalizedWeights(world: World, f: Faction): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const u of world.unitsOf(f.id)) if (u.hp > 0 && !u.fixed) counts.set(u.def.id, (counts.get(u.def.id) ?? 0) + 1);
+  for (const o of f.orders) counts.set(o.unitId, (counts.get(o.unitId) ?? 0) + 1);
   const out = new Map<string, number>();
   let sum = 0;
   for (const id of world.data.unitOrder) {
@@ -109,7 +112,7 @@ export function normalizedWeights(world: World, f: Faction): Map<string, number>
     const w = f.weights[id] ?? 0;
     // Review HIGH 3: a weight on a non-producible def (train, commander) never takes a share.
     if (w <= 0 || !def.producible || f.paused[id] || !unlocked(world, def)) continue;
-    if (unitCount(world, f, id) >= (f.caps[id] ?? Infinity)) continue;
+    if ((counts.get(id) ?? 0) >= (f.caps[id] ?? Infinity)) continue;
     out.set(id, w);
     sum += w;
   }
@@ -181,7 +184,7 @@ export function pickFront(world: World, f: Faction, unitId?: string): number {
   // By front id: ids are stable but not indices (fronts are created and dissolved).
   const counts = new Map<number, number>();
   const add = (id: number, n: number): void => { counts.set(id, (counts.get(id) ?? 0) + n); };
-  for (const u of world.units.values()) if (u.owner === f.id && u.hp > 0 && !u.fixed) add(u.frontId, u.def.population);
+  for (const u of world.unitsOf(f.id)) if (u.hp > 0 && !u.fixed) add(u.frontId, u.def.population);
   for (const o of f.orders) add(o.frontId, world.data.units.get(o.unitId)!.population);
   let total = 1;
   for (const s of f.fronts) total += counts.get(s.id) ?? 0;
@@ -232,33 +235,44 @@ export function scheduleProduction(world: World, f: Faction): void {
   }
   const weights = normalizedWeights(world, f);
   if (weights.size === 0) return;
-  const { total, per } = windowSpend(world, f);
+  const { total: initTotal, per } = windowSpend(world, f);
+  let total = initTotal;
   const ref = rules.economy.spending_reference_value;
-  const ranked = [...weights.entries()]
-    .map(([id, w]) => ({ id, deficit: w * (total + ref) - (per.get(id) ?? 0) }))
-    .sort((a, b) => b.deficit - a.deficit || (a.id < b.id ? -1 : 1));
-  const facilitiesDone = new Set<string>();
-  for (const cand of ranked) {
-    const def = world.data.units.get(cand.id)!;
-    if (facilitiesDone.has(def.facility)) continue;
-    const front = pickFront(world, f, def.id);
-    const at = pickPlace(world, f, def.facility, front);
-    if (!at) continue;
-    const prot = f.protectedOrder;
-    const reserve = prot && prot.unitId !== def.id ? reserveFor(world, prot.unitId) : { p: 0, m: 0 };
-    const block = canStart(world, f, def, false, reserve);
-    if (block === null) {
-      startOrder(world, f, def, at, false, front);
-      if (prot?.unitId === def.id) f.protectedOrder = null;
-      facilitiesDone.add(def.facility);
-      continue;
+  const maxPerFac = Math.max(1, Math.ceil((rules.proposed_defaults.army_scale ?? 10) / 10));
+  const facCount = new Map<string, number>();
+  for (let pass = 0; pass < maxPerFac; pass++) {
+    const ranked = [...weights.entries()]
+      .map(([id, w]) => ({ id, deficit: w * (total + ref) - (per.get(id) ?? 0) }))
+      .sort((a, b) => b.deficit - a.deficit || (a.id < b.id ? -1 : 1));
+    let startedAny = false;
+    for (const cand of ranked) {
+      const def = world.data.units.get(cand.id)!;
+      const curN = facCount.get(def.facility) ?? 0;
+      if (curN >= maxPerFac) continue;
+      const front = pickFront(world, f, def.id);
+      const at = pickPlace(world, f, def.facility, front);
+      if (!at) continue;
+      const prot = f.protectedOrder;
+      const reserve = prot && prot.unitId !== def.id ? reserveFor(world, prot.unitId) : { p: 0, m: 0 };
+      const block = canStart(world, f, def, false, reserve);
+      if (block === null) {
+        startOrder(world, f, def, at, false, front);
+        if (prot?.unitId === def.id) f.protectedOrder = null;
+        facCount.set(def.facility, curN + 1);
+        const val = def.costP + def.costM;
+        per.set(def.id, (per.get(def.id) ?? 0) + val);
+        total += val;
+        startedAny = true;
+        continue;
+      }
+      if (pass === 0 && (block === 'INSUFFICIENT_M' || block === 'INSUFFICIENT_P') && !f.protectedOrder && def.costM >= 100 && world.time >= f.protectRetryAt) {
+        // Protect the most-deficient expensive order so cheap units don't starve it.
+        f.protectedOrder = { unitId: def.id, until: world.time + rules.economy.protected_order_seconds };
+        world.note(f.id, 'log.protect', { unit: def.id }, 'info');
+      }
+      if (block === 'POP_FULL') return;
     }
-    if ((block === 'INSUFFICIENT_M' || block === 'INSUFFICIENT_P') && !f.protectedOrder && def.costM >= 100 && world.time >= f.protectRetryAt) {
-      // Protect the most-deficient expensive order so cheap units don't starve it.
-      f.protectedOrder = { unitId: def.id, until: world.time + rules.economy.protected_order_seconds };
-      world.note(f.id, 'log.protect', { unit: def.id }, 'info');
-    }
-    if (block === 'POP_FULL') return;
+    if (!startedAny) break;
   }
 }
 
@@ -309,27 +323,29 @@ export function advanceProduction(world: World, f: Faction, seconds: number): vo
       o.blocked = true;
       continue;
     }
+    const scale40 = Math.max(1, (world.data.rules.proposed_defaults.army_scale ?? 10) / 10);
     const near = world.spatial.query(at.x, at.z, 10);
-    if (near.length > 6) {
+    if (near.length > Math.round(6 * scale40)) {
       if (!o.blocked) world.note(f.id, 'log.exitBlocked', {}, 'warn');
       o.blocked = true;
       continue;
     }
+    const spread = 12 * Math.sqrt(scale40);
     const nav = world.navFor({ def: world.data.units.get(o.unitId)! } as Unit);
-    let jitter = nav.nearestPassable({ x: at.x + world.rngAi.range(-12, 12), z: at.z + world.rngAi.range(-12, 12) }, 40) ?? at;
+    let jitter = nav.nearestPassable({ x: at.x + world.rngAi.range(-spread, spread), z: at.z + world.rngAi.range(-spread, spread) }, 40 + spread) ?? at;
     // A jittered point can land in a cut-off pocket next to the exit: roll out at the exit instead.
     // A forward place can be foot-only ground (a valley town behind steep slopes): a vehicle that
     // could never drive out rolls out of the capital instead.
     const exit = world.cityOf(f.id).exit;
     if (!nav.connected(jitter, exit)) {
       const atOk = nav.nearestPassable(at, 40);
-      jitter = atOk && nav.connected(atOk, exit) ? atOk : (nav.nearestPassable({ x: exit.x + world.rngAi.range(-12, 12), z: exit.z + world.rngAi.range(-12, 12) }, 40) ?? exit);
+      jitter = atOk && nav.connected(atOk, exit) ? atOk : (nav.nearestPassable({ x: exit.x + world.rngAi.range(-spread, spread), z: exit.z + world.rngAi.range(-spread, spread) }, 40 + spread) ?? exit);
     }
     // The order's front may have been dissolved while it was in production (theatre.ts).
     const u = world.spawnUnit(f.id, o.unitId, jitter, frontById(f, o.frontId) ? o.frontId : pickFront(world, f, o.unitId));
     u.behavior = 'rally';
     // 2.2: new units roll out with no ammunition and rearm at the stock / a truck first (par. 3.4).
-    if (world.data.rules.logistics) u.ammo = 0;
+    if (world.data.rules.logistics && u.primary !== null && u.def.id !== 'supply_truck') u.ammo = 0;
     recordBuilt(world.stats, u);
     f.producedUnits++;
     f.orders.splice(i, 1);

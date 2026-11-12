@@ -555,9 +555,10 @@ export class GameRenderer {
     // Territory wash: full at the overview, fading down among the troops (the blurred 10 m
     // field smeared the close-up ground; the inked contact line stays).
     this.terrainView.uniforms.uOverlayK.value = Math.min(1, Math.max(0.22, 1.2 - 0.12 * ppm));
-    this.units.showSoldiers = ppm > 0.7;
-    this.units.showBlobs = ppm > 1.2;
-    this.units.setSoldierShadows(ppm > 3.5 && q.soldierShadows);
+    const crowd = w.units.size > 1200;
+    this.units.showSoldiers = ppm > (crowd ? 1.35 : 0.7);
+    this.units.showBlobs = ppm > (crowd ? 2.2 : 1.2);
+    this.units.setSoldierShadows(ppm > (crowd ? 4.2 : 3.5) && q.soldierShadows);
     // Far zoom: the shadow map barely changes on screen — refresh it a few times a second.
     this.shadowTick++;
     const far = ppm < 1;

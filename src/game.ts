@@ -164,6 +164,10 @@ export class Game {
     let alpha = 1;
     if (this.host) {
       if (!ctx.paused && !w.result) {
+        if (this.host.unranTicks > 0) {
+          this.acc += this.host.unranTicks * w.dt;
+          this.host.unranTicks = 0;
+        }
         this.acc = Math.min(this.acc + dtReal * ctx.speed, w.dt * MAX_TICKS_PER_FRAME);
         if (!this.host.busy && this.acc >= w.dt) {
           const n = Math.min(MAX_TICKS_PER_FRAME, Math.floor(this.acc / w.dt));
@@ -174,9 +178,9 @@ export class Game {
         this.lagTicks = behind ? Math.round(this.acc / w.dt) : 0;
         this.slowSmoothed = this.slowSmoothed * 0.9 + (behind ? 1 : 0) * 0.1;
         this.slowBadge.style.display = this.slowSmoothed > 0.5 && !this.attract ? '' : 'none';
-        // Interpolate across the last tick over the time the batch is expected to take.
+        // Interpolate across the last batch over the time the batch is expected to take.
         const span = (this.host.lastBatch * w.dt * 1000) / Math.max(0.25, ctx.speed);
-        alpha = Math.min(1, (now - this.host.lastSnapAt) / Math.max(16, span / this.host.lastBatch));
+        alpha = Math.min(1, (now - this.host.lastSnapAt) / Math.max(16, span));
       }
     } else if (!ctx.paused && !w.result) {
       this.acc += dtReal * ctx.speed;

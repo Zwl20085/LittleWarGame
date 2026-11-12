@@ -14,10 +14,10 @@
     "default_information_mode": "open"
   },
   "proposed_defaults": {
-    "army_scale": 10,
+    "army_scale": 60,
     "army_scale_resolve_factor": 0.24,
-    "army_scale_stock_factor": 0.4,
-    "army_scale_income_factor": 0.25,
+    "army_scale_stock_factor": 0.6,
+    "army_scale_income_factor": 0.55,
     "tempo_move_multiplier": 1.8,
     "tempo_damage_multiplier": 1.8,
     "camera_elevation_deg": 45,
@@ -91,8 +91,8 @@
     "capital_slots": {"barracks": 0.4, "vehicle": 0.2, "support": 0.2},
     "place_slots": {"village": {}, "point": {}, "town": {"barracks": 0.2}, "city": {"barracks": 0.3, "vehicle": 0.15, "support": 0.15}},
     "slots_comment": "2.2 (V22_SPEC §4): every place has its own queue; its slots = round(value × army_scale) (capital all facilities, city barracks + vehicle + support, town barracks only).",
-    "capital_pop_share": 0.25,
-    "pop_cap_max_multiplier": 1.5,
+    "capital_pop_share": 0.42,
+    "pop_cap_max_multiplier": 2.0,
     "pop_cap_comment": "1.1: the population cap is territory-driven. Capital base = capital_pop_share × population_cap; every held settlement adds pop_per_place × army_scale; ceiling = pop_cap_max_multiplier × population_cap. A side that owns most of the map can field a decisively larger army than the last defender, which is what ends a war.",
     "pop_per_place": {"village": 0.4, "town": 2, "city": 4, "point": 1},
     "resolve_loss_on_capture": {"village": 1.5, "town": 4, "city": 10, "point": 2},
@@ -155,7 +155,7 @@
     "tank_rearm_multiplier": 2,
     "tank_rearm_comment": "3.0.2 armoured-assault round: tanks rearm at twice the rate (stocks and trucks); their guns also cost a tenth of the ammo (weapons.csv) and they carry 30 % more hp (units.csv).",
     "rearm_comment": "Share of a full load a unit receives per second at a stock or a truck (40 s empty to full), before crowding.",
-    "crowd_free": 6,
+    "crowd_free": 8,
     "crowd_penalty": 0.15,
     "crowd_comment": "Units drawing at one stock / truck beyond crowd_free each get 1 / (1 + crowd_penalty × (n − crowd_free)) of the rate.",
     "place_handover_per_second_k": 0.6,
@@ -419,7 +419,7 @@
         "retreat_hp": 0.2,
         "raid_rate": 0.5, "raid_targets": {"econ": 1, "convoy": 0.5, "rail": 0, "zone": 0}, "raid_on_defence": false,
         "front_density": 1.15, "picket_gap": 1.0, "temperament": 0.2, "main_share": 1.4, "armour_main_share": 0.8,
-        "offensive": {"mode": "strike", "after_s": 540, "min_fullness": 0.7, "max_s": 720, "break_share": 0.6, "cooldown_s": 150, "force_after_s": 480, "force_ratio": 1.15, "between": "advance"},
+        "offensive": {"mode": "strike", "after_s": 540, "min_fullness": 0.7, "max_s": 720, "break_share": 0.6, "cooldown_s": 150, "force_after_s": 480, "force_ratio": 0.9, "between": "advance"},
         "upgrades": ["gun_1", "armour_1", "motorization", "truck_capacity", "gun_2", "armour_2", "staff", "gun_3", "armour_3", "ap_grenades", "arty_range", "eng_speed"]
       },
       "attrition": {

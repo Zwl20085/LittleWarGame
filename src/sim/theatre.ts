@@ -309,7 +309,9 @@ function restructure(world: World, f: Faction, combat: Map<number, Unit[]>, grou
   // 2.1: zone garrisons are counted apart (they hold a fixed line, not an axis).
   const field = f.fronts.filter((s) => !zoneGarrisons.has(s));
   // 3.0: a doctrine's front density counts troops as fewer (attrition / maneuver: fewer, denser fronts).
-  const total = [...combat.values()].reduce((a, c) => a + c.length, 0) / frontDensity(world, f);
+  // 4.0: scale troop counts per front with army_scale so 5x-10x armies form cohesive, massive army groups instead of 32 tiny sectors.
+  const scale40 = Math.max(1, (world.data.rules.proposed_defaults.army_scale ?? 10) / 10);
+  const total = [...combat.values()].reduce((a, c) => a + c.length, 0) / (frontDensity(world, f) * Math.pow(scale40, 0.85));
   const axes = theatreAxes(world, f);
   // 3.0: the army and the frontage ask for more fronts (frontTiers.scaleFronts; keep side with 1/0.75 slack).
   const want = desiredFronts(world, axes, total, undefined, undefined, undefined, scaleFronts(world, f, total));
@@ -372,7 +374,7 @@ function restructure(world: World, f: Faction, combat: Map<number, Unit[]>, grou
     const obj = axis ? axisObjective(world, f, axis) : extraObjective(world, f);
     if (obj) {
       let free = 0;
-      for (const u of world.units.values()) if (u.owner === f.id && transferable(u)) free++;
+      for (const u of world.unitsOf(f.id)) if (transferable(u)) free++;
       // 3.0: a new axis opens when its share would make a tier-1 front (donors keep half of their free troops).
       const tier1 = world.data.rules.fronts.tiers[0]?.min_units ?? THEATRE.newFrontFree;
       const share = Math.min(Math.floor(free / 2), Math.max(tier1, Math.floor(free / (f.fronts.length + 1))));
@@ -417,7 +419,7 @@ function garrisonZone(world: World, f: Faction): boolean {
   const z = f.zones.find((x) => !x.cancelled && !zoneHeld(f, x) && zoneManned(world, f, x));
   if (!z) return false;
   let squads = 0;
-  for (const u of world.units.values()) if (u.owner === f.id && u.def.kind === 'infantry' && transferable(u)) squads++;
+  for (const u of world.unitsOf(f.id)) if (u.def.kind === 'infantry' && transferable(u)) squads++;
   if (squads < THEATRE.zoneMinSquads) return false;
   const c = zoneCentre(z);
   let obj: Objective | null = null;
@@ -570,7 +572,7 @@ function freeEngineers(world: World, f: Faction): Unit[] {
   const c = engineers.get(f);
   if (c && c.tick === world.tick) return c.list;
   const list: Unit[] = [];
-  for (const u of world.units.values()) if (u.owner === f.id && u.def.id === 'engineer' && u.hp > 0 && !u.manual && !u.routing && u.opRole === 'line') list.push(u);
+  for (const u of world.unitsOf(f.id)) if (u.def.id === 'engineer' && u.hp > 0 && !u.manual && !u.routing && u.opRole === 'line') list.push(u);
   engineers.set(f, { tick: world.tick, list });
   return list;
 }
@@ -692,7 +694,7 @@ function committedEnemy(world: World, f: Faction): number {
   const caps = [{ id: f.id, pos: world.hqPos(f.id) }];
   const army = new Map<number, number>();
   const near = new Map<number, number>();
-  for (const u of world.units.values()) {
+  for (const u of world.aliveUnits) {
     if (u.hp <= 0 || u.fixed || u.owner === f.id || isCommander(u.def) || u.def.id === 'supply_truck') continue;
     if (!world.isHostile(f.id, u.owner) || !world.knows(f.id, u)) continue;
     const v = valueOf(u);

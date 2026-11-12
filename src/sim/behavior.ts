@@ -80,7 +80,7 @@ function needsRetreat(world: World, u: Unit): boolean {
 
 function readyToReturn(world: World, u: Unit): boolean {
   const s = world.data.rules.supply;
-  return u.hp >= u.def.maxHp * s.return_hp_ratio && u.morale >= s.return_morale && u.ammo >= s.return_ammo_ratio;
+  return u.hp >= u.def.maxHp * s.return_hp_ratio && u.morale >= s.return_morale && (u.primary === null || u.ammo >= s.return_ammo_ratio);
 }
 
 /** Unit executor (≈0.4 s): choose behaviour + destination, then pick targets. */
@@ -170,7 +170,9 @@ export function thinkUnit(world: World, u: Unit): void {
   }
   if (u.behavior === 'rally') {
     u.status = 'status.rally';
-    const p = { x: s.rally.x + spread(u, 35).x, z: s.rally.z + spread(u, 35).z };
+    const rSpread = (world.data.rules.proposed_defaults.army_scale ?? 10) > 20 ? 60 : 35;
+    const sp = spread(u, rSpread);
+    const p = { x: s.rally.x + sp.x, z: s.rally.z + sp.z };
     moveTo(world, u, p);
     selectTarget(world, u, s.targetPos);
     // Support units do not wait for the infantry gate.
@@ -184,7 +186,7 @@ export function thinkUnit(world: World, u: Unit): void {
     // nearer the objective than the rally point, and reinforcements of a group in contact, join the
     // line directly (the frontal-massing gate in fronts.eagerPush keeps attacks from trickling).
     if (eagerOn() && s.posture !== 'withdraw' && s.reason !== 'reason.outmatched'
-      && (s.mode === 'hold' || s.mode === 'push' || dist(u.pos, s.targetPos) < dist(s.rally, s.targetPos) - 50)) u.behavior = 'advance';
+      && (s.advancing || s.mode === 'hold' || s.mode === 'push' || dist(u.pos, s.targetPos) < dist(s.rally, s.targetPos) - 50)) u.behavior = 'advance';
     return;
   }
   u.behavior = 'advance';
@@ -542,12 +544,14 @@ function thinkRaid(world: World, u: Unit): boolean {
   if (t && (!world.knows(u.owner, t) || dist(t.pos, u.pos) > 650)) t = null;
   if (!t) {
     u.raidTargetId = null;
+    if ((u.id + Math.floor(world.time / 10)) % 3 !== 0) return false;
+    const foes = hostileMask(world, u.owner);
     // Not while engaged with combat units nearby.
-    const engaged = world.spatial.query(u.pos.x, u.pos.z, 160).some((o) => o.hp > 0 && world.isHostile(u.owner, o.owner) && o.primary && world.knows(u.owner, o));
-    if (engaged || (u.id + Math.floor(world.time / 10)) % 3 !== 0) return false;
+    const engaged = world.spatial.findOwner(u.pos.x, u.pos.z, 160, foes, (o) => o.hp > 0 && o.primary !== null && world.knows(u.owner, o)) !== null;
+    if (engaged) return false;
     let bd = 450;
-    for (const o of world.spatial.query(u.pos.x, u.pos.z, 450)) {
-      if (o.hp > 0 && o.def.id === 'supply_truck' && world.isHostile(u.owner, o.owner) && world.knows(u.owner, o)) {
+    for (const o of world.spatial.queryOwners(u.pos.x, u.pos.z, 450, foes)) {
+      if (o.hp > 0 && o.def.id === 'supply_truck' && world.knows(u.owner, o)) {
         const d = dist(o.pos, u.pos);
         if (d < bd) { bd = d; t = o; }
       }

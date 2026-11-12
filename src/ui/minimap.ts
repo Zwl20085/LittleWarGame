@@ -308,14 +308,16 @@ export class MinimapPanel {
       g.stroke();
     }
     const fog = w.config.infoMode === 'fog' && !this.ctx.spectator;
-    for (const u of w.units.values()) {
-      if (u.hp <= 0) continue;
-      if (fog && u.owner !== this.ctx.playerId && !w.visibleTo[this.ctx.playerId].has(u.id)) continue;
-      // Riders aboard a train are hidden (the renderer does the same).
-      if (u.rail?.stage === 'aboard') continue;
-      g.fillStyle = w.factions[u.owner].color;
-      const s = u.def.kind === 'vehicle' ? 3 : 2;
-      g.fillRect(u.pos.x * this.scale - s / 2, u.pos.z * this.scale - s / 2, s, s);
+    for (const f of w.factions) {
+      g.fillStyle = f.color;
+      const checkVis = fog && f.id !== this.ctx.playerId;
+      const vis = checkVis ? w.visibleTo[this.ctx.playerId] : null;
+      for (const u of w.unitsOf(f.id)) {
+        if (u.hp <= 0 || u.rail?.stage === 'aboard') continue;
+        if (vis && !vis.has(u.id)) continue;
+        const s = u.def.kind === 'vehicle' ? 3 : 2;
+        g.fillRect(u.pos.x * this.scale - s / 2, u.pos.z * this.scale - s / 2, s, s);
+      }
     }
     this.drawInfiltrators(g);
     if (this.ctx.renderer.layers.fronts) this.drawOrders(g);

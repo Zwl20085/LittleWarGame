@@ -44,7 +44,7 @@ export const AI_DIRECTIVE = {
 function armyRatio(world: World, f: Faction): number {
   let mine = 0;
   const theirs = new Map<number, number>();
-  for (const u of world.units.values()) {
+  for (const u of world.aliveUnits) {
     if (u.hp <= 0 || u.fixed || u.def.id === 'supply_truck' || isCommander(u.def)) continue;
     const v = u.def.costP + u.def.costM;
     if (u.owner === f.id) mine += v;

@@ -154,18 +154,18 @@ function requestEngineers(world: World, f: Faction): void {
   const k = world.data.rules.proposed_defaults.army_scale ?? 1;
   // 3.0: an investing faction (econZoneAi.zoneEngineerMul) keeps more engineers for its zones.
   const zk = zoneEngineerMul(world, f);
-  const want = Math.min(Math.round(PLANS.maxEngineers * k * zk), sitesWaiting(world, f));
+  const want = Math.min(Math.max(1, Math.round(PLANS.maxEngineers * k * zk)), sitesWaiting(world, f));
   if (want <= 0) return;
   // Engineers on other errands (sieges, occupations, bridges) do not count, up to a hard cap on all engineers.
   const queued = f.orders.filter((o) => o.unitId === 'engineer').length + f.manualQueue.filter((q) => q.unitId === 'engineer').length;
   let free = queued;
   let all = queued;
-  for (const u of world.units.values()) {
-    if (u.owner !== f.id || u.hp <= 0 || u.def.id !== 'engineer') continue;
+  for (const u of world.unitsOf(f.id)) {
+    if (u.hp <= 0 || u.def.id !== 'engineer') continue;
     all++;
     if (freeHand(f, u, world)) free++;
   }
-  const n = Math.min(want - free, Math.round(PLANS.maxEngineersAll * k * zk) - all);
+  const n = Math.min(want - free, Math.max(2, Math.round(PLANS.maxEngineersAll * k * zk)) - all);
   if (n <= 0) return;
   f.manualQueue = [...f.manualQueue, ...Array.from({ length: n }, () => ({ unitId: 'engineer', frontId: -1 }))];
   if (world.time - (requestNotedAt.get(f) ?? -1e9) >= PLANS.requestNoteS) {
@@ -218,8 +218,8 @@ function layoutCapital(world: World, f: Faction): Plan {
 /** Engineers near the capital; riflemen (trenches only) a little closer in. */
 function capitalPool(world: World, f: Faction, hq: V2, site: Fort): Unit[] {
   const out: Unit[] = [];
-  for (const u of world.units.values()) {
-    if (u.owner !== f.id || !freeHand(f, u, world)) continue;
+  for (const u of world.unitsOf(f.id)) {
+    if (!freeHand(f, u, world)) continue;
     const d = dist(u.pos, hq);
     // Home guards man the buildings (structures.seekGarrison); riflemen of quiet fronts dig.
     if (u.def.id === 'engineer' ? d < PLANS.capital.poolR : canDig(u, site) && d < PLANS.capital.rifleR && u.opRole === 'line' && quietFront(f, u)) out.push(u);
@@ -283,8 +283,8 @@ function layoutZone(world: World, f: Faction, key: string, a: V2, b: V2): Plan {
 function zonePool(world: World, f: Faction, z: Zone, site: Fort): Unit[] {
   const out: { u: Unit; rank: number; d: number }[] = [];
   const fid = z.frontId !== null && f.fronts.some((x) => x.id === z.frontId) ? z.frontId : null;
-  for (const u of world.units.values()) {
-    if (u.owner !== f.id || !freeHand(f, u, world)) continue;
+  for (const u of world.unitsOf(f.id)) {
+    if (!freeHand(f, u, world)) continue;
     const d = dist(u.pos, site.pos);
     const own = fid !== null && u.frontId === fid;
     if (u.def.id === 'engineer') {
@@ -316,7 +316,7 @@ export function planPlaceStructure(world: World, f: Faction, centre: V2, radius:
     if (!site) return;
   }
   const s = site;
-  assignBuilders(world, [s], () => byDistance([...world.units.values()].filter((u) => u.owner === f.id && u.def.id === 'engineer' && freeHand(f, u, world) && dist(u.pos, s.pos) < PLANS.place.poolR), s.pos));
+  assignBuilders(world, [s], () => byDistance(world.unitsOf(f.id).filter((u) => u.def.id === 'engineer' && freeHand(f, u, world) && dist(u.pos, s.pos) < PLANS.place.poolR), s.pos));
 }
 
 // ---------------------------------------------------------------- shared

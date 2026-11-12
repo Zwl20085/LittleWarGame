@@ -277,23 +277,27 @@ export function nearestStock(world: World, f: number, from: V2, need: number, ma
   return best;
 }
 
-const SC_TRUCK: Unit[] = [];
-
 const truckLists = new WeakMap<World, { tick: number; byFaction: Unit[][] }>();
-/** Nearest own loaded truck out to the front or handing over within r (per-second truck list: no wide spatial query). */
-function convoyToward(world: World, u: Unit, r: number): Unit | null {
-  if (!(r > 0)) return null;
+function factionTrucks(world: World, f: number): Unit[] {
   let c = truckLists.get(world);
   if (!c || world.tick - c.tick >= world.tickHz) {
     const byFaction: Unit[][] = world.factions.map(() => []);
-    for (const t of world.aliveUnits) if (t.def.id === 'supply_truck' && t.hp > 0) byFaction[t.owner]?.push(t);
+    for (const t of world.aliveUnits) if (t.def.id === 'supply_truck' && t.hp > 0 && (t.truckState === 'out' || t.truckState === 'unload')) byFaction[t.owner]?.push(t);
     c = { tick: world.tick, byFaction };
     truckLists.set(world, c);
   }
+  return c.byFaction[f] ?? [];
+}
+
+/** Nearest own loaded truck out to the front or handing over within r (per-second truck list: no wide spatial query). */
+function convoyToward(world: World, u: Unit, r: number): Unit | null {
+  if (!(r > 0)) return null;
   let best: Unit | null = null;
   let bd = r;
-  for (const t of c.byFaction[u.owner] ?? []) {
+  for (const t of factionTrucks(world, u.owner)) {
     if (t.hp <= 0 || t.cargo < 2 || (t.truckState !== 'out' && t.truckState !== 'unload')) continue;
+    if (t.truckState === 'out' && t.frontId !== u.frontId && dist(t.pos, u.pos) > 180) continue;
+    if (Math.abs(t.pos.x - u.pos.x) >= bd || Math.abs(t.pos.z - u.pos.z) >= bd) continue;
     const d = dist(t.pos, u.pos);
     if (d < bd) {
       bd = d;
@@ -307,9 +311,10 @@ function convoyToward(world: World, u: Unit, r: number): Unit | null {
 function truckNear(world: World, u: Unit, r: number, unloading = false): Unit | null {
   let best: Unit | null = null;
   let bd = r;
-  for (const t of world.spatial.query(u.pos.x, u.pos.z, r, SC_TRUCK)) {
-    if (t.owner !== u.owner || t.def.id !== 'supply_truck' || t.hp <= 0 || t.cargo < 2) continue;
+  for (const t of factionTrucks(world, u.owner)) {
+    if (t.hp <= 0 || t.cargo < 2) continue;
     if (t.truckState !== 'unload' && (unloading || t.truckState !== 'out')) continue;
+    if (Math.abs(t.pos.x - u.pos.x) >= bd || Math.abs(t.pos.z - u.pos.z) >= bd) continue;
     const d = dist(t.pos, u.pos);
     if (d < bd) {
       bd = d;
@@ -364,7 +369,9 @@ export function rearmDuty(world: World, u: Unit, moveTo: (w: World, u: Unit, d: 
     return false;
   }
   const need = (l.rearm_until - u.ammo) * u.def.supplyDemand;
-  const truck = truckNear(world, u, l.truck_seek_radius_m);
+  let place = nearestStock(world, u.owner, u.pos, need, l.stock_seek_radius_m);
+  const atStock = place !== null && dist(u.pos, place.pos) <= drawRadius(world, place) * 1.3;
+  const truck = atStock ? null : truckNear(world, u, l.truck_seek_radius_m, place !== null);
   // A top-up (started above empty) is only worth a short walk to a truck, never a trip to a far stock.
   if (!truck && TOPPING.has(u)) {
     TOPPING.delete(u);
@@ -372,12 +379,12 @@ export function rearmDuty(world: World, u: Unit, moveTo: (w: World, u: Unit, d: 
     u.rearmAt = world.time + TOPUP_RECHECK_S;
     return false;
   }
-  let place = truck ? null : nearestStock(world, u.owner, u.pos, need, l.stock_seek_radius_m);
+  if (truck && (!place || dist(u.pos, truck.pos) < dist(u.pos, place.pos))) place = null;
   // 3.0: a loaded convoy on its way (closer than the stock) beats a long walk back to a stock — the
   // truck heads for the front's units that are short (convoy.supplyPoint) and stops where it meets them.
-  const meet = truck ? null : convoyToward(world, u, Math.min(l.truck_meet_seek_m ?? 0, place ? dist(u.pos, place.pos) * 0.7 : Infinity));
+  const meet = truck || atStock ? null : convoyToward(world, u, Math.min(l.truck_meet_seek_m ?? 0, place ? dist(u.pos, place.pos) * 0.7 : Infinity));
   if (meet) place = null;
-  const via = truck ?? meet;
+  const via = (place ? null : truck) ?? meet;
   if (!via && !place) {
     // Nothing to draw from: fight with what is left, look again later.
     u.rearming = false;

@@ -32,7 +32,7 @@ export function personalityWeights(world: World, p: Personality): Record<string,
 function knownEnemyMix(world: World, f: number): { armor: number; total: number } {
   let armor = 0;
   let total = 0;
-  for (const u of world.units.values()) {
+  for (const u of world.aliveUnits) {
     if (u.hp <= 0 || u.fixed || !world.isHostile(f, u.owner) || !world.knows(f, u)) continue;
     total++;
     if (u.def.kind === 'vehicle' && u.def.armorSide > 20) armor++;
@@ -60,8 +60,8 @@ export function thinkCity(world: World, f: Faction): void {
   // Postures: strongest front assaults, others push cautiously; hold freshly taken points.
   // Value per front id (ids are stable, not indices: theatre.ts creates and dissolves fronts).
   const strength = new Map<number, number>(f.fronts.map((s) => [s.id, 0]));
-  for (const u of world.units.values()) {
-    if (u.owner !== f.id || u.hp <= 0 || isCommander(u.def)) continue;
+  for (const u of world.unitsOf(f.id)) {
+    if (u.hp <= 0 || isCommander(u.def)) continue;
     const v = strength.get(u.frontId);
     if (v !== undefined) strength.set(u.frontId, v + u.def.costP + u.def.costM);
   }
@@ -155,8 +155,8 @@ function balanceReserves(world: World, f: Faction, strength: ReadonlyMap<number,
   // 2.1: a front under a binding order (a zone garrison) lends no troops.
   if (hot === calm || boundOrder(calm) || (pressure.get(hot.id) ?? 0) < 1.2 || (pressure.get(calm.id) ?? 0) > 0.5) return;
   const movable: Unit[] = [];
-  for (const u of world.units.values()) {
-    if (u.owner === f.id && u.frontId === calm.id && u.hp > 0 && !u.fixed && !u.manual && !u.spearhead && u.opRole === 'line'
+  for (const u of world.unitsOf(f.id)) {
+    if (u.frontId === calm.id && u.hp > 0 && !u.fixed && !u.manual && !u.spearhead && u.opRole === 'line'
       && u.behavior === 'advance' && u.def.id !== 'supply_truck' && u.def.id !== 'howitzer' && !isCommander(u.def)) movable.push(u);
   }
   const n = Math.floor(movable.length * 0.1);

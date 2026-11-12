@@ -13,15 +13,22 @@ import { zocMul } from './zoc';
 import { mineSpeedMul } from './minefields';
 import { isMotorized } from './upgradestats';
 
+const rawDests = new WeakMap<Unit, V2>();
+
 /** Set a movement destination; path is (re)computed lazily and rate-limited. */
 export function moveTo(world: World, u: Unit, dest: V2, force = false): void {
   if (u.fixed) return;
+  const prevRaw = rawDests.get(u);
+  if (!force && prevRaw && Math.abs(prevRaw.x - dest.x) < 4 && Math.abs(prevRaw.z - dest.z) < 4 && u.dest && !u.rail) {
+    if ((u.path.length > 0 && !u.pathPartial) || (!u.pathFailed && dist(u.pos, u.dest) < 10)) return;
+  }
+  rawDests.set(u, { x: dest.x, z: dest.z });
   // 3.0 railways (rail.ts): a far trip may go by train: walk to the station, or wait / ride.
   const leg = railLeg(world, u, dest);
   if (leg?.hold) return;
   if (leg) dest = leg.to;
   dest = reachableDest(world, u, dest);
-  if (!force && u.dest && dist(u.dest, dest) < 6 && (u.path.length > 0 || dist(u.pos, dest) < 6)) return;
+  if (!force && u.dest && dist(u.dest, dest) < 6 && (u.path.length > 0 || dist(u.pos, dest) < 10)) return;
   // A consumed horizon-limited path must continue at once; everything else is rate-limited.
   // A long route is kept longer when the goal only drifts (group slots shift a little every
   // think): the horizon stretch gets re-planned anyway before the drift matters.
@@ -114,6 +121,7 @@ export function stop(u: Unit): void {
   u.dest = null;
   u.pathPartial = false;
   u.pathFailed = false;
+  rawDests.delete(u);
 }
 
 /** Need to pack a crew weapon before moving (MG 2 s, AT 4 s …). Returns true while busy. */
@@ -194,7 +202,7 @@ export function speedOf(world: World, u: Unit, heading: number): number {
   if (u.routing) status = Math.max(status, 0.9);
   s *= status;
   if (veh && u.hp < u.def.maxHp * 0.25) s *= COMBAT.lowHpVehicleSpeedMul;
-  if (veh && u.ammo <= 0) s *= world.data.rules.supply.empty_vehicle_speed_multiplier;
+  if (veh && u.primary !== null && u.ammo <= 0) s *= world.data.rules.supply.empty_vehicle_speed_multiplier;
   // 3.0: minefields slow hostile vehicles (minefields.ts).
   if (veh) s *= mineSpeedMul(world, u);
   return s * zocMul(world, u);
@@ -220,7 +228,7 @@ export function updateMovement(world: World, u: Unit): void {
   }
   if (!wantsMove) {
     u.movedAt = world.time;
-    if ((world.tick + u.id) % 3 === 0) separate(world, u, 1.8);
+    if ((world.tick + u.id) % 6 === 0) separate(world, u, 1.8);
     return;
   }
   const wp = u.path[u.pathIdx];
@@ -387,7 +395,7 @@ export function updateMovement(world: World, u: Unit): void {
   u.speedNow = step / world.dt;
   if (!veh && u.def.kind === 'infantry') u.turret = u.heading;
   if (veh && u.targetId === null) u.turret = turnToward(u.turret, u.heading, u.def.turretTurnDegps * DEG * world.dt);
-  if ((world.tick + u.id) % 3 === 0) separate(world, u, 3);
+  if ((world.tick + u.id) % (world.aliveUnits.length > 1000 ? 4 : 3) === 0) separate(world, u, world.aliveUnits.length > 1000 ? 3.5 : 3);
 }
 
 /**
@@ -457,21 +465,27 @@ const DETOUR_NEAR_M = 22;
 const DETOUR_FAR_M = 40;
 /** Local avoidance so squads don't stack; never teleports more than a fraction of a metre. */
 function separate(world: World, u: Unit, strength: number): void {
-  const r = u.def.kind === 'vehicle' ? 7 : 9;
+  const uVeh = u.def.kind === 'vehicle';
+  const scale40 = (world.data.rules.proposed_defaults.army_scale ?? 10) > 20;
+  const r = uVeh ? 7 : scale40 ? 7.5 : 9;
   const near = world.spatial.query(u.pos.x, u.pos.z, r, scratch);
   let px = 0;
   let pz = 0;
-  for (const o of near) {
+  const uRad = uVeh ? 4 : scale40 ? 4.2 : 6;
+  let checked = 0;
+  for (let i = 0; i < near.length; i++) {
+    const o = near[i];
     if (o.id === u.id || o.hp <= 0) continue;
     const dx = u.pos.x - o.pos.x;
     const dz = u.pos.z - o.pos.z;
-    const d = Math.hypot(dx, dz) || 0.01;
-    const minD = (u.def.kind === 'vehicle' ? 4 : 6) + (o.def.kind === 'vehicle' ? 3 : 4);
-    if (d < minD) {
-      const push = ((minD - d) / minD) * 0.25 * strength;
-      px += (dx / d) * push;
-      pz += (dz / d) * push;
-    }
+    const minD = uRad + (o.def.kind === 'vehicle' ? 3 : scale40 ? 3.2 : 4);
+    const d2 = dx * dx + dz * dz;
+    if (d2 >= minD * minD) continue;
+    const d = Math.sqrt(d2) || 0.01;
+    const push = ((minD - d) / minD) * 0.25 * strength;
+    px += (dx / d) * push;
+    pz += (dz / d) * push;
+    if (++checked >= 12) break;
   }
   if (px === 0 && pz === 0) return;
   if (u.moving) {
@@ -511,10 +525,9 @@ export function updateHeight(world: World, u: Unit): void {
     // Scanning every work for every squad each tick is O(units × works): stagger it.
     if ((world.tick + u.id) % GARRISON_CHECK_TICKS === 0) updateGarrison(world, u);
   }
-  // Terrain/building cover samples nine raster cells: refresh it a few times a second (a squad
-  // crosses a 2 m cell in ~0.7 s), not every tick; the fixed cadence also catches a unit that
-  // just stopped or just left a field work.
-  if (u.def.kind !== 'vehicle' && u.fortId === null && !u.fixed && (u.terrainMulAt < 0 || (world.tick + u.id) % COVER_CHECK_TICKS === 0)) {
+  // Terrain/building cover samples nine raster cells: refresh it a few times a second when moving
+  // (a squad crosses a 2 m cell in ~0.7 s), or once a second when stopped.
+  if (u.def.kind !== 'vehicle' && u.fortId === null && !u.fixed && (u.terrainMulAt < 0 || ((moved ? (world.tick + u.id) % COVER_CHECK_TICKS === 0 : (world.tick + u.id) % 20 === 0)))) {
     u.cover = world.terrain.coverAt(u.pos.x, u.pos.z);
   }
 }
@@ -534,6 +547,7 @@ function updateGarrison(world: World, u: Unit): void {
   if (u.moving) return;
   for (const f of world.forts) {
     if (f.hp <= 0 || f.progress < 1 || f.occupant !== null || isStructure(f.kind) || world.isHostile(u.owner, f.owner)) continue;
+    if (Math.abs(f.pos.x - u.pos.x) > 5 || Math.abs(f.pos.z - u.pos.z) > 5) continue;
     if (dist(f.pos, u.pos) <= 5) {
       f.occupant = u.id;
       u.fortId = f.id;
