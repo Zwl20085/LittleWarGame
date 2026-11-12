@@ -111,9 +111,9 @@
     "strategic_point_extra_over_factions": 1,
     "point_radius_m": 30,
     "point_capture_seconds": 15,
-    "command_radius_m": 35,
-    "command_capture_seconds": 45,
-    "siege_blocks_production_radius_m": 140,
+    "command_radius_m": 38,
+    "command_capture_seconds": 30,
+    "siege_blocks_production_radius_m": 220,
     "siege_blocks_production_comment": "A capital with enemy combat troops inside this radius cannot roll out new units: a besieged capital can be taken instead of refilling its own capture ring forever.",
     "command_defender_decay_progress_seconds_per_second": 2,
     "command_empty_decay_progress_seconds_per_second": 1,
@@ -191,8 +191,8 @@
     "demolish_hp_per_second": {"engineer": 60, "infantry": 15, "vehicle": 40},
     "demolish_radius_m": 28,
     "buildings": {
-      "factory": {"cost_p": 60, "cost_m": 160, "build_seconds": 90, "max_hp": 2600, "m_per_min_k": 16, "p_per_min_k": 0},
-      "recruit": {"cost_p": 40, "cost_m": 120, "build_seconds": 75, "max_hp": 2000, "m_per_min_k": 0, "p_per_min_k": 16},
+      "factory": {"cost_p": 60, "cost_m": 160, "build_seconds": 90, "max_hp": 2600, "m_per_min_k": 10, "p_per_min_k": 0},
+      "recruit": {"cost_p": 40, "cost_m": 120, "build_seconds": 75, "max_hp": 2000, "m_per_min_k": 0, "p_per_min_k": 10},
       "depot": {"cost_p": 40, "cost_m": 100, "build_seconds": 60, "max_hp": 2200, "m_per_min_k": 0, "p_per_min_k": 0, "stock_cap_k": 14, "fill_per_min_k": 6}
     }
   },
@@ -200,9 +200,9 @@
     "comment": "3.0 engineer-built economic zones (经济区, V30_SPEC §7; econZones.ts). Built anywhere on own / neutral ground away from towns by an engineer job; level 1 → 2 → 3 by further jobs + cost. Output (_k: per army_scale 1, × army_scale × army_scale_income_factor, × HP share) is halved without a road link to an own town; a beaten side (capital_defence.min_held_share) gets beaten_output of it (lab: zones far behind the front kept losers alive). Raidable like economic buildings (shellfire, demolition), captured with the ground (HP capped at captured_hp_ratio), ruins rebuilt at rebuild_cost_ratio. enabled=false for the lab.",
     "enabled": true,
     "levels": [
-      {"cost_p": 15, "cost_m": 120, "work_seconds": 60, "max_hp": 1800, "p_per_min_k": 4, "m_per_min_k": 8},
-      {"cost_p": 25, "cost_m": 170, "work_seconds": 90, "max_hp": 3000, "p_per_min_k": 8, "m_per_min_k": 16},
-      {"cost_p": 35, "cost_m": 250, "work_seconds": 120, "max_hp": 4500, "p_per_min_k": 12, "m_per_min_k": 26}
+      {"cost_p": 15, "cost_m": 120, "work_seconds": 60, "max_hp": 1800, "p_per_min_k": 2.5, "m_per_min_k": 5},
+      {"cost_p": 25, "cost_m": 170, "work_seconds": 90, "max_hp": 3000, "p_per_min_k": 5, "m_per_min_k": 10},
+      {"cost_p": 35, "cost_m": 250, "work_seconds": 120, "max_hp": 4500, "p_per_min_k": 8, "m_per_min_k": 16}
     ],
     "min_town_distance_m": 220,
     "min_village_distance_m": 90,
@@ -221,7 +221,7 @@
     "enabled": true,
     "radius_m": 210,
     "strongpoints": 4,
-    "min_held_share": 0.7,
+    "min_held_share": 0.85,
     "crew_unit": "mg",
     "artillery_unit": "mortar",
     "artillery_back_m": 45,

@@ -18,6 +18,7 @@ export class SimHost {
   unranTicks = 0;
   onCommandResult: ((env: CommandEnvelope, out: CommandOutcome) => void) | null = null;
   onError: ((message: string) => void) | null = null;
+  onReadyForMore: (() => void) | null = null;
   private ffResolve: (() => void) | null = null;
 
   constructor(readonly match: Match, config: MatchConfig, private readonly observer: number) {
@@ -52,6 +53,8 @@ export class SimHost {
           const r = this.ffResolve;
           this.ffResolve = null;
           r();
+        } else {
+          this.onReadyForMore?.();
         }
         break;
       case 'cmdResult':
@@ -72,10 +75,10 @@ export class SimHost {
   }
 
   /** Ask the worker for `ticks` more ticks; ignored while a batch is still in flight. */
-  advance(ticks: number): boolean {
+  advance(ticks: number, speed = 1): boolean {
     if (this.busy || ticks <= 0) return false;
     this.inflight = true;
-    this.post({ t: 'advance', ticks });
+    this.post({ t: 'advance', ticks, speed });
     return true;
   }
 

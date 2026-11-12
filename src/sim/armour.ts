@@ -39,7 +39,7 @@ export const ARMOUR = {
   /** Infantry squads needed to lead an infantry attack with fewer than minGroup tanks. */
   supportMinFoot: 2,
   /** Spearhead / manoeuvre: a tank at most this far ahead of the group's leading foot (m). */
-  paceM: 60,
+  paceM: 110,
   /** Block slot spacing (m). */
   spacing: 22,
   /** Under the main-effort rule, share of the faction's tanks the main front may hold under `advance`. */

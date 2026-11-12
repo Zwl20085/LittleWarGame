@@ -317,6 +317,8 @@ export class World {
       rearmAt: 0,
       zocUntil: 0,
       rail: null,
+      riderId: null,
+      ridingTankId: null,
       upg: 0,
       upgNadeAt: 0,
     };

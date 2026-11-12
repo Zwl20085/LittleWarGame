@@ -32,6 +32,7 @@ import { scaledData } from './scale';
 import { sampleStats, STATS_SAMPLE_SECONDS } from './stats';
 import { battleSecond } from './events';
 import { aboard, initTransport, railSecond, railTick } from './rail';
+import { tankDesantTick } from './tankDesant';
 import { transportSecond } from './transportjobs';
 import { canSpot, observerOf } from './terrainrules';
 import type { V2 } from './vec';
@@ -417,7 +418,7 @@ export function step(match: Match): void {
     }
     if (world.time >= u.thinkAt && !aboard(u)) {
       thinkUnit(world, u);
-      const slow = u.def.id === 'howitzer' || u.def.id === 'mortar' ? 1 : units.length > 1000 && u.targetId === null ? 0.55 : 0.4;
+      const slow = u.def.id === 'howitzer' || u.def.id === 'mortar' ? 1 : units.length > 1000 && u.targetId === null ? 0.65 : 0.4;
       u.thinkAt = world.time + slow + ((u.id * 7) % 10) / 50;
     }
   }
@@ -428,6 +429,7 @@ export function step(match: Match): void {
     updateMovement(world, u);
     updateHeight(world, u);
   }
+  tankDesantTick(world);
   railTick(world);
   if (world.tick % Math.round(hz / 2) === 0) {
     updateVisibility(world);
@@ -453,9 +455,10 @@ export function step(match: Match): void {
   const frontPeriod = 2 * hz;
   const phase = world.tick % frontPeriod;
   const frontAt = frontPeriod - world.factions.length - 1;
-  if (phase === frontAt) {
-    match.front.update(2);
+  if (phase === frontAt - 1) {
     match.frontView?.update(2);
+  } else if (phase === frontAt) {
+    match.front.update(2);
   } else if (phase > frontAt) {
     const f = phase - frontAt - 1;
     // An eliminated faction's units only evacuate: its front info is never read again.

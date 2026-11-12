@@ -6,6 +6,7 @@ import type { World } from './world';
 import { inMass } from './frontslots';
 import { boundOrder } from './frontref';
 import { isTank } from './armour';
+import { pairSpearheadDesant } from './tankDesant';
 import { isMotorized } from './upgradestats';
 
 /**
@@ -148,6 +149,7 @@ export function launchSpearhead(world: World, f: Faction, s: Front, units: Unit[
   const group = [...head, ...foot];
   if (group.filter((u) => u.def.kind === 'infantry').length < 2) return;
   for (const u of group) u.spearhead = target;
+  pairSpearheadDesant(world, group);
   s.lastSpearhead = world.time;
   s.mode = 'breakthrough';
   world.note(f.id, 'log.spearhead', { point: target.startsWith('hq:') ? '' : target, n: group.length }, 'info');

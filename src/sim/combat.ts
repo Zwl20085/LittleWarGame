@@ -111,8 +111,8 @@ export function selectTarget(world: World, u: Unit, objective: V2 | null): void 
   // 3.0: the batteries of a tiered front concentrate on its barrage point (frontTiers.ts).
   const focus = indirect ? barrageFocus(world, u) : null;
   for (const t of cands) {
-    // Review MEDIUM 4: riders aboard a train are hidden (the train is the target, not its passengers).
-    if (t.hp <= 0 || t.rail?.stage === 'aboard' || !world.isHostile(u.owner, t.owner)) continue;
+    // Review MEDIUM 4: riders aboard a train or riding a tank are not targeted separately (the vehicle is the target).
+    if (t.hp <= 0 || t.rail?.stage === 'aboard' || t.ridingTankId != null || !world.isHostile(u.owner, t.owner)) continue;
     const suit = suitability(w, t);
     if (suit <= 0) continue;
     const d = dist(u.pos, t.pos);
@@ -230,7 +230,7 @@ function aim(world: World, u: Unit, at: V2): boolean {
 
 /** Per-tick weapon handling for one unit. */
 export function updateWeapons(world: World, u: Unit): void {
-  if (u.hp <= 0 || u.behavior === 'evacuate' || u.mounted || world.time < u.mountUntil || u.rail?.stage === 'aboard') return;
+  if (u.hp <= 0 || u.behavior === 'evacuate' || u.mounted || u.ridingTankId != null || world.time < u.mountUntil || u.rail?.stage === 'aboard') return;
   u.cooldown1 = Math.max(0, u.cooldown1 - world.dt);
   u.cooldown2 = Math.max(0, u.cooldown2 - world.dt);
   if (u.routing) return;

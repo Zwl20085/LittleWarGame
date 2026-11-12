@@ -12,7 +12,7 @@ import type { MatchConfig } from './types';
 export type ToWorker =
   | { t: 'init'; config: MatchConfig }
   | { t: 'cmd'; actor: number; cmd: Command }
-  | { t: 'advance'; ticks: number }
+  | { t: 'advance'; ticks: number; speed?: number }
   | { t: 'ff'; seconds: number; budgetMs: number };
 
 let match: Match | null = null;
@@ -50,8 +50,9 @@ self.onmessage = (e: MessageEvent<ToWorker>): void => {
       case 'advance': {
         if (!match) return;
         const t0 = performance.now();
+        const budgetMs = (msg.speed ?? 1) >= 8 ? 48 : (msg.speed ?? 1) >= 4 ? 32 : 20;
         let n = 0;
-        for (; n < msg.ticks && !match.world.result && (n === 0 || performance.now() - t0 < 20); n++) {
+        for (; n < msg.ticks && !match.world.result && (n === 0 || performance.now() - t0 < budgetMs); n++) {
           bus.flush(match);
           step(match);
         }

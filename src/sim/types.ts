@@ -148,6 +148,10 @@ export interface Unit {
   zocUntil: number;
   /** 3.0: rail trip in progress (rail.ts): walking to the station, waiting, or aboard (hidden). */
   rail: RailRide | null;
+  /** 4.0 Tank Desant: infantry unit id riding on this tank, or null. */
+  riderId?: number | null;
+  /** 4.0 Tank Desant: tank unit id this infantry squad is riding on, or null. */
+  ridingTankId?: number | null;
 }
 
 /** 3.0 rail trip of one unit: board at station `from`, ride to `to`, then walk on to `dest`. */

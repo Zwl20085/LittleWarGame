@@ -104,8 +104,9 @@ export class FrontlineField {
       if (base <= 0) continue;
       const morale = u.routing ? 0.2 : u.moraleState === 'pinned' ? 0.6 : 1;
       const wt = base * Math.sqrt(u.hp / u.def.maxHp) * morale;
-      const si = Math.min(nx - 1, Math.max(0, Math.floor(u.pos.x / cell)));
-      const sj = Math.min(nz - 1, Math.max(0, Math.floor(u.pos.z / cell)));
+      const coarse = w.aliveUnits.length > 800;
+      const si = Math.min(nx - 1, Math.max(0, coarse ? Math.floor(u.pos.x / (cell * 2)) * 2 : Math.floor(u.pos.x / cell)));
+      const sj = Math.min(nz - 1, Math.max(0, coarse ? Math.floor(u.pos.z / (cell * 2)) * 2 : Math.floor(u.pos.z / cell)));
       const idx = u.owner * n + sj * nx + si;
       if (bw[idx] === 0) dirty[nd++] = idx;
       bw[idx] += wt;

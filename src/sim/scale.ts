@@ -13,9 +13,12 @@ export function scaleRules(rules: Rules, k: number): Rules {
       : { ...rules, proposed_defaults: { ...rules.proposed_defaults, army_scale: 1 } };
   }
   const e = rules.economy;
-  const ks = k * (rules.proposed_defaults.army_scale_stock_factor ?? 1);
+  const scale40 = k > 10;
+  const incomeFactor = scale40 ? 0.34 : (rules.proposed_defaults.army_scale_income_factor ?? 1);
+  const stockFactor = scale40 ? 0.5 : (rules.proposed_defaults.army_scale_stock_factor ?? 1);
+  const ks = k * stockFactor;
   const kr = k * (rules.proposed_defaults.army_scale_resolve_factor ?? 1);
-  const ki = k * (rules.proposed_defaults.army_scale_income_factor ?? 1);
+  const ki = k * incomeFactor;
   const truckCountMul = k > 10 ? 10 * Math.pow(k / 10, 0.45) : k;
   const truckCapMul = k > 10 ? k / truckCountMul : 1;
   const mulRec = (r: Record<string, number>): Record<string, number> =>
@@ -27,8 +30,28 @@ export function scaleRules(rules: Rules, k: number): Rules {
     proposed_defaults: {
       ...rules.proposed_defaults,
       army_scale: k,
+      army_scale_income_factor: incomeFactor,
+      army_scale_stock_factor: stockFactor,
       production_unit_caps: mulRec(rules.proposed_defaults.production_unit_caps),
     },
+    territory:
+      scale40 && rules.territory
+        ? {
+            ...rules.territory,
+            income_p_per_min: { village: 1.6, town: 4.8, city: 8.5, point: 2.4 },
+            income_m_per_min: { village: 0.65, town: 6.4, city: 15.5, point: 1.9 },
+            capital_pop_share: 0.22,
+            pop_cap_max_multiplier: 1.6,
+            pop_per_place: { village: 0.2, town: 0.85, city: 1.8, point: 0.4 },
+          }
+        : rules.territory,
+    transport:
+      scale40 && rules.transport
+        ? {
+            ...rules.transport,
+            off_road: { ...rules.transport.off_road, tracked: 0.78 },
+          }
+        : rules.transport,
     economy: {
       ...e,
       starting_p: e.starting_p * ks,

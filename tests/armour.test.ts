@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { loadGameData } from '../src/data';
 import { createMatch } from '../src/sim/sim';
 import { ARMOUR, armourFront, blockGoal, paceArmour } from '../src/sim/armour';
+import { pairTankDesant, tankDesantTick } from '../src/sim/tankDesant';
 import { pickFront } from '../src/sim/production';
 import { ARTY, shellWorth } from '../src/sim/combat';
 import type { Unit } from '../src/sim/types';
@@ -97,5 +98,36 @@ describe('2.2 artillery conserves shells (wave 2)', () => {
     expect(shellWorth(0.8, false, 0)).toBeGreaterThan(ARTY.minWorth + ARTY.lowAmmoExtra);
     expect(shellWorth(0.8, true, 1)).toBeGreaterThan(ARTY.minWorth);
     expect(shellWorth(1, false, 1)).toBeGreaterThan(shellWorth(0.8, false, 0));
+  });
+});
+
+describe('4.0 tank desant (坦克搭载步兵)', () => {
+  it('tanks carry friendly infantry at tank speed and dismount when enemies are close', () => {
+    const w = world();
+    const frontId = w.factions[0].fronts[0].id;
+    const tank = w.spawnUnit(0, 'medium_tank', { x: 600, z: 600 }, frontId);
+    const rifle = w.spawnUnit(0, 'infantry', { x: 612, z: 600 }, frontId);
+    tank.behavior = 'advance';
+    rifle.behavior = 'advance';
+    tank.dest = { x: 1000, z: 600 };
+    rifle.dest = { x: 1000, z: 600 };
+    pairTankDesant(w, tank, rifle);
+    expect(tank.riderId).toBe(rifle.id);
+    expect(rifle.ridingTankId).toBe(tank.id);
+    tank.pos.x = 680;
+    tank.moving = true;
+    tank.speedNow = 3.8;
+    tankDesantTick(w);
+    expect(rifle.pos.x).toBe(680);
+    expect(rifle.speedNow).toBe(3.8);
+    // Enemy enters dismount radius -> automatic dismount around the tank
+    const foe = w.spawnUnit(1, 'infantry', { x: 740, z: 600 }, w.factions[1].fronts[0].id);
+    w.spatial.rebuild(w.aliveUnits);
+    w.tick = 8 - (tank.id % 8);
+    tankDesantTick(w);
+    expect(rifle.ridingTankId).toBeNull();
+    expect(tank.riderId).toBeNull();
+    expect(dist(rifle.pos, tank.pos)).toBeLessThan(16);
+    expect(foe.hp).toBeGreaterThan(0);
   });
 });

@@ -456,6 +456,31 @@ export class UnitViews {
     }
   }
 
+  /** Infantry squad riding on a tank hull (Tank Desant): draw kneeling riflemen perched on the rear engine deck. */
+  private drawTankDesant(v: UnitView, u: Unit, draw: boolean): void {
+    const alive = Math.min(5, aliveMembers(u.def, u.hp, u.def.maxHp));
+    const ca = Math.cos(v.heading);
+    const sa = Math.sin(v.heading);
+    const sol = v.sol;
+    const kneelB = this.batch('soldierKneel');
+    for (let k = 0; k < v.members; k++) {
+      const fwd = k === 0 ? -0.9 : k <= 2 ? -1.4 : -1.95;
+      const right = k === 0 ? 0 : (k & 1) !== 0 ? -0.85 : 0.85;
+      const sx = v.x + ca * fwd - sa * right;
+      const sz = v.z + sa * fwd + ca * right;
+      snapSoldier(sol, k, sx, sz, v.heading);
+      if (draw && k < alive) {
+        const outFace = k === 0 ? v.heading : v.heading + ((k & 1) !== 0 ? -0.45 : 0.45);
+        const at = kneelB.next(v.color, 0);
+        writeYZcs(kneelB.matrices, at, sx, v.y + 1.05, sz, Math.cos(outFace), -Math.sin(outFace), 0, SOLDIER_SCALE);
+      }
+    }
+    v.trail?.reset(v.x, v.z);
+    v.drawn = true;
+    v.settled = false;
+    v.cacheN = -1;
+  }
+
   /** Troops jump down from the trucks: start every soldier at its truck, then ease out. */
   private dismount(v: UnitView): void {
     v.mounted = false;
@@ -693,6 +718,7 @@ export class UnitViews {
       }
       if (v.spec.body || v.spec.turret) this.drawHardware(v, u, dt, draw);
       else if (u.mounted) this.drawConvoy(v, u, dt, draw);
+      else if (u.ridingTankId != null) this.drawTankDesant(v, u, draw && this.showSoldiers);
       else {
         if (v.mounted) this.dismount(v);
         this.drawSquad(v, u, dt, draw && this.showSoldiers);

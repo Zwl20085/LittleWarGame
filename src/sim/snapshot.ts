@@ -151,7 +151,8 @@ export function makeSnapshot(match: Match, cur: SnapshotCursor, observer: number
       (u.moving ? 1 : 0) | (u.routing ? 2 : 0) | (u.wavering ? 4 : 0) | (u.supplied ? 8 : 0) |
       (u.fixed ? 16 : 0) | (u.pathFailed ? 32 : 0) | (u.mounted ? 64 : 0) | (u.rail?.stage === 'aboard' ? 128 : 0) |
       ((SETUP_IDX[u.setup] & 3) << 8) | ((MORALE_IDX[u.moraleState] & 3) << 10) |
-      ((BEHAVIOR_IDX[u.behavior] & 7) << 12) | ((TRUCK_IDX[u.truckState] & 3) << 15);
+      ((BEHAVIOR_IDX[u.behavior] & 7) << 12) | ((TRUCK_IDX[u.truckState] & 3) << 15) |
+      (u.ridingTankId != null ? (1 << 17) : 0);
     buf[o + F.target] = u.targetId ?? -1; buf[o + F.front] = u.frontId; buf[o + F.cargo] = u.cargo;
     buf[o + F.fort] = u.fortId ?? -1; buf[o + F.cover] = u.cover;
     buf[o + F.vseed] = u.vseed; buf[o + F.lastDamaged] = u.lastDamagedAt; buf[o + F.lastFired] = u.lastFiredAt;
@@ -221,7 +222,9 @@ export function applySnapshot(match: Match, snap: Snapshot, observer: number): v
   const buf = snap.units;
   const n = buf.length / STRIDE;
   const order = w.data.unitOrder;
-  const multi = snap.tick - w.tick > 1 && snap.tick - w.tick <= 20;
+  const dtTicks = snap.tick - w.tick;
+  const multi = dtTicks > 1 && dtTicks <= 40;
+  const batchDt = Math.max(w.dt, dtTicks * w.dt);
   // Mark existing mirror units dead first; every surviving unit in `buf` restores its positive `hp` below.
   for (let i = 0; i < w.aliveUnits.length; i++) w.aliveUnits[i].hp = 0;
   for (let k = 0; k < n; k++) {
@@ -240,7 +243,8 @@ export function applySnapshot(match: Match, snap: Snapshot, observer: number): v
     const oldX = u.pos.x;
     const oldZ = u.pos.z;
     u.pos.x = buf[o + F.x]; u.pos.z = buf[o + F.z];
-    if (multi && had && Math.abs(u.pos.x - oldX) < 35 && Math.abs(u.pos.z - oldZ) < 35) {
+    const batchDist = multi && had ? Math.hypot(u.pos.x - oldX, u.pos.z - oldZ) : 0;
+    if (multi && had && batchDist < 45) {
       u.prev.x = oldX; u.prev.z = oldZ;
     } else {
       u.prev.x = buf[o + F.px]; u.prev.z = buf[o + F.pz];
@@ -249,13 +253,15 @@ export function applySnapshot(match: Match, snap: Snapshot, observer: number): v
     u.heading = buf[o + F.heading]; u.turret = buf[o + F.turret]; u.hp = buf[o + F.hp]; u.morale = buf[o + F.morale];
     u.suppression = buf[o + F.supp]; u.ammo = buf[o + F.ammo]; u.supplyRatio = buf[o + F.supplyRatio];
     u.setup = SETUP[(fl >> 8) & 3] ?? 'packed';
-    u.moving = (fl & 1) !== 0; u.routing = (fl & 2) !== 0; u.wavering = (fl & 4) !== 0; u.supplied = (fl & 8) !== 0; u.pathFailed = (fl & 32) !== 0; u.mounted = (fl & 64) !== 0;
+    const movedBatch = multi && had && batchDist > 0.04 && batchDist < 45;
+    u.moving = (fl & 1) !== 0 || movedBatch; u.routing = (fl & 2) !== 0; u.wavering = (fl & 4) !== 0; u.supplied = (fl & 8) !== 0; u.pathFailed = (fl & 32) !== 0; u.mounted = (fl & 64) !== 0;
+    u.ridingTankId = (fl & (1 << 17)) !== 0 ? 1 : null;
     u.rail = (fl & 128) !== 0 ? (u.rail ?? mirrorRide(u)) : null;
     u.moraleState = MORALE[(fl >> 10) & 3] ?? 'normal'; u.behavior = BEHAVIOR[(fl >> 12) & 7] ?? 'advance';
     u.targetId = buf[o + F.target] < 0 ? null : buf[o + F.target]; u.frontId = buf[o + F.front]; u.cargo = buf[o + F.cargo];
     u.truckState = TRUCK[(fl >> 15) & 3] ?? 'load'; u.fortId = buf[o + F.fort] < 0 ? null : buf[o + F.fort];
     u.cover = buf[o + F.cover] as Unit['cover']; u.lastDamagedAt = buf[o + F.lastDamaged]; u.lastFiredAt = buf[o + F.lastFired];
-    u.status = statusTable[buf[o + F.status]] ?? ''; u.speedNow = buf[o + F.speed]; u.lastSuppliedAt = buf[o + F.lastSupplied];
+    u.status = statusTable[buf[o + F.status]] ?? ''; u.speedNow = movedBatch ? Math.max(buf[o + F.speed], batchDist / batchDt) : buf[o + F.speed]; u.lastSuppliedAt = buf[o + F.lastSupplied];
     u.setupTimer = buf[o + F.setupTimer];
     u.manual = null;
     if (u.queue.length > 0) u.queue.length = 0;

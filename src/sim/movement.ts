@@ -18,6 +18,10 @@ const rawDests = new WeakMap<Unit, V2>();
 /** Set a movement destination; path is (re)computed lazily and rate-limited. */
 export function moveTo(world: World, u: Unit, dest: V2, force = false): void {
   if (u.fixed) return;
+  if (u.ridingTankId != null) {
+    u.dest = { x: dest.x, z: dest.z };
+    return;
+  }
   const prevRaw = rawDests.get(u);
   if (!force && prevRaw && Math.abs(prevRaw.x - dest.x) < 4 && Math.abs(prevRaw.z - dest.z) < 4 && u.dest && !u.rail) {
     if ((u.path.length > 0 && !u.pathPartial) || (!u.pathFailed && dist(u.pos, u.dest) < 10)) return;
@@ -110,7 +114,7 @@ export function reachableDest(world: World, u: Unit, dest: V2): V2 {
 }
 
 /** Long routes are built in stretches of this many nav cells (8 m each): bounded cost per call. */
-const PATH_HORIZON_CELLS = 40;
+const PATH_HORIZON_CELLS = 80;
 /** Beyond this distance a drifting goal (< 25 m) keeps the current path for extra seconds. */
 const FAR_ROUTE_M = 200;
 const FAR_ROUTE_HOLD_S = 6;
@@ -215,7 +219,7 @@ export function updateMovement(world: World, u: Unit): void {
   u.prev.z = u.pos.z;
   u.moving = false;
   u.speedNow = 0;
-  if (u.fixed || u.hp <= 0 || aboard(u)) return;
+  if (u.fixed || u.hp <= 0 || aboard(u) || u.ridingTankId != null) return;
   // A consumed horizon stretch continues at once (same tick): no pause, no crew weapon
   // deploying and no motorised squad dismounting between stretches of one long route.
   if (u.path.length === 0 && u.pathPartial && u.dest) moveTo(world, u, u.dest, true);
@@ -228,7 +232,7 @@ export function updateMovement(world: World, u: Unit): void {
   }
   if (!wantsMove) {
     u.movedAt = world.time;
-    if ((world.tick + u.id) % 6 === 0) separate(world, u, 1.8);
+    if ((world.tick + u.id) % (world.aliveUnits.length > 1000 ? 14 : 6) === 0) separate(world, u, 1.8);
     return;
   }
   const wp = u.path[u.pathIdx];
@@ -395,7 +399,7 @@ export function updateMovement(world: World, u: Unit): void {
   u.speedNow = step / world.dt;
   if (!veh && u.def.kind === 'infantry') u.turret = u.heading;
   if (veh && u.targetId === null) u.turret = turnToward(u.turret, u.heading, u.def.turretTurnDegps * DEG * world.dt);
-  if ((world.tick + u.id) % (world.aliveUnits.length > 1000 ? 4 : 3) === 0) separate(world, u, world.aliveUnits.length > 1000 ? 3.5 : 3);
+  if ((world.tick + u.id) % (world.aliveUnits.length > 1000 ? 6 : 3) === 0) separate(world, u, world.aliveUnits.length > 1000 ? 3.5 : 3);
 }
 
 /**
@@ -519,15 +523,16 @@ export function updateHeight(world: World, u: Unit): void {
   const moved = u.pos.x !== u.prev.x || u.pos.z !== u.prev.z || u.terrainMulAt < 0;
   if (moved) u.y = world.terrain.heightAt(u.pos.x, u.pos.z);
   if (world.forts.length > 0) {
-    updateWorksCover(world, u);
+    const dense = world.aliveUnits.length > 1000;
+    if (!dense || moved || (world.tick + u.id) % 4 === 0) updateWorksCover(world, u);
     // Pillboxes / bunkers: enter / leave (structures.ts, staggered every 10th tick per unit).
     updateStructureGarrison(world, u);
     // Scanning every work for every squad each tick is O(units × works): stagger it.
-    if ((world.tick + u.id) % GARRISON_CHECK_TICKS === 0) updateGarrison(world, u);
+    if ((world.tick + u.id) % (dense ? 8 : GARRISON_CHECK_TICKS) === 0) updateGarrison(world, u);
   }
   // Terrain/building cover samples nine raster cells: refresh it a few times a second when moving
   // (a squad crosses a 2 m cell in ~0.7 s), or once a second when stopped.
-  if (u.def.kind !== 'vehicle' && u.fortId === null && !u.fixed && (u.terrainMulAt < 0 || ((moved ? (world.tick + u.id) % COVER_CHECK_TICKS === 0 : (world.tick + u.id) % 20 === 0)))) {
+  if (u.def.kind !== 'vehicle' && u.fortId === null && !u.fixed && (u.terrainMulAt < 0 || ((moved ? (world.tick + u.id) % (world.aliveUnits.length > 1000 ? 8 : COVER_CHECK_TICKS) === 0 : (world.tick + u.id) % 20 === 0)))) {
     u.cover = world.terrain.coverAt(u.pos.x, u.pos.z);
   }
 }

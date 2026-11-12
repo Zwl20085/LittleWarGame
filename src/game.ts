@@ -17,7 +17,7 @@ import { showPauseMenu } from './ui/pause';
 import { showResults } from './ui/results';
 import { onSettingsChange, prefersReducedMotion, settings, type Settings } from './ui/settings';
 
-const MAX_TICKS_PER_FRAME = 24;
+const MAX_TICKS_PER_FRAME = 36;
 /** Max milliseconds of simulation per rendered frame. */
 const SIM_BUDGET_MS = 14;
 
@@ -100,6 +100,7 @@ export class Game {
     if (this.host) {
       this.host.onCommandResult = this.bus.onResult;
       this.host.onError = (m) => console.error('[sim worker]', m);
+      this.host.onReadyForMore = () => this.pumpWorker();
     }
     if (this.attract) {
       this.hud = null;
@@ -155,6 +156,19 @@ export class Game {
     this.pauseMenu = showPauseMenu(this.root, { resume: () => this.togglePauseMenu(), quit: () => this.exits.menu() });
   }
 
+  private pumpWorker(): void {
+    if (!this.host || this.ctx.paused || this.match.world.result) return;
+    const w = this.match.world;
+    if (this.host.unranTicks > 0) {
+      this.acc = Math.min(this.acc + this.host.unranTicks * w.dt, w.dt * MAX_TICKS_PER_FRAME);
+      this.host.unranTicks = 0;
+    }
+    if (!this.host.busy && this.acc >= w.dt) {
+      const n = Math.min(MAX_TICKS_PER_FRAME, Math.floor(this.acc / w.dt));
+      if (this.host.advance(n, this.ctx.speed)) this.acc -= n * w.dt;
+    }
+  }
+
   private readonly frame = (now: number): void => {
     const dtReal = Math.min(0.25, (now - this.last) / 1000);
     this.last = now;
@@ -169,10 +183,7 @@ export class Game {
           this.host.unranTicks = 0;
         }
         this.acc = Math.min(this.acc + dtReal * ctx.speed, w.dt * MAX_TICKS_PER_FRAME);
-        if (!this.host.busy && this.acc >= w.dt) {
-          const n = Math.min(MAX_TICKS_PER_FRAME, Math.floor(this.acc / w.dt));
-          if (this.host.advance(n)) this.acc -= n * w.dt;
-        }
+        this.pumpWorker();
         // Behind = requested time keeps piling up because the worker cannot keep pace.
         const behind = this.acc >= w.dt * (MAX_TICKS_PER_FRAME - 1);
         this.lagTicks = behind ? Math.round(this.acc / w.dt) : 0;
